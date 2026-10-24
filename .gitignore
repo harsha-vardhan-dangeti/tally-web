@@ -3,3 +3,7 @@ dist/
 .vercel/
 .DS_Store
 .vercel
+.playwright-mcp/
+macos/build/
+macos/**/xcuserdata/
+macos/*.xcodeproj/project.xcworkspace/xcuserdata/

@@ -34,6 +34,8 @@ const paths: Record<string, string> = {
   card: "M3 6h18v13H3zM3 10h18M16 15h2",
   mic: "M9 3h6v11H9zM5 11a7 7 0 0 0 14 0M12 18v3",
   sun: "M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8M12 2v2M12 20v2M2 12h2M20 12h2",
+  alert: "M12 4l9 16H3zM12 10v4M12 17v.5",
+  info: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M12 11v6M12 7.5v.5",
 };
 
 export function Icon({ name, size = 22, stroke = 2, label }: { name: string; size?: number; stroke?: number; label?: string }) {

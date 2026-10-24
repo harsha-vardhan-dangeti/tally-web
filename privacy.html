@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Privacy · Tally</title>
+    <meta name="description" content="How Tally handles your data: it stays in your browser, on your device. No accounts, no server storage, no analytics." />
+    <meta name="theme-color" content="#F3F4F6" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0B0D12" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  </head>
+  <body class="site">
+    <header class="site-head wrap-x">
+      <a class="logo" href="/" aria-label="Tally home">
+        <span class="mark" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 5v14M10 5v14M14 5v14M18 5v14M4 15L20 9" /></svg></span>
+        Tally
+      </a>
+      <nav class="head-nav" aria-label="Site"><a class="btn-site primary" href="/app">Open Tally</a></nav>
+    </header>
+
+    <main class="article wrap-x">
+      <h1>Privacy</h1>
+      <p class="updated">Last updated 24 October 2026</p>
+      <p>Tally is built so that we never have your financial data. There's no account to create and no server that receives or stores what you log.</p>
+
+      <h2>What Tally stores, and where</h2>
+      <ul>
+        <li>Your expenses, repeats, budgets, bills, accounts, goals and settings are saved in your browser's IndexedDB on your device.</li>
+        <li>One more item is kept in your browser's local storage: a flag saying you've set Tally up, so this website can show "Open your Tally". It contains no expense data.</li>
+        <li>Data stays in the browser you used. It doesn't sync to your other devices or browsers.</li>
+      </ul>
+
+      <h2>What leaves your device</h2>
+      <ul>
+        <li><b>Nothing you log.</b> Expenses are never uploaded.</li>
+        <li><b>The app itself</b> is downloaded from this website and cached for offline use. Our hosting provider, Vercel, handles those requests and may keep standard server logs (such as IP address and time) for security and reliability.</li>
+        <li><b>The receipt reader.</b> The first time you scan a receipt, the text-recognition engine and its English language file are downloaded from the jsDelivr CDN. The photo is read on your device and isn't uploaded.</li>
+      </ul>
+      <p>Tally has no analytics, ads or third-party trackers.</p>
+
+      <h2>App lock</h2>
+      <p>The Face ID / Touch ID lock uses your device's passkey sign-in to hide the app until you unlock it. It's a privacy screen: it doesn't encrypt the data stored in your browser.</p>
+
+      <h2>Updates</h2>
+      <p>When a new version of Tally is released, your browser downloads the new app files in the background and Tally shows <i>Update ready</i>. Reloading switches to the new files. Updates don't read, change or upload your data.</p>
+
+      <h2>Backups and deleting your data</h2>
+      <ul>
+        <li><b>Back up</b> in Settings saves a JSON file to your device. Keep it somewhere safe; anyone with the file can read it.</li>
+        <li><b>Restore</b> checks the file before replacing anything, and keeps your previous data so you can put it back.</li>
+        <li><b>Delete all data</b> in Settings removes everything Tally stored. Clearing this site's data in your browser settings does the same.</li>
+      </ul>
+    </main>
+
+    <footer class="site-foot wrap-x">
+      <span>Tally · made for rupee budgets</span>
+      <nav aria-label="Footer"><a href="/">Home</a><a href="/app">Open Tally</a></nav>
+    </footer>
+    <script type="module" src="/src/landing/page.ts"></script>
+  </body>
+</html>

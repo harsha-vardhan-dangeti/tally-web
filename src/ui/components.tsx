@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode, type PointerEvent as RPointerEvent } from "react";
 import { Icon } from "./icons";
 import { dismissToast, useToast } from "../data/store";
+import { applyUpdate, useUpdateReady } from "../data/updates";
 
 /** Bottom sheet on phones, centred dialog on desktop. Drag the handle down (or press Esc) to close. */
 export function Sheet({ open, onClose, title, children, actions }: {
@@ -9,15 +10,24 @@ export function Sheet({ open, onClose, title, children, actions }: {
   const [drag, setDrag] = useState(0);
   const start = useRef<number | null>(null);
   const panel = useRef<HTMLDivElement>(null);
+  // Callers often pass a new onClose on every render (typing in a field re-renders); reading it
+  // through a ref keeps the effect below from re-running and pulling focus out of the field.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      // With sheets stacked (a day's list, then an expense on top), Escape closes only the top one.
+      const sheets = document.querySelectorAll(".sheet");
+      if (sheets[sheets.length - 1] === panel.current) onCloseRef.current();
+    };
     window.addEventListener("keydown", onKey);
     const prev = document.activeElement as HTMLElement | null;
     panel.current?.focus();
     return () => { window.removeEventListener("keydown", onKey); prev?.focus?.(); };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
   const down = (e: RPointerEvent) => { start.current = e.clientY; (e.target as Element).setPointerCapture?.(e.pointerId); };
@@ -89,20 +99,21 @@ export function SwipeRow({ children, onOpen, left, right, onFullLeft }: {
 
   return (
     <div className="swipe">
-      <div className="swipe-actions right-side" aria-hidden={settled <= 0}>
+      {/* Actions exist only while the row is pulled aside, so their colours can't show at the row's edges. */}
+      {dx > 0 && <div className="swipe-actions right-side" aria-hidden={settled <= 0}>
         {right.map((a) => (
           <button key={a.label} style={{ background: a.color }} onClick={() => run(a.run)} tabIndex={settled > 0 ? 0 : -1}>
             <Icon name={a.icon} size={18} />{a.label}
           </button>
         ))}
-      </div>
-      <div className="swipe-actions left-side" aria-hidden={settled >= 0}>
+      </div>}
+      {dx < 0 && <div className="swipe-actions left-side" aria-hidden={settled >= 0}>
         {left.map((a) => (
           <button key={a.label} style={{ background: a.color }} onClick={() => run(a.run)} tabIndex={settled < 0 ? 0 : -1}>
             <Icon name={a.icon} size={18} />{a.label}
           </button>
         ))}
-      </div>
+      </div>}
       <div className="swipe-front" style={{ transform: `translateX(${dx}px)`, transition: s.current ? "none" : undefined }}
         onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => { s.current = null; setDx(settled); }}
         role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter") onOpen(); if (e.key === "Delete" || e.key === "Backspace") onFullLeft?.(); }}>
@@ -164,6 +175,19 @@ export function ToastHost() {
       {toast.undo && (
         <button onClick={() => { toast.undo?.(); dismissToast(); }}>Undo</button>
       )}
+    </div>
+  );
+}
+
+/** Shown when a new release of Tally has downloaded. Reloading swaps the app files; data stays put. */
+export function UpdateBar() {
+  const ready = useUpdateReady();
+  if (!ready) return null;
+  return (
+    <div className="update-bar" role="status">
+      <Icon name="download" size={18} />
+      <span className="grow">A new version of Tally is ready. Your data stays on this device.</span>
+      <button className="btn primary" onClick={applyUpdate}>Reload</button>
     </div>
   );
 }

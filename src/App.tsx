@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { handleUrlActions, load, useTally, type Expense } from "./data/store";
+import { handleUrlActions, load, runDueBills, useTally, type Expense } from "./data/store";
 import { Icon } from "./ui/icons";
-import { ToastHost, useLongPress } from "./ui/components";
+import { ToastHost, UpdateBar, useLongPress } from "./ui/components";
 import { Home } from "./screens/Home";
 import { QuickAdd, SmartAdd } from "./screens/AddSheets";
 import { Detail } from "./screens/Detail";
@@ -9,6 +9,7 @@ import { Finances } from "./screens/Finances";
 import { Plan } from "./screens/Plan";
 import { Inbox, Onboarding, Recap, Search, Settings } from "./screens/More";
 import { unlock } from "./screens/lock";
+import { startNativeBridge } from "./data/native";
 
 type Tab = "home" | "finances" | "plan" | "inbox";
 
@@ -24,14 +25,49 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: "inbox", label: "Inbox", icon: "inbox" },
 ];
 
+const tabFromHash = (): Tab => TABS.find((t) => `#${t.id}` === location.hash)?.id ?? "home";
+
 export function App() {
   const s = useTally();
-  const [tab, setTab] = useState<Tab>(() => (location.hash.slice(1) as Tab) || "home");
+  const [tab, setTab] = useState<Tab>(tabFromHash);
   const [sheet, setSheet] = useState<SheetName>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [addDate, setAddDate] = useState<Date | null>(null);
+  const [dbBlocked, setDbBlocked] = useState(false);
   const [locked, setLocked] = useState(false);
 
   useEffect(() => { void load(); }, []);
+
+  // Tally may stay open for days: when it comes back into view, add any bills that fell due meanwhile.
+  useEffect(() => {
+    if (!s.ready) return;
+    const onVisible = () => { if (document.visibilityState === "visible") runDueBills(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [s.ready]);
+
+  // Another tab on the previous version can hold the database while this one upgrades it.
+  useEffect(() => {
+    const onBlocked = () => setDbBlocked(true);
+    window.addEventListener("tally:db-blocked", onBlocked);
+    return () => window.removeEventListener("tally:db-blocked", onBlocked);
+  }, []);
+
+  // Tally for Mac: keep the desktop widgets current. No effect in a browser.
+  useEffect(() => { if (s.ready) startNativeBridge(); }, [s.ready]);
+
+  // Widgets open a tab by setting the hash (e.g. #plan) without reloading the page.
+  useEffect(() => {
+    const onHash = () => setTab(tabFromHash());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  // Lets the website greet returning users with "Open your Tally". Holds no expense data.
+  useEffect(() => {
+    if (!s.settings.onboarded) return;
+    try { localStorage.setItem("tally:onboarded", "1"); } catch { /* storage blocked */ }
+  }, [s.settings.onboarded]);
 
   // Lock on start and when returning to the app.
   useEffect(() => {
@@ -66,7 +102,15 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [sheet, detailId]);
 
-  if (!s.ready) return <div className="lock"><span className="t-muted">Loading…</span></div>;
+  if (!s.ready) {
+    return (
+      <div className="lock">
+        <span className="t-muted" style={{ maxWidth: 320 }}>
+          {dbBlocked ? "Tally is open in another tab or window. Close it to finish updating; this page continues on its own." : "Loading…"}
+        </span>
+      </div>
+    );
+  }
   if (!s.settings.onboarded) return <Onboarding />;
 
   const pending = s.expenses.filter((e) => e.pending).length;
@@ -88,12 +132,16 @@ export function App() {
         ))}
         <button className="btn primary add" onClick={() => setSheet("quickAdd")}><Icon name="plus" size={18} />Add expense</button>
         <button className="btn" onClick={() => setSheet("smartAdd")}>Smart add</button>
-        <p className="hint"><span className="kbd">N</span> add · <span className="kbd">S</span> smart · <span className="kbd">/</span> search</p>
+        <div className="foot">
+          <p className="hint"><span className="kbd">N</span> add · <span className="kbd">S</span> smart · <span className="kbd">/</span> search</p>
+          <p className="hint"><a href="/">About Tally</a> · <a href="/privacy">Privacy</a></p>
+        </div>
       </nav>
 
       <main className="main">
+        <UpdateBar />
         {tab === "home" && (
-          <Home onOpen={openDetail} onAdd={() => setSheet("quickAdd")} onSearch={() => setSheet("search")}
+          <Home onOpen={openDetail} onAdd={(day) => { setAddDate(day ?? null); setSheet("quickAdd"); }} onSearch={() => setSheet("search")}
             onRecap={() => setSheet("recap")} onInbox={() => setTab("inbox")} onSettings={() => setSheet("settings")} />
         )}
         {tab === "finances" && <Finances />}
@@ -117,7 +165,7 @@ export function App() {
         ))}
       </nav>
 
-      <QuickAdd open={sheet === "quickAdd"} onClose={close} onSmart={() => setSheet("smartAdd")} />
+      <QuickAdd open={sheet === "quickAdd"} initialDate={addDate} onClose={() => { setAddDate(null); close(); }} onSmart={() => setSheet("smartAdd")} />
       <SmartAdd open={sheet === "smartAdd"} onClose={close} />
       <Search open={sheet === "search"} onClose={close} onOpen={(e) => { setSheet(null); setDetailId(e.id); }} />
       <Recap open={sheet === "recap"} onClose={close} />

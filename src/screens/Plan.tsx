@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import {
-  counts, deleteBill, deleteBudget, deleteGoal, inMonth, monthSpent, nextDue, saveBill, saveBudget, saveGoal, share, uid, useTally,
-  type Bill, type Goal,
+  counts, deleteBill, deleteBudget, deleteGoal, inMonth, logBill, monthSpent, nextDue, runDueBills, saveBill, saveBudget, saveGoal, share,
+  showToast, uid, useTally, type Bill, type Goal,
 } from "../data/store";
 import { CATEGORIES, CATEGORY_META, type Category } from "../core/categories";
 import { monthKey } from "../core/budget";
@@ -30,7 +30,7 @@ export function Plan() {
   const unbudgeted = CATEGORIES.filter((c) => !s.budgets.some((b) => b.category === c));
 
   return (
-    <div className="page">
+    <div className="page wide">
       <header className="page-head">
         <h1 className="display">Plan</h1>
         <span className="t-muted small">{now.toLocaleDateString([], { month: "long" })}</span>
@@ -79,7 +79,8 @@ export function Plan() {
                 <span className="grow col">
                   <span className="t-strong ellipsis">{b.name}</span>
                   <span className="tiny t-muted">
-                    {b.isSubscription ? "Subscription" : "Bill"}{b.autoLog ? " · auto-logs" : ""}
+                    {b.isSubscription ? "Subscription" : "Bill"}
+                    {b.lastLoggedMonth === monthKey(now) ? " · paid this month" : b.day <= now.getDate() ? " · not in expenses yet" : b.autoLog ? " · adds on due day" : ""}
                     {b.amount > b.prevAmount && b.prevAmount > 0 && <span style={{ color: "var(--warn)" }}> · price up from {formatMoney(b.prevAmount)}</span>}
                   </span>
                 </span>
@@ -160,23 +161,34 @@ function BudgetEditor({ category, onClose }: { category: Category | null; onClos
 
 function BillEditor({ value, onClose }: { value: Bill | "new" | null; onClose: () => void }) {
   const bill = value && value !== "new" ? value : null;
-  const [f, setF] = useState({ name: "", amount: "", day: 1, category: "bills" as Category, isSubscription: false, autoLog: false });
+  const [f, setF] = useState({ name: "", amount: "", day: 1, category: "bills" as Category, isSubscription: false, autoLog: true, logNow: true });
   const [seen, setSeen] = useState<typeof value>(null);
   if (value !== seen) {
     setSeen(value);
-    setF(bill ? { name: bill.name, amount: String(bill.amount / 100), day: bill.day, category: bill.category, isSubscription: bill.isSubscription, autoLog: bill.autoLog }
-      : { name: "", amount: "", day: new Date().getDate() > 28 ? 1 : new Date().getDate(), category: "bills", isSubscription: false, autoLog: false });
+    setF(bill ? { name: bill.name, amount: String(bill.amount / 100), day: bill.day, category: bill.category, isSubscription: bill.isSubscription, autoLog: bill.autoLog, logNow: false }
+      : { name: "", amount: "", day: new Date().getDate() > 28 ? 1 : new Date().getDate(), category: "bills", isSubscription: false, autoLog: true, logNow: true });
   }
   const p = parsePaise(f.amount);
+  const now = new Date();
+  const monthName = now.toLocaleDateString([], { month: "long" });
+  const loggedThisMonth = bill?.lastLoggedMonth === monthKey(now);
+  // A new bill whose due day has already come this month: offer to log this month's payment too.
+  const askLogNow = !bill && f.day <= now.getDate();
   const save = () => {
     if (!p) return;
-    const now = new Date();
-    saveBill({
+    const saved: Bill = {
       id: bill?.id ?? uid(), name: f.name, amount: p, prevAmount: bill ? (p !== bill.amount ? bill.amount : bill.prevAmount) : p,
       day: f.day, category: f.category, account: bill?.account ?? "UPI", isSubscription: f.isSubscription, autoLog: f.autoLog,
-      // Don't back-log a new bill whose day already passed this month.
-      lastLoggedMonth: bill?.lastLoggedMonth ?? (f.day < now.getDate() ? monthKey(now) : ""),
-    });
+      // A new bill already due this month counts as paid unless "log now" is on; then it's logged below.
+      lastLoggedMonth: bill?.lastLoggedMonth ?? (askLogNow && !f.logNow ? monthKey(now) : ""),
+    };
+    saveBill(saved);
+    if (askLogNow && f.logNow) {
+      logBill(saved, now);
+      showToast(`Logged ${saved.name} · ${formatMoney(saved.amount)} for ${monthName}`);
+    } else {
+      runDueBills(now);
+    }
     onClose();
   };
   return (
@@ -197,8 +209,20 @@ function BillEditor({ value, onClose }: { value: Bill | "new" | null; onClose: (
       </Field>
       <div>
         <Toggle label="Subscription" checked={f.isSubscription} onChange={(v) => setF({ ...f, isSubscription: v })} />
-        <Toggle label="Log automatically on the due day" hint="Added the next time you open Tally on or after the day" checked={f.autoLog} onChange={(v) => setF({ ...f, autoLog: v })} />
+        <Toggle label="Add to expenses on the due day" hint="Each month, on or after the due day, it's added to that month's spending" checked={f.autoLog} onChange={(v) => setF({ ...f, autoLog: v })} />
+        {askLogNow && (
+          <Toggle label={`Add ${monthName}'s payment now`} hint={`The due day has already come this month`} checked={f.logNow} onChange={(v) => setF({ ...f, logNow: v })} />
+        )}
       </div>
+      {bill && (loggedThisMonth
+        ? <p className="t-muted small" style={{ margin: 0 }}><Icon name="check" size={14} /> {monthName}'s payment is in your expenses.</p>
+        : (
+          <button className="btn block" onClick={() => {
+            logBill(bill, now);
+            showToast(`Logged ${bill.name} · ${formatMoney(bill.amount)} for ${monthName}`);
+            onClose();
+          }}>Add {monthName}'s payment to expenses</button>
+        ))}
       <button className="btn primary block" disabled={!f.name || !p} onClick={save}>Save</button>
       {bill && <button className="btn danger block" onClick={() => { deleteBill(bill.id); onClose(); }}>Delete</button>}
     </Sheet>

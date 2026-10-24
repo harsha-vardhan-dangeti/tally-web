@@ -1,0 +1,61 @@
+/* Tally colour tokens, shared by the app and the website. */
+:root {
+  --bg: #F3F4F6;
+  --surface: #FFFFFF;
+  --surface-2: #F7F8FA;
+  --fill: #EEF0F3;
+  --line: #E3E5EA;
+  --ink: #0E1116;
+  --ink-2: #3A3F4B;
+  --muted: #565C69;
+  --accent: #3446D6;
+  --accent-ink: #FFFFFF;
+  --accent-soft: #EEF0FF;
+  --hero: #0E1116;
+  --hero-ink: #FFFFFF;
+  --hero-muted: #B9BECA;
+  --hero-fill: #262C38;
+  --hero-bar: #8C9BFF;
+  --good: #0B7A47;
+  --good-soft: #E7F6EE;
+  --warn: #A3480C;
+  --warn-soft: #FFF4E5;
+  --danger: #C2321F;
+  --danger-soft: #FDECEA;
+  --shadow: 0 8px 24px rgba(14, 17, 22, 0.10);
+  --radius: 20px;
+  /* Charts (see src/ui/charts.tsx). De-emphasis grey, hairline grid, a one-hue sequential ramp for the
+     spending calendar, and the first four validated categorical slots for payment methods. */
+  --viz-muted: #C5CAD3;
+  --viz-grid: #E9EBEF;
+  --viz-seq-1: #CDE2FB; --viz-seq-2: #9EC5F4; --viz-seq-3: #6DA7EC; --viz-seq-4: #3987E5; --viz-seq-5: #256ABF;
+  --viz-seq-ink-1: #0E1116; --viz-seq-ink-2: #0E1116; --viz-seq-ink-3: #0E1116; --viz-seq-ink-4: #FFFFFF; --viz-seq-ink-5: #FFFFFF;
+  --viz-cat-1: #2A78D6; --viz-cat-2: #EB6834; --viz-cat-3: #1BAF7A; --viz-cat-4: #EDA100;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0B0D12; --surface: #171A21; --surface-2: #1C2029; --fill: #232833; --line: #2A2F3A;
+    --ink: #F2F3F5; --ink-2: #D0D4DC; --muted: #A3A9B6; --accent: #8C9BFF; --accent-ink: #0B0D12; --accent-soft: #1F2540;
+    --hero: #1C2130; --hero-fill: #2A3040; --hero-bar: #8C9BFF;
+    --good: #5FD39A; --good-soft: #11301F; --warn: #FFB37A; --warn-soft: #2E2115; --danger: #FF8A7A; --danger-soft: #3A1A16;
+    --shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    --viz-muted: #3D4452; --viz-grid: #262B35;
+    --viz-seq-1: #104281; --viz-seq-2: #184F95; --viz-seq-3: #256ABF; --viz-seq-4: #3987E5; --viz-seq-5: #6DA7EC;
+    --viz-seq-ink-1: #FFFFFF; --viz-seq-ink-2: #FFFFFF; --viz-seq-ink-3: #FFFFFF; --viz-seq-ink-4: #FFFFFF; --viz-seq-ink-5: #0B0D12;
+    --viz-cat-1: #3987E5; --viz-cat-2: #D95926; --viz-cat-3: #199E70; --viz-cat-4: #C98500;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0B0D12; --surface: #171A21; --surface-2: #1C2029; --fill: #232833; --line: #2A2F3A;
+  --ink: #F2F3F5; --ink-2: #D0D4DC; --muted: #A3A9B6; --accent: #8C9BFF; --accent-ink: #0B0D12; --accent-soft: #1F2540;
+  --hero: #1C2130; --hero-fill: #2A3040; --hero-bar: #8C9BFF;
+  --good: #5FD39A; --good-soft: #11301F; --warn: #FFB37A; --warn-soft: #2E2115; --danger: #FF8A7A; --danger-soft: #3A1A16;
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --viz-muted: #3D4452; --viz-grid: #262B35;
+  --viz-seq-1: #104281; --viz-seq-2: #184F95; --viz-seq-3: #256ABF; --viz-seq-4: #3987E5; --viz-seq-5: #6DA7EC;
+  --viz-seq-ink-1: #FFFFFF; --viz-seq-ink-2: #FFFFFF; --viz-seq-ink-3: #FFFFFF; --viz-seq-ink-4: #FFFFFF; --viz-seq-ink-5: #0B0D12;
+  --viz-cat-1: #3987E5; --viz-cat-2: #D95926; --viz-cat-3: #199E70; --viz-cat-4: #C98500;
+  color-scheme: dark;
+}

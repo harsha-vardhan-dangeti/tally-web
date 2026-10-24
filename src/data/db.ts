@@ -1,8 +1,9 @@
 /** Tiny IndexedDB wrapper. Everything stays in this browser — no server. */
 
 const DB_NAME = "tally";
-const DB_VERSION = 1;
-export const STORES = ["expenses", "chips", "budgets", "bills", "accounts", "goals", "kv"] as const;
+// 2: adds "incomes". New stores are created on upgrade; existing data is untouched.
+const DB_VERSION = 2;
+export const STORES = ["expenses", "chips", "budgets", "bills", "accounts", "goals", "incomes", "kv"] as const;
 export type StoreName = (typeof STORES)[number];
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -19,7 +20,13 @@ function open(): Promise<IDBDatabase> {
         }
       }
     };
-    req.onsuccess = () => resolve(req.result);
+    // A Tally tab still open on the previous version holds the database until it's closed.
+    req.onblocked = () => window.dispatchEvent(new Event("tally:db-blocked"));
+    req.onsuccess = () => {
+      // A newer release needs to upgrade the database: let it, and reload this tab onto the new code.
+      req.result.onversionchange = () => { req.result.close(); location.reload(); };
+      resolve(req.result);
+    };
     req.onerror = () => reject(req.error);
   });
   return dbPromise;
@@ -59,6 +66,22 @@ export const db = {
       values.forEach((v) => s.put(v));
       t.oncomplete = () => resolve();
       t.onerror = () => reject(t.error);
+    });
+  },
+  /** Clears `replace` stores and writes `rows` in one transaction: if anything fails, nothing changes. */
+  async replaceAll(replace: StoreName[], rows: Partial<Record<StoreName, unknown[]>>): Promise<void> {
+    const database = await open();
+    const names = [...new Set([...replace, ...(Object.keys(rows) as StoreName[])])];
+    await new Promise<void>((resolve, reject) => {
+      const t = database.transaction(names, "readwrite");
+      for (const name of replace) t.objectStore(name).clear();
+      for (const [name, values] of Object.entries(rows) as [StoreName, unknown[]][]) {
+        const s = t.objectStore(name);
+        values.forEach((v) => s.put(v));
+      }
+      t.oncomplete = () => resolve();
+      t.onerror = () => reject(t.error);
+      t.onabort = () => reject(t.error ?? new Error("Restore was cancelled"));
     });
   },
 };

@@ -3,21 +3,142 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Tally — Expense Tracker</title>
-    <meta name="description" content="Log a spend in 3 seconds and always know what's safe to spend today. Private: your data stays on your device." />
+    <script src="/forward.js"></script>
+    <title>Tally: know what's safe to spend today</title>
+    <meta name="description" content="A free expense tracker for rupee budgets. Log a spend in three seconds and see what's safe to spend today. No sign-up, works offline, and your data stays on your device." />
     <meta name="theme-color" content="#F3F4F6" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0B0D12" media="(prefers-color-scheme: dark)" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="Tally" />
+    <meta property="og:title" content="Tally: know what's safe to spend today" />
+    <meta property="og:description" content="Log a spend in three seconds. No sign-up, works offline, and your data stays on your device." />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="/icons/icon-512.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
   </head>
-  <body>
-    <div id="root"></div>
-    <noscript>Tally needs JavaScript to run.</noscript>
-    <script type="module" src="/src/main.tsx"></script>
+  <body class="site">
+    <header class="site-head wrap-x">
+      <a class="logo" href="/" aria-label="Tally home">
+        <span class="mark" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 5v14M10 5v14M14 5v14M18 5v14M4 15L20 9" /></svg></span>
+        Tally
+      </a>
+      <nav class="head-nav" aria-label="Site">
+        <a href="#data">Your data</a>
+        <a href="/privacy">Privacy</a>
+        <a class="btn-site primary" href="/app" data-open-app>Open Tally</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero-site wrap-x">
+        <div class="hero-copy">
+          <p class="eyebrow">Expense tracker · free · no sign-up</p>
+          <h1>Know what's safe to spend today.</h1>
+          <p class="lede">Log a spend in three seconds by typing a sentence or tapping a repeat. Tally keeps your month on budget, and everything you log stays in your browser.</p>
+          <div class="cta-row">
+            <a class="btn-site primary big" href="/app" data-open-app>Open Tally</a>
+            <a class="btn-site big" href="#data">How your data is stored</a>
+          </div>
+          <p class="fine">Works offline on iPhone, Android and desktop.</p>
+        </div>
+
+        <div class="demo" aria-labelledby="demo-title">
+          <div class="demo-card">
+            <div class="demo-top">
+              <span id="demo-title" class="demo-label">Safe to spend today</span>
+              <span class="demo-pill">Sample budget ₹30,000</span>
+            </div>
+            <output class="demo-safe num" id="demo-safe" aria-live="polite">₹0</output>
+            <div class="demo-bar" aria-hidden="true"><div id="demo-bar"></div></div>
+            <div class="demo-stats">
+              <div><span>Spent this month</span><b class="num" id="demo-spent">₹0</b></div>
+              <div><span>Left</span><b class="num" id="demo-left">₹0</b></div>
+              <div><span>Days left</span><b class="num" id="demo-days">0</b></div>
+            </div>
+          </div>
+
+          <form class="demo-form" id="demo-form" autocomplete="off">
+            <label for="demo-input">Try Smart add: type what you spent</label>
+            <div class="demo-input-row">
+              <input id="demo-input" type="text" value="lunch 350 at chutneys, split with arjun" spellcheck="false" />
+              <button type="submit" class="btn-site primary">Log</button>
+            </div>
+            <div class="demo-tries" aria-label="Examples">
+              <button type="button" data-try="auto 120 by cash">auto 120 by cash</button>
+              <button type="button" data-try="groceries 1.2k at dmart">groceries 1.2k at dmart</button>
+              <button type="button" data-try="netflix 649 on card">netflix 649 on card</button>
+              <button type="button" data-try="dinner 2400 split 3 ways yesterday">dinner 2400 split 3 ways yesterday</button>
+            </div>
+          </form>
+
+          <dl class="demo-parse" id="demo-parse" aria-live="polite"></dl>
+          <ul class="demo-log" id="demo-log" aria-label="Logged in this demo"></ul>
+          <p class="demo-proof"><span class="dot" aria-hidden="true"></span>Network requests since you started typing: <b class="num" id="demo-requests">0</b>. The demo runs Tally's own parser in this page.</p>
+        </div>
+      </section>
+
+      <section class="band wrap-x" aria-labelledby="ways-title">
+        <h2 id="ways-title">Three ways to log, each under three seconds</h2>
+        <div class="ways">
+          <article class="way">
+            <div class="way-visual"><span class="chip-demo">Coffee · ₹180</span><span class="chip-demo">Auto · ₹120</span></div>
+            <h3>Tap a repeat</h3>
+            <p>Pin the things you buy every week. One tap logs it; hold it to log ₹50 more or less.</p>
+          </article>
+          <article class="way">
+            <div class="way-visual"><code>lunch 350 at chutneys, split with arjun</code></div>
+            <h3>Type a sentence</h3>
+            <p>Smart add reads the amount, place, payment method and who you split with. Paste several lines at once, or snap a receipt and it's read on your phone.</p>
+          </article>
+          <article class="way">
+            <div class="way-visual"><code>/app?capture=640&amp;merchant=Amazon</code></div>
+            <h3>Let your iPhone log it</h3>
+            <p>Run a Shortcut from the Action Button, Back Tap or Siri. With an Apple Pay automation, every tap-to-pay waits in your Inbox for a one-tap confirm.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="band wrap-x" aria-labelledby="more-title">
+        <h2 id="more-title">The rest of your money, in the same place</h2>
+        <ul class="features">
+          <li><b>Budgets</b><span>One for the month and one per category, with a nudge at 80% and 100%.</span></li>
+          <li><b>Bills and subscriptions</b><span>Due dates, auto-logging on the day, and a flag when a price goes up.</span></li>
+          <li><b>Month-end forecast</b><span>Where you'll land at this pace, compared with the same point last month.</span></li>
+          <li><b>Splits</b><span>Split a bill N ways; only your share counts toward your budget.</span></li>
+          <li><b>Net worth and goals</b><span>Your accounts, a 6-month spending chart and savings goals.</span></li>
+          <li><b>Export</b><span>A JSON backup you can restore anywhere, and CSV for spreadsheets.</span></li>
+        </ul>
+      </section>
+
+      <section class="band data wrap-x" id="data" aria-labelledby="data-title">
+        <div class="data-head">
+          <h2 id="data-title">Your data stays on your device</h2>
+          <p>Tally has no accounts and no server that stores expenses. The website delivers the app; your numbers never leave the browser you use it in.</p>
+        </div>
+        <dl class="facts">
+          <div><dt>Where it's stored</dt><dd>In this browser's own database (IndexedDB) on your device. Tally asks the browser to keep it from being cleared to free up space.</dd></div>
+          <div><dt>What gets sent</dt><dd>Nothing you log. The only download after the first visit is the receipt reader, fetched from jsDelivr the first time you scan a receipt. The photo itself is read on your device.</dd></div>
+          <div><dt>When Tally updates</dt><dd>A new version downloads in the background and Tally shows <i>Update ready</i>. Reloading swaps the app's files; your expenses aren't touched.</dd></div>
+          <div><dt>Backups</dt><dd>One tap saves a JSON file you keep. Restoring checks the file before anything changes, and you can put your earlier data back afterwards.</dd></div>
+          <div><dt>The trade-off</dt><dd>Clearing this site's data in your browser deletes your expenses, and data doesn't sync between devices. Tally reminds you to back up every 30 days.</dd></div>
+        </dl>
+      </section>
+
+      <section class="band wrap-x" aria-labelledby="install-title">
+        <h2 id="install-title">Put it one tap away</h2>
+        <div class="install">
+          <div><h3>iPhone</h3><p>Open Tally in Safari, then Share → <b>Add to Home Screen</b>. If you'll log from Shortcuts, turn off <b>Open as Web App</b> so both use Safari's data.</p></div>
+          <div><h3>Android</h3><p>Open Tally in Chrome, then menu → <b>Install app</b>. Long-press the icon for Quick add and Smart add.</p></div>
+          <div><h3>Computer</h3><p>Install it from the address bar, or keep a tab open. Press <kbd>N</kbd> to log and <kbd>/</kbd> to search.</p></div>
+        </div>
+        <a class="btn-site primary big" href="/app" data-open-app>Open Tally</a>
+      </section>
+    </main>
+
+    <footer class="site-foot wrap-x">
+      <span>Tally · made for rupee budgets</span>
+      <nav aria-label="Footer"><a href="/app">Open Tally</a><a href="/privacy">Privacy</a></nav>
+    </footer>
+    <script type="module" src="/src/landing/main.ts"></script>
   </body>
 </html>

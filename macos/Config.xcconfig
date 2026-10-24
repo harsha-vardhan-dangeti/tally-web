@@ -1,0 +1,14 @@
+// Tally for Mac settings. Edit these, then run `xcodegen` in this folder.
+
+// Your Apple developer team ID. A free Apple ID works: in Xcode, Settings → Accounts → add your
+// Apple ID, then copy the Team ID shown for "Personal Team" (10 characters, like A1B2C3D4E5).
+DEVELOPMENT_TEAM =
+
+// Must be unique to you. Change it if Xcode says the identifier isn't available.
+BUNDLE_ID = com.harsha.tally
+
+// The Tally website the app loads. Its data stays in the app on this Mac.
+TALLY_URL = https:/$()/tally-web-kappa.vercel.app
+
+// Shared folder for the app and its widgets. macOS needs the team ID in front.
+APP_GROUP_ID = $(DEVELOPMENT_TEAM).$(BUNDLE_ID)

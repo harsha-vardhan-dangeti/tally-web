@@ -1,13 +1,14 @@
 import { useMemo, useRef, useState, type PointerEvent as RPointerEvent } from "react";
 import {
-  addExpense, budgetSnapshot, counts, deleteChip, deleteExpense, expenseTitle, inMonth, makeRecurring, saveChip, share,
-  showToast, uid, updateExpense, useTally, type Chip, type Expense,
+  addExpense, backupOverdueDays, budgetSnapshot, counts, deleteChip, deleteExpense, expenseTitle, inMonth, makeRecurring, saveChip, share,
+  showToast, uid, updateExpense, useTally, type Chip, type Expense, type Income,
 } from "../data/store";
 import { addMonths, sameDay, snapshot, startOfDay } from "../core/budget";
 import { formatMoney, parsePaise } from "../core/money";
 import { CATEGORIES, CATEGORY_META, type Category } from "../core/categories";
 import { CategoryIcon, Icon } from "../ui/icons";
 import { Empty, Field, Sheet, SwipeRow, useLongPress } from "../ui/components";
+import { DaySheet, IncomeEditor, MonthCalendar } from "./Calendar";
 
 export function ExpenseRowView({ e }: { e: Expense }) {
   const time = new Date(e.occurredAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -69,10 +70,19 @@ function ChipButton({ chip, onEdit }: { chip: Chip; onEdit: (c: Chip) => void })
 }
 
 export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings }: {
-  onOpen: (e: Expense) => void; onAdd: () => void; onSearch: () => void; onRecap: () => void; onInbox: () => void; onSettings: () => void;
+  onOpen: (e: Expense) => void; onAdd: (day?: Date) => void; onSearch: () => void; onRecap: () => void; onInbox: () => void; onSettings: () => void;
 }) {
   const s = useTally();
   const [offset, setOffset] = useState(0);
+  const [view, setView] = useState<"list" | "calendar">(() => {
+    try { return localStorage.getItem("tally:homeView") === "calendar" ? "calendar" : "list"; } catch { return "list"; }
+  });
+  const [pickedDay, setPickedDay] = useState<Date | null>(null);
+  const [incomeEdit, setIncomeEdit] = useState<{ income: Income | null; day: Date } | null>(null);
+  const changeView = (v: "list" | "calendar") => {
+    setView(v);
+    try { localStorage.setItem("tally:homeView", v); } catch { /* storage blocked: the choice lasts this visit */ }
+  };
   const [chipMenu, setChipMenu] = useState<Chip | null>(null);
   const [newChip, setNewChip] = useState(false);
   const [pull, setPull] = useState(0);
@@ -133,9 +143,10 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings }: 
 
   const hour = now.getHours();
   const loggedToday = s.expenses.some((e) => !e.pending && sameDay(new Date(e.occurredAt), now));
+  const backupDays = backupOverdueDays(s);
 
   return (
-    <div className="page" onTouchStart={touchStart} onTouchMove={touchMove} onTouchEnd={touchEnd}
+    <div className="page home" onTouchStart={touchStart} onTouchMove={touchMove} onTouchEnd={touchEnd}
       style={{ transform: pull ? `translateY(${pull / 2}px)` : undefined }}>
       {pull > 0 && <div className="pull-hint" style={{ opacity: Math.min(pull / 80, 1) }}>{pull > 80 ? "Release to search" : "Pull to search"}</div>}
       <header className="page-head">
@@ -149,78 +160,100 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings }: 
         </div>
       </header>
 
-      <section className="hero" onPointerDown={heroDown} onPointerUp={heroUp} aria-label="Monthly summary. Swipe sideways to change month, tap for recap"
-        role="button" tabIndex={0} onKeyDown={(e) => {
-          if (e.key === "ArrowLeft") setOffset((o) => o - 1);
-          if (e.key === "ArrowRight") setOffset((o) => Math.min(o + 1, 0));
-          if (e.key === "Enter") onRecap();
-        }}>
-        <div className="row between" style={{ alignItems: "flex-start" }}>
-          <div className="col gap4">
-            <span className="label">Spent {isCurrent ? "this month" : "in " + monthDate.toLocaleDateString([], { month: "long" })}</span>
-            <span className="amount display num">{formatMoney(snap.spent)}</span>
+      <div className="home-aside col gap16">
+        <section className="hero" onPointerDown={heroDown} onPointerUp={heroUp} aria-label="Monthly summary. Swipe sideways to change month, tap for recap"
+          role="button" tabIndex={0} onKeyDown={(e) => {
+            if (e.key === "ArrowLeft") setOffset((o) => o - 1);
+            if (e.key === "ArrowRight") setOffset((o) => Math.min(o + 1, 0));
+            if (e.key === "Enter") onRecap();
+          }}>
+          <div className="row between" style={{ alignItems: "flex-start" }}>
+            <div className="col gap4">
+              <span className="label">Spent {isCurrent ? "this month" : "in " + monthDate.toLocaleDateString([], { month: "long" })}</span>
+              <span className="amount display num">{formatMoney(snap.spent)}</span>
+            </div>
+            {snap.hasBudget && <span className="pill num">of {formatMoney(snap.budget)}</span>}
           </div>
-          {snap.hasBudget && <span className="pill num">of {formatMoney(snap.budget)}</span>}
-        </div>
-        {snap.hasBudget ? (
-          <>
-            <div className="progress"><div style={{ width: `${Math.min(snap.fractionUsed, 1) * 100}%`, background: snap.isOver ? "#FF8A7A" : "var(--hero-bar)" }} /></div>
-            <div className="stats">
-              <div className="col"><span>{snap.left >= 0 ? "Left" : "Over"}</span><span className="num">{formatMoney(Math.abs(snap.left))}</span></div>
-              {isCurrent && <div className="col"><span>Safe today</span><span className="num">{formatMoney(snap.leftToday)}</span></div>}
-              {isCurrent && <div className="col"><span>Days left</span><span className="num">{snap.daysLeft}</span></div>}
-            </div>
-          </>
-        ) : (
-          <button className="btn" onClick={(e) => { e.stopPropagation(); onSettings(); }} onPointerUp={(e) => e.stopPropagation()}>Set a monthly budget</button>
+          {snap.hasBudget ? (
+            <>
+              <div className="progress"><div style={{ width: `${Math.min(snap.fractionUsed, 1) * 100}%`, background: snap.isOver ? "#FF8A7A" : "var(--hero-bar)" }} /></div>
+              <div className="stats">
+                <div className="col"><span>{snap.left >= 0 ? "Left" : "Over"}</span><span className="num">{formatMoney(Math.abs(snap.left))}</span></div>
+                {isCurrent && <div className="col"><span>Safe today</span><span className="num">{formatMoney(snap.leftToday)}</span></div>}
+                {isCurrent && <div className="col"><span>Days left</span><span className="num">{snap.daysLeft}</span></div>}
+              </div>
+            </>
+          ) : (
+            <button className="btn" onClick={(e) => { e.stopPropagation(); onSettings(); }} onPointerUp={(e) => e.stopPropagation()}>Set a monthly budget</button>
+          )}
+          <span className="tiny" style={{ color: "var(--hero-muted)" }}>
+            {isCurrent ? "Swipe sideways for past months · tap for recap" : "Swipe left to come back to this month"}
+          </span>
+        </section>
+
+        <section className="col gap8">
+          <div className="section-title"><span>One-tap repeats</span><span className="t-muted">Hold to edit</span></div>
+          <div className="chips">
+            {s.chips.map((c) => <ChipButton key={c.id} chip={c} onEdit={setChipMenu} />)}
+            <button className="chip dashed" onClick={() => setNewChip(true)}>+ Pin</button>
+          </div>
+        </section>
+
+        {pending > 0 && (
+          <button className="banner" onClick={onInbox}>
+            <Icon name="inbox" size={20} />
+            <span className="grow">{pending} captured payment{pending === 1 ? "" : "s"} to review</span>
+            <Icon name="next" size={16} />
+          </button>
         )}
-        <span className="tiny" style={{ color: "var(--hero-muted)" }}>
-          {isCurrent ? "Swipe sideways for past months · tap for recap" : "Swipe left to come back to this month"}
-        </span>
-      </section>
+        {isCurrent && !loggedToday && hour >= 19 && month.length > 0 && (
+          <button className="banner" style={{ background: "var(--accent-soft)", color: "var(--accent)" }} onClick={() => onAdd()}>
+            <Icon name="plus" size={20} /><span className="grow">Anything to log for today?</span>
+          </button>
+        )}
+        {backupDays !== null && (
+          <button className="banner" onClick={onSettings}>
+            <Icon name="download" size={20} />
+            <span className="grow">{s.settings.lastBackupAt ? `Last backup was ${backupDays} days ago` : "You haven't backed up yet"}. Your data lives only in this browser.</span>
+            <Icon name="next" size={16} />
+          </button>
+        )}
+      </div>
 
-      <section className="col gap8">
-        <div className="section-title"><span>One-tap repeats</span><span className="t-muted">Hold to edit</span></div>
-        <div className="chips">
-          {s.chips.map((c) => <ChipButton key={c.id} chip={c} onEdit={setChipMenu} />)}
-          <button className="chip dashed" onClick={() => setNewChip(true)}>+ Pin</button>
+      <div className="home-feed col gap16">
+        <div className="view-switch" role="group" aria-label="Show expenses as">
+          <button aria-pressed={view === "list"} onClick={() => changeView("list")}><Icon name="inbox" size={16} />List</button>
+          <button aria-pressed={view === "calendar"} onClick={() => changeView("calendar")}><Icon name="grid" size={16} />Calendar</button>
         </div>
-      </section>
 
-      {pending > 0 && (
-        <button className="banner" onClick={onInbox}>
-          <Icon name="inbox" size={20} />
-          <span className="grow">{pending} captured payment{pending === 1 ? "" : "s"} to review</span>
-          <Icon name="next" size={16} />
-        </button>
-      )}
-      {isCurrent && !loggedToday && hour >= 19 && month.length > 0 && (
-        <button className="banner" style={{ background: "var(--accent-soft)", color: "var(--accent)" }} onClick={onAdd}>
-          <Icon name="plus" size={20} /><span className="grow">Anything to log for today?</span>
-        </button>
-      )}
+        {view === "calendar" ? (
+          <MonthCalendar month={monthDate} onPrev={() => setOffset((o) => o - 1)}
+            onNext={offset < 0 ? () => setOffset((o) => o + 1) : undefined} onPickDay={setPickedDay} />
+        ) : groups.length === 0 ? (
+          <div className="card">
+            <Empty title={isCurrent ? "Nothing logged yet" : "No expenses this month"}
+              body="Tap a repeat above, press + or N, or type a sentence with Smart add."
+              action={isCurrent ? <button className="btn primary" onClick={() => onAdd()}>Log an expense</button> : undefined} />
+          </div>
+        ) : (
+          groups.map(([day, items]) => (
+            <section key={day} className="col gap8">
+              <div className="section-title">
+                <span>{dayTitle(day)}</span>
+                <span className="t-muted num">{formatMoney(items.filter(counts).reduce((t, e) => t + share(e), 0))}</span>
+              </div>
+              <div className="card flush">
+                {items.map((e) => <SwipeExpense key={e.id} e={e} onOpen={() => onOpen(e)} />)}
+              </div>
+            </section>
+          ))
+        )}
+        {view === "list" && groups.length > 0 && <p className="t-muted tiny" style={{ textAlign: "center", margin: 0 }}>Swipe a row left to edit or delete, right to split or repeat</p>}
+      </div>
 
-      {groups.length === 0 ? (
-        <div className="card">
-          <Empty title={isCurrent ? "Nothing logged yet" : "No expenses this month"}
-            body="Tap a repeat above, press + or N, or type a sentence with Smart add."
-            action={isCurrent ? <button className="btn primary" onClick={onAdd}>Log an expense</button> : undefined} />
-        </div>
-      ) : (
-        groups.map(([day, items]) => (
-          <section key={day} className="col gap8">
-            <div className="section-title">
-              <span>{dayTitle(day)}</span>
-              <span className="t-muted num">{formatMoney(items.filter(counts).reduce((t, e) => t + share(e), 0))}</span>
-            </div>
-            <div className="card flush">
-              {items.map((e) => <SwipeExpense key={e.id} e={e} onOpen={() => onOpen(e)} />)}
-            </div>
-          </section>
-        ))
-      )}
-      {groups.length > 0 && <p className="t-muted tiny" style={{ textAlign: "center", margin: 0 }}>Swipe a row left to edit or delete, right to split or repeat</p>}
-
+      <DaySheet day={pickedDay} onClose={() => setPickedDay(null)} onOpenExpense={onOpen} onAddExpense={(day) => onAdd(day)}
+        onEditIncome={setIncomeEdit} />
+      <IncomeEditor value={incomeEdit} onClose={() => setIncomeEdit(null)} />
       <ChipEditor chip={chipMenu} open={chipMenu !== null || newChip} onClose={() => { setChipMenu(null); setNewChip(false); }} />
     </div>
   );

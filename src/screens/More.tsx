@@ -1,8 +1,10 @@
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  budgetSnapshot, counts, deleteExpense, eraseAll, exportCSV, exportJSON, expenseTitle, importJSON, inMonth,
-  setSettings, share, showToast, SOURCE_LABEL, updateExpense, useTally, type Expense,
+  budgetSnapshot, counts, deleteExpense, eraseAll, exportCSV, exportJSON, expenseTitle, getState, inMonth, restoreBackup,
+  setSettings, share, showToast, SOURCE_LABEL, undoRestore, updateExpense, useTally, type Expense,
 } from "../data/store";
+import { BackupError, parseBackup, type Backup } from "../data/backup";
+import { backupFileName, download } from "../ui/download";
 import { addMonths, snapshot, startOfDay } from "../core/budget";
 import { CATEGORIES, CATEGORY_META, type Category } from "../core/categories";
 import { formatMoney, parsePaise } from "../core/money";
@@ -65,12 +67,12 @@ export function Inbox({ onOpen }: { onOpen: (e: Expense) => void }) {
         <div className="card col gap12 small">
           <Tip title="One-tap Shortcut (Action Button, Back Tap, Siri)">
             Shortcuts app → <b>+</b> → add action <b>Open URLs</b> with<br />
-            <code className="inline">{origin}/?log=180&amp;note=Coffee&amp;cat=food</code><br />
+            <code className="inline">{origin}/app?log=180&amp;note=Coffee&amp;cat=food</code><br />
             Name it “Log coffee”. Then assign it in Settings → Action Button, or Accessibility → Touch → Back Tap, or just say “Hey Siri, log coffee”.
           </Tip>
           <Tip title="Apple Pay automation → Inbox">
             Shortcuts → Automation → <b>+</b> → <b>Transaction</b> → your cards → Run Immediately → action <b>Open URLs</b>:<br />
-            <code className="inline">{origin}/?capture=[Amount]&amp;merchant=[Merchant]</code><br />
+            <code className="inline">{origin}/app?capture=[Amount]&amp;merchant=[Merchant]</code><br />
             (insert the Amount and Merchant variables). Each tap-to-pay lands here as pending.
           </Tip>
           <Tip title="Important on iPhone">
@@ -198,19 +200,14 @@ export function Recap({ open, onClose }: { open: boolean; onClose: () => void })
 
 // ---------------- Settings ----------------
 
-function download(name: string, text: string, type: string) {
-  const url = URL.createObjectURL(new Blob([text], { type }));
-  const a = document.createElement("a");
-  a.href = url; a.download = name; a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
 export function Settings({ open, onClose }: { open: boolean; onClose: () => void }) {
   const s = useTally();
   const [budget, setBudget] = useState("");
   const [income, setIncome] = useState("");
   const [seen, setSeen] = useState(false);
   const [confirmErase, setConfirmErase] = useState(false);
+  const [incoming, setIncoming] = useState<Backup | null>(null);
+  const [restoring, setRestoring] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   if (open !== seen) {
     setSeen(open);
@@ -218,13 +215,35 @@ export function Settings({ open, onClose }: { open: boolean; onClose: () => void
       setBudget(s.settings.monthlyBudget ? String(s.settings.monthlyBudget / 100) : "");
       setIncome(s.settings.monthlyIncome ? String(s.settings.monthlyIncome / 100) : "");
       setConfirmErase(false);
+      setIncoming(null);
     }
   }
+  // After a restore the form must show the new budget, or closing Settings would write the old one back.
+  const syncForm = () => {
+    const { monthlyBudget, monthlyIncome } = getState().settings;
+    setBudget(monthlyBudget ? String(monthlyBudget / 100) : "");
+    setIncome(monthlyIncome ? String(monthlyIncome / 100) : "");
+  };
+  const restore = async (backup: Backup) => {
+    setRestoring(true);
+    try {
+      await restoreBackup(backup);
+      syncForm();
+      setIncoming(null);
+      showToast(`Restored ${backup.expenses.length} expenses`, () => { void undoRestore().then(() => { syncForm(); showToast("Swapped in your earlier data"); }); });
+    } catch {
+      showToast("Couldn't restore. Nothing on this device was changed.");
+    } finally {
+      setRestoring(false);
+    }
+  };
   const close = () => {
     setSettings({ monthlyBudget: parsePaise(budget) ?? 0, monthlyIncome: parsePaise(income) ?? 0 });
     onClose();
   };
   const stamp = new Date().toISOString().slice(0, 10);
+  const count = (n: number, noun: string, plural = `${noun}s`) => `${n} ${n === 1 ? noun : plural}`;
+  const date = (t: number) => new Date(t).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
 
   return (
     <Sheet open={open} onClose={close} title="Settings">
@@ -252,19 +271,44 @@ export function Settings({ open, onClose }: { open: boolean; onClose: () => void
           {s.settings.lastBackupAt ? ` Last backup ${new Date(s.settings.lastBackupAt).toLocaleDateString()}.` : " Back up regularly — clearing website data deletes it."}
         </p>
         <div className="row gap8 wrap">
-          <button className="btn" onClick={() => { download(`tally-backup-${stamp}.json`, exportJSON(), "application/json"); setSettings({ lastBackupAt: Date.now() }); }}>
+          <button className="btn" onClick={() => { download(backupFileName(), exportJSON(), "application/json"); setSettings({ lastBackupAt: Date.now() }); }}>
             <Icon name="download" size={18} />Back up (JSON)
           </button>
           <button className="btn" onClick={() => fileRef.current?.click()}><Icon name="upload" size={18} />Restore</button>
           <button className="btn" onClick={() => download(`tally-${stamp}.csv`, exportCSV(), "text/csv")}>Export CSV</button>
           <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={async (e) => {
             const f = e.target.files?.[0];
-            if (!f) return;
-            try { const n = await importJSON(await f.text()); showToast(`Restored ${n} expenses`); }
-            catch (err) { showToast((err as Error).message || "Couldn't read that file"); }
             e.target.value = "";
+            if (!f) return;
+            try { setIncoming(parseBackup(await f.text())); }
+            catch (err) { showToast(err instanceof BackupError ? err.message : "Couldn't read that file. Nothing on this device was changed."); }
           }} />
         </div>
+        {incoming && (
+          <div className="card col gap8" style={{ background: "var(--warn-soft)" }} role="alertdialog" aria-label="Confirm restore">
+            <span className="small t-strong" style={{ color: "var(--warn)" }}>Replace the data on this device?</span>
+            <span className="small">
+              The backup{incoming.exportedAt ? ` from ${date(Date.parse(incoming.exportedAt))}` : ""} has {count(incoming.expenses.length, "expense")},
+              {" "}{count(incoming.incomes.length, "income entry", "income entries")}, {count(incoming.bills.length, "bill")},
+              {" "}{count(incoming.accounts.length, "account")} and {count(incoming.goals.length, "goal")}.
+              It replaces the {count(s.expenses.length, "expense")} here. You can put the current data back afterwards.
+              {incoming.skipped > 0 && ` ${count(incoming.skipped, "unreadable row")} will be left out.`}
+            </span>
+            <div className="row gap8">
+              <button className="btn" onClick={() => setIncoming(null)} disabled={restoring}>Cancel</button>
+              <button className="btn primary" onClick={() => restore(incoming)} disabled={restoring}>{restoring ? "Restoring…" : "Replace and restore"}</button>
+            </div>
+          </div>
+        )}
+        {s.restorePointAt && !incoming && (
+          <div className="row gap8 between small" style={{ flexWrap: "wrap" }}>
+            <span className="t-muted">Tally kept a copy of the data it replaced on {date(s.restorePointAt)}. Swapping keeps a copy of what's here now.</span>
+            <button className="btn ghost" onClick={async () => {
+              try { await undoRestore(); syncForm(); showToast("Swapped in your earlier data"); }
+              catch (err) { showToast((err as Error).message); }
+            }}>Swap it back</button>
+          </div>
+        )}
       </div>
 
       {!confirmErase ? (

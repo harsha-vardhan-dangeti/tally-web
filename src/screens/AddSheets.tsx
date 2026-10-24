@@ -12,7 +12,10 @@ const toLocalInput = (d: Date) => {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 };
 
-export function QuickAdd({ open, onClose, onSmart }: { open: boolean; onClose: () => void; onSmart: () => void }) {
+/** `initialDate` pre-fills the date, e.g. when adding from a day in the calendar. */
+export function QuickAdd({ open, onClose, onSmart, initialDate }: {
+  open: boolean; onClose: () => void; onSmart: () => void; initialDate?: Date | null;
+}) {
   const s = useTally();
   const [digits, setDigits] = useState("");
   const [category, setCategory] = useState<Category>("food");
@@ -25,7 +28,7 @@ export function QuickAdd({ open, onClose, onSmart }: { open: boolean; onClose: (
   const swipedSave = useRef(false);
 
   useEffect(() => {
-    if (open) { setDigits(""); setNote(""); setSaved(0); setDate(toLocalInput(new Date())); setAccount(s.settings.defaultAccount); }
+    if (open) { setDigits(""); setNote(""); setSaved(0); setDate(toLocalInput(initialDate ?? new Date())); setAccount(s.settings.defaultAccount); }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const amount = (parseInt(digits || "0", 10) || 0) * 100;

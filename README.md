@@ -3,8 +3,43 @@
 Log a spend in 3 seconds and always know **what's safe to spend today**. It's a mobile-first web app (PWA), so you can add it to your iPhone Home Screen, and it also works on Android and desktop.
 
 - **Private by design:** all data stays in the browser (IndexedDB). There's no account, no server and no tracking.
-- **Works offline** after the first load, thanks to a service worker.
+- **Works offline** after the first load: the service worker caches every file of a release.
+- **Updates in place:** a new deploy downloads in the background and the app shows *Update ready → Reload*. Data is untouched.
 - **Stack:** React 19, TypeScript, Vite. Plain CSS with light/dark themes. No UI framework.
+
+## Site map
+
+| Path | File | What it is |
+|---|---|---|
+| `/` | `index.html` + `src/landing/` | Public landing page with a live Smart add demo |
+| `/app` | `app.html` + `src/main.tsx` | The app |
+| `/privacy` | `privacy.html` | Privacy page |
+| 404 | `404.html` | Not-found page |
+
+`public/forward.js` sends old app links that point at `/` (`/?log=`, `/?capture=`, `#finances`, Home Screen installs) on to `/app`.
+
+## Releases and offline support
+
+`sw/service-worker.js` is a template. At build time, the plugin in `vite.config.ts` writes `dist/sw.js` with:
+
+- a version hash of every output file, and
+- the exact list of files to precache. The build fails if a listed file is missing.
+
+A new release installs in the background and waits. `src/data/updates.ts` shows the *Update ready* bar, and Reload activates the new worker, which deletes the previous release's cache. If a release raises the IndexedDB version, open tabs on the old release close their connection and reload.
+
+## Data safety
+
+- **Restore** (`src/data/backup.ts`) checks the whole file before changing anything:
+  - It rejects non-Tally files, newer versions and rows with a broken amount or date.
+  - It fills defaults for older backups.
+- The restore is then written in one IndexedDB transaction, so it either fully happens or doesn't happen at all.
+- The data it replaces is kept as a restore point. **Swap it back** in Settings puts it back, and is itself reversible.
+- Home shows a reminder when there are 20+ expenses and no backup in 30 days.
+- A crash shows a recovery screen with Reload and Download backup instead of a blank page.
+
+## Security headers
+
+`vercel.json` sets a strict Content-Security-Policy, HSTS, `X-Frame-Options: DENY`, COOP, `nosniff`, `no-referrer` and a Permissions-Policy. The only third-party origin allowed is `cdn.jsdelivr.net`, for the receipt-OCR engine. `vite preview` serves the same headers, so CSP problems show up locally.
 
 ## Features
 
@@ -36,17 +71,23 @@ Tally reacts to URL parameters:
 
 | URL | Effect |
 |---|---|
-| `/?log=180&note=Coffee&cat=food` | Logs ₹180 immediately |
-| `/?capture=640&merchant=Amazon` | Adds a pending payment to Inbox |
-| `/?add` / `/?smart` | Opens Quick add / Smart add |
+| `/app?log=180&note=Coffee&cat=food` | Logs ₹180 immediately |
+| `/app?capture=640&merchant=Amazon` | Adds a pending payment to Inbox |
+| `/app?add` / `/app?smart` | Opens Quick add / Smart add |
+
+Links without `/app` (from before the website existed) still work; they're forwarded.
 
 To set one up:
 
 1. In the Shortcuts app, create a shortcut with the action **Open URLs** and one of the links above.
 2. Assign it to the Action Button or Back Tap, or run it with Siri.
-3. For Apple Pay, use an Automation with the **Transaction** trigger and an **Open URLs** action with `?capture=[Amount]&merchant=[Merchant]`.
+3. For Apple Pay, use an Automation with the **Transaction** trigger and an **Open URLs** action with `/app?capture=[Amount]&merchant=[Merchant]`.
 
 > **iPhone storage note:** Shortcuts open links in Safari. A Home Screen web app keeps its own separate storage. If you rely on Shortcuts, turn off **Open as Web App** when adding Tally to the Home Screen, so it shares Safari's data.
+
+## Tally for Mac and desktop widgets
+
+`macos/` holds a native macOS app that runs Tally and adds three desktop widgets: Month summary, Quick log and Upcoming bills. The web app sends them a small summary through `src/data/native.ts`, and the data stays on the Mac. See [macos/README.md](macos/README.md) to build it with Xcode.
 
 ## Run locally
 
@@ -55,6 +96,7 @@ npm install
 npm run dev       # http://localhost:5173
 npm test          # unit tests for money, budget maths and both parsers
 npm run build     # type-check + production build into dist/
+npm run preview   # serve dist/ with production headers at http://localhost:4173
 ```
 
 ## Deploy to Vercel

@@ -4,11 +4,12 @@ import { type Category, guessCategory } from "../core/categories";
 import { crossedThreshold, monthKey, monthRange, sameDay, snapshot, type BudgetSnapshot } from "../core/budget";
 import { formatMoney } from "../core/money";
 import { yourShare } from "../core/smartParser";
+import { parseBackup, type Backup } from "./backup";
 
-export type Source = "manual" | "smart" | "shortcut" | "capture" | "receipt" | "recurring" | "import";
+export type Source = "manual" | "smart" | "shortcut" | "capture" | "receipt" | "recurring" | "import" | "widget";
 export const SOURCE_LABEL: Record<Source, string> = {
   manual: "Logged in Tally", smart: "Smart add", shortcut: "Logged from a Shortcut",
-  capture: "Captured payment", receipt: "Scanned receipt", recurring: "Recurring bill", import: "Imported",
+  capture: "Captured payment", receipt: "Scanned receipt", recurring: "Recurring bill", import: "Imported", widget: "Logged from a desktop widget",
 };
 
 export interface Expense {
@@ -37,6 +38,16 @@ export type AccountKind = "bank" | "card" | "cash" | "investment";
 export const ACCOUNT_KIND_LABEL: Record<AccountKind, string> = { bank: "Bank", card: "Credit card", cash: "Cash", investment: "Investment" };
 export interface Account { id: string; name: string; kind: AccountKind; balance: number; order: number; updatedAt: number }
 export interface Goal { id: string; name: string; target: number; saved: number; deadline: number | null }
+/** Money received on a given day: salary, a refund, freelance work. */
+export interface Income {
+  id: string;
+  amount: number; // paise
+  source: string;
+  note: string;
+  account: string;
+  receivedAt: number; // epoch ms
+  createdAt: number;
+}
 export interface Settings {
   onboarded: boolean;
   monthlyBudget: number;
@@ -54,7 +65,10 @@ export interface State {
   bills: Bill[];
   accounts: Account[];
   goals: Goal[];
+  incomes: Income[];
   settings: Settings;
+  /** When the last restore replaced this device's data; that data can be put back until the next restore. */
+  restorePointAt: number | null;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -62,7 +76,8 @@ const DEFAULT_SETTINGS: Settings = {
 };
 
 let state: State = {
-  ready: false, expenses: [], chips: [], budgets: [], bills: [], accounts: [], goals: [], settings: DEFAULT_SETTINGS,
+  ready: false, expenses: [], chips: [], budgets: [], bills: [], accounts: [], goals: [], incomes: [], settings: DEFAULT_SETTINGS,
+  restorePointAt: null,
 };
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
@@ -71,11 +86,14 @@ function set(patch: Partial<State>) {
   emit();
 }
 
+/** Calls `l` after every state change; returns an unsubscribe function. */
+export function subscribe(l: () => void): () => void {
+  listeners.add(l);
+  return () => { listeners.delete(l); };
+}
+
 export function useTally(): State {
-  return useSyncExternalStore(
-    (l) => { listeners.add(l); return () => listeners.delete(l); },
-    () => state,
-  );
+  return useSyncExternalStore(subscribe, () => state);
 }
 export const getState = () => state;
 
@@ -87,17 +105,19 @@ const sortExpenses = (list: Expense[]) => [...list].sort((a, b) => b.occurredAt 
 // ---------- load ----------
 
 export async function load() {
-  const [expenses, chips, budgets, bills, accounts, goals, kv] = await Promise.all([
+  const [expenses, chips, budgets, bills, accounts, goals, incomes, kv] = await Promise.all([
     db.all<Expense>("expenses"), db.all<Chip>("chips"), db.all<CategoryBudget>("budgets"), db.all<Bill>("bills"),
-    db.all<Account>("accounts"), db.all<Goal>("goals"), db.all<{ key: string; value: unknown }>("kv"),
+    db.all<Account>("accounts"), db.all<Goal>("goals"), db.all<Income>("incomes"), db.all<{ key: string; value: unknown }>("kv"),
   ]);
   const settingsRow = kv.find((r) => r.key === "settings");
   const settings = { ...DEFAULT_SETTINGS, ...((settingsRow?.value as Partial<Settings>) ?? {}) };
+  const restorePoint = kv.find((r) => r.key === RESTORE_POINT)?.value as RestorePoint | undefined;
   set({
     ready: true,
     expenses: sortExpenses(expenses),
     chips: [...chips].sort((a, b) => a.order - b.order),
-    budgets, bills, accounts: [...accounts].sort((a, b) => a.order - b.order), goals, settings,
+    budgets, bills, accounts: [...accounts].sort((a, b) => a.order - b.order), goals, incomes: sortIncomes(incomes), settings,
+    restorePointAt: restorePoint?.savedAt ?? null,
   });
   if (chips.length === 0) await seedChips();
   runDueBills();
@@ -167,13 +187,17 @@ async function persist<T>(store: StoreName, value: T) {
 export interface NewExpense {
   amount: number; category: Category; merchant?: string; note?: string; account?: string | null;
   occurredAt?: number; source: Source; pending?: boolean; splitWays?: number; splitWith?: string;
+  /** Set by callers that may deliver the same expense twice (widget logs); defaults to a new ID. */
+  id?: string;
 }
 
 /** The single write path for every way of logging. */
 export function addExpense(input: NewExpense): Expense {
+  const existing = input.id ? state.expenses.find((x) => x.id === input.id) : undefined;
+  if (existing) return existing;
   const before = monthSpent(state.expenses, new Date());
   const e: Expense = {
-    id: uid(), amount: input.amount, merchant: input.merchant ?? "", note: input.note ?? "",
+    id: input.id ?? uid(), amount: input.amount, merchant: input.merchant ?? "", note: input.note ?? "",
     category: input.category, account: input.account || state.settings.defaultAccount,
     occurredAt: input.occurredAt ?? Date.now(), createdAt: Date.now(), source: input.source,
     pending: input.pending ?? false, splitWays: Math.max(input.splitWays ?? 1, 1), splitWith: input.splitWith ?? "",
@@ -272,6 +296,24 @@ export function deleteGoal(id: string) {
   void db.delete("goals", id);
 }
 
+// ---------- income ----------
+
+const sortIncomes = (list: Income[]) => [...list].sort((a, b) => b.receivedAt - a.receivedAt);
+
+export function saveIncome(income: Income) {
+  const rest = state.incomes.filter((x) => x.id !== income.id);
+  set({ incomes: sortIncomes([income, ...rest]) });
+  void persist("incomes", income);
+}
+
+export function deleteIncome(id: string, withUndo = true) {
+  const victim = state.incomes.find((x) => x.id === id);
+  if (!victim) return;
+  set({ incomes: state.incomes.filter((x) => x.id !== id) });
+  void db.delete("incomes", id);
+  if (withUndo) showToast(`Deleted ${victim.source || "income"} · ${formatMoney(victim.amount)}`, () => saveIncome(victim));
+}
+
 // ---------- recurring ----------
 
 export function nextDue(bill: Bill, from = new Date()): Date {
@@ -292,16 +334,25 @@ export function makeRecurring(e: Expense) {
   });
 }
 
+/** Logs a bill's payment for the month as an expense, once: the expense ID is fixed per bill and month. */
+export function logBill(bill: Bill, now = new Date()): Expense {
+  const key = monthKey(now);
+  const due = new Date(now.getFullYear(), now.getMonth(), bill.day, 9);
+  const e = addExpense({
+    id: `bill-${bill.id}-${key}`,
+    amount: bill.amount, category: bill.category, merchant: bill.name, account: bill.account,
+    // Paid early: dated today rather than in the future.
+    occurredAt: due.getTime() <= now.getTime() ? due.getTime() : now.getTime(), source: "recurring",
+  });
+  saveBill({ ...state.bills.find((b) => b.id === bill.id) ?? bill, lastLoggedMonth: key });
+  return e;
+}
+
+/** Bills set to log automatically whose due day has come this month and that aren't logged yet. */
 export function runDueBills(now = new Date()) {
   const key = monthKey(now);
   for (const bill of state.bills) {
-    if (bill.autoLog && bill.lastLoggedMonth !== key && bill.day <= now.getDate()) {
-      addExpense({
-        amount: bill.amount, category: bill.category, merchant: bill.name, account: bill.account,
-        occurredAt: new Date(now.getFullYear(), now.getMonth(), bill.day, 9).getTime(), source: "recurring",
-      });
-      saveBill({ ...bill, lastLoggedMonth: key });
-    }
+    if (bill.autoLog && bill.lastLoggedMonth !== key && bill.day <= now.getDate()) logBill(bill, now);
   }
 }
 
@@ -341,25 +392,50 @@ export function handleUrlActions(search: string, open: (sheet: "quickAdd" | "sma
 // ---------- backup ----------
 
 export function exportJSON(): string {
-  const { expenses, chips, budgets, bills, accounts, goals, settings } = state;
+  const { expenses, chips, budgets, bills, accounts, goals, incomes, settings } = state;
   return JSON.stringify({ app: "tally", version: 1, exportedAt: new Date().toISOString(),
-    expenses, chips, budgets, bills, accounts, goals, settings: { ...settings, lockCredentialId: null } }, null, 2);
+    expenses, chips, budgets, bills, accounts, goals, incomes, settings: { ...settings, lockCredentialId: null } }, null, 2);
 }
 
-export async function importJSON(text: string): Promise<number> {
-  const data = JSON.parse(text);
-  if (data.app !== "tally" || !Array.isArray(data.expenses)) throw new Error("Not a Tally backup file");
-  const stores: [StoreName, unknown[]][] = [
-    ["expenses", data.expenses], ["chips", data.chips ?? []], ["budgets", data.budgets ?? []],
-    ["bills", data.bills ?? []], ["accounts", data.accounts ?? []], ["goals", data.goals ?? []],
-  ];
-  for (const [name, rows] of stores) {
-    await db.clear(name);
-    await db.putMany(name, rows);
-  }
-  await db.put("kv", { key: "settings", value: { ...state.settings, ...data.settings, lockCredentialId: state.settings.lockCredentialId } });
+const DATA_STORES: StoreName[] = ["expenses", "chips", "budgets", "bills", "accounts", "goals", "incomes"];
+const RESTORE_POINT = "restorePoint";
+interface RestorePoint { savedAt: number; json: string }
+
+/**
+ * Replaces this device's data with a checked backup (see parseBackup) in a single transaction.
+ * The data it replaces is kept as a restore point, so the restore can be undone.
+ */
+export async function restoreBackup(backup: Backup): Promise<void> {
+  const point: RestorePoint = { savedAt: Date.now(), json: exportJSON() };
+  // Keep the lock and backup date from this device; everything else comes from the file.
+  const settings: Settings = {
+    ...state.settings, ...backup.settings,
+    lockCredentialId: state.settings.lockCredentialId, lastBackupAt: state.settings.lastBackupAt,
+  };
+  await db.replaceAll(DATA_STORES, {
+    expenses: backup.expenses, chips: backup.chips, budgets: backup.budgets, bills: backup.bills,
+    accounts: backup.accounts, goals: backup.goals, incomes: backup.incomes,
+    kv: [{ key: "settings", value: settings }, { key: RESTORE_POINT, value: point }],
+  });
   await load();
-  return data.expenses.length;
+}
+
+/**
+ * Puts back the data that the last restore replaced. It's a swap: the data on the device now
+ * becomes the new restore point, so nothing logged since the restore is lost for good.
+ */
+export async function undoRestore(): Promise<void> {
+  const kv = await db.all<{ key: string; value: unknown }>("kv");
+  const point = kv.find((r) => r.key === RESTORE_POINT)?.value as RestorePoint | undefined;
+  if (!point) throw new Error("There's no earlier data to put back.");
+  const backup = parseBackup(point.json);
+  const current: RestorePoint = { savedAt: Date.now(), json: exportJSON() };
+  await db.replaceAll(DATA_STORES, {
+    expenses: backup.expenses, chips: backup.chips, budgets: backup.budgets, bills: backup.bills,
+    accounts: backup.accounts, goals: backup.goals, incomes: backup.incomes,
+    kv: [{ key: "settings", value: { ...state.settings, ...backup.settings } }, { key: RESTORE_POINT, value: current }],
+  });
+  await load();
 }
 
 export function exportCSV(): string {
@@ -375,7 +451,21 @@ export function exportCSV(): string {
 }
 
 export async function eraseAll() {
-  for (const s of ["expenses", "chips", "budgets", "bills", "accounts", "goals"] as StoreName[]) await db.clear(s);
-  set({ expenses: [], chips: [], budgets: [], bills: [], accounts: [], goals: [] });
+  await db.replaceAll(DATA_STORES, {});
+  await db.delete("kv", RESTORE_POINT);
+  set({ expenses: [], chips: [], budgets: [], bills: [], accounts: [], goals: [], incomes: [], restorePointAt: null });
   await seedChips();
+}
+
+// ---------- backup reminder ----------
+
+const BACKUP_EVERY_DAYS = 30;
+
+/** Days since the last backup, once there's enough data to be worth losing and a backup is overdue. */
+export function backupOverdueDays(s: State, now = Date.now()): number | null {
+  const confirmed = s.expenses.filter((e) => !e.pending);
+  if (confirmed.length < 20) return null;
+  const since = s.settings.lastBackupAt ?? Math.min(...confirmed.map((e) => e.createdAt));
+  const days = Math.floor((now - since) / 86_400_000);
+  return days >= BACKUP_EVERY_DAYS ? days : null;
 }
