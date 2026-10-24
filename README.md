@@ -85,10 +85,6 @@ To set one up:
 
 > **iPhone storage note:** Shortcuts open links in Safari. A Home Screen web app keeps its own separate storage. If you rely on Shortcuts, turn off **Open as Web App** when adding Tally to the Home Screen, so it shares Safari's data.
 
-## Tally for Mac and desktop widgets
-
-`macos/` holds a native macOS app that runs Tally and adds three desktop widgets: Month summary, Quick log and Upcoming bills. The web app sends them a small summary through `src/data/native.ts`, and the data stays on the Mac. See [macos/README.md](macos/README.md) to build it with Xcode.
-
 ## Run locally
 
 ```bash

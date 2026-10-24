@@ -9,7 +9,6 @@ import { Finances } from "./screens/Finances";
 import { Plan } from "./screens/Plan";
 import { Inbox, Onboarding, Recap, Search, Settings } from "./screens/More";
 import { unlock } from "./screens/lock";
-import { startNativeBridge } from "./data/native";
 
 type Tab = "home" | "finances" | "plan" | "inbox";
 
@@ -52,9 +51,6 @@ export function App() {
     window.addEventListener("tally:db-blocked", onBlocked);
     return () => window.removeEventListener("tally:db-blocked", onBlocked);
   }, []);
-
-  // Tally for Mac: keep the desktop widgets current. No effect in a browser.
-  useEffect(() => { if (s.ready) startNativeBridge(); }, [s.ready]);
 
   // Widgets open a tab by setting the hash (e.g. #plan) without reloading the page.
   useEffect(() => {

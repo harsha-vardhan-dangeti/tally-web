@@ -21,7 +21,7 @@ export interface Backup {
 
 export class BackupError extends Error {}
 
-const SOURCES: Source[] = ["manual", "smart", "shortcut", "capture", "receipt", "recurring", "import", "widget"];
+const SOURCES: Source[] = ["manual", "smart", "shortcut", "capture", "receipt", "recurring", "import"];
 const KINDS: AccountKind[] = ["bank", "card", "cash", "investment"];
 
 type Row = Record<string, unknown>;

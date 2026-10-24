@@ -6,10 +6,10 @@ import { formatMoney } from "../core/money";
 import { yourShare } from "../core/smartParser";
 import { parseBackup, type Backup } from "./backup";
 
-export type Source = "manual" | "smart" | "shortcut" | "capture" | "receipt" | "recurring" | "import" | "widget";
+export type Source = "manual" | "smart" | "shortcut" | "capture" | "receipt" | "recurring" | "import";
 export const SOURCE_LABEL: Record<Source, string> = {
   manual: "Logged in Tally", smart: "Smart add", shortcut: "Logged from a Shortcut",
-  capture: "Captured payment", receipt: "Scanned receipt", recurring: "Recurring bill", import: "Imported", widget: "Logged from a desktop widget",
+  capture: "Captured payment", receipt: "Scanned receipt", recurring: "Recurring bill", import: "Imported",
 };
 
 export interface Expense {
@@ -187,7 +187,7 @@ async function persist<T>(store: StoreName, value: T) {
 export interface NewExpense {
   amount: number; category: Category; merchant?: string; note?: string; account?: string | null;
   occurredAt?: number; source: Source; pending?: boolean; splitWays?: number; splitWith?: string;
-  /** Set by callers that may deliver the same expense twice (widget logs); defaults to a new ID. */
+  /** For callers that may log the same expense twice, e.g. a bill auto-logged on two devices. */
   id?: string;
 }
 
