@@ -114,6 +114,8 @@ export function App() {
   if (!s.settings.onboarded) return <Onboarding />;
 
   const pending = s.expenses.filter((e) => e.pending).length;
+  // Inbox only matters when an iPhone Shortcut has captured something to review.
+  const tabs = TABS.filter((t) => t.id !== "inbox" || pending > 0 || tab === "inbox");
 
   return (
     <div className="shell">
@@ -124,7 +126,7 @@ export function App() {
           </span>
           Tally
         </div>
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button key={t.id} className="nav" aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}>
             <Icon name={t.icon} />{t.label}
             {t.id === "inbox" && pending > 0 && <span className="badge">{pending}</span>}
@@ -149,14 +151,14 @@ export function App() {
         {tab === "inbox" && <Inbox onOpen={openDetail} />}
       </main>
 
-      <nav className="tabbar" aria-label="Main">
-        {TABS.slice(0, 2).map((t) => (
+      <nav className="tabbar" aria-label="Main" style={{ gridTemplateColumns: `repeat(${tabs.length + 1}, minmax(0, 1fr))` }}>
+        {tabs.slice(0, 2).map((t) => (
           <button key={t.id} className="tab" aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}>
             <Icon name={t.icon} />{t.label}
           </button>
         ))}
         <AddFab onTap={() => setSheet("quickAdd")} onLong={() => setSheet("smartAdd")} />
-        {TABS.slice(2).map((t) => (
+        {tabs.slice(2).map((t) => (
           <button key={t.id} className="tab" aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}
             aria-label={t.id === "inbox" && pending ? `Inbox, ${pending} to review` : undefined}>
             <Icon name={t.icon} />{t.label}
