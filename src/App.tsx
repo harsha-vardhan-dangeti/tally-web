@@ -9,6 +9,7 @@ import { Finances } from "./screens/Finances";
 import { Plan } from "./screens/Plan";
 import { Inbox, Onboarding, Recap, Search, Settings } from "./screens/More";
 import { unlock } from "./screens/lock";
+import { startCloud } from "./data/cloud";
 
 type Tab = "home" | "finances" | "plan" | "inbox";
 
@@ -36,6 +37,9 @@ export function App() {
   const [locked, setLocked] = useState(false);
 
   useEffect(() => { void load(); }, []);
+
+  // Signed in with Google: pick up the session and keep this device in step with the others.
+  useEffect(() => { if (s.ready) void startCloud(); }, [s.ready]);
 
   // Tally may stay open for days: when it comes back into view, add any bills that fell due meanwhile.
   useEffect(() => {

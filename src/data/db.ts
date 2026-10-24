@@ -1,9 +1,10 @@
-/** Tiny IndexedDB wrapper. Everything stays in this browser — no server. */
+/** Tiny IndexedDB wrapper: this device's working copy. When signed in, cloud.ts also syncs it to Supabase. */
 
 const DB_NAME = "tally";
-// 2: adds "incomes". New stores are created on upgrade; existing data is untouched.
-const DB_VERSION = 2;
-export const STORES = ["expenses", "chips", "budgets", "bills", "accounts", "goals", "incomes", "kv"] as const;
+// 2: adds "incomes". 3: adds "outbox" (changes waiting to sync). New stores are created on upgrade;
+// existing data is untouched.
+const DB_VERSION = 3;
+export const STORES = ["expenses", "chips", "budgets", "bills", "accounts", "goals", "incomes", "kv", "outbox"] as const;
 export type StoreName = (typeof STORES)[number];
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -16,7 +17,7 @@ function open(): Promise<IDBDatabase> {
       const db = req.result;
       for (const name of STORES) {
         if (!db.objectStoreNames.contains(name)) {
-          db.createObjectStore(name, { keyPath: name === "kv" ? "key" : name === "budgets" ? "category" : "id" });
+          db.createObjectStore(name, { keyPath: name === "kv" || name === "outbox" ? "key" : name === "budgets" ? "category" : "id" });
         }
       }
     };
@@ -46,6 +47,9 @@ function tx<T>(store: StoreName, mode: IDBTransactionMode, run: (s: IDBObjectSto
 }
 
 export const db = {
+  get<T>(store: StoreName, key: string): Promise<T | undefined> {
+    return tx<T>(store, "readonly", (s) => s.get(key) as IDBRequest<T>);
+  },
   all<T>(store: StoreName): Promise<T[]> {
     return tx<T[]>(store, "readonly", (s) => s.getAll() as IDBRequest<T[]>).then((r) => r ?? []);
   },

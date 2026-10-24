@@ -40,6 +40,9 @@ function serviceWorker(): Plugin {
 
 export default defineConfig({
   appType: "mpa",
+  // NEXT_PUBLIC_* are the public Supabase URL and key the Vercel integration provides. Secret keys
+  // (service role, Postgres URLs) have other names and are never bundled.
+  envPrefix: ["VITE_", "NEXT_PUBLIC_"],
   plugins: [react(), serviceWorker()],
   build: {
     target: "es2022",

@@ -127,9 +127,10 @@ export async function load() {
 
 async function seedChips() {
   const chips: Chip[] = [
-    { id: uid(), title: "Coffee", amount: 18_000, category: "food", order: 0 },
-    { id: uid(), title: "Auto", amount: 12_000, category: "transport", order: 1 },
-    { id: uid(), title: "Lunch", amount: 35_000, category: "food", order: 2 },
+    // Fixed IDs: every device starts with the same three repeats, so syncing doesn't duplicate them.
+    { id: "default-coffee", title: "Coffee", amount: 18_000, category: "food", order: 0 },
+    { id: "default-auto", title: "Auto", amount: 12_000, category: "transport", order: 1 },
+    { id: "default-lunch", title: "Lunch", amount: 35_000, category: "food", order: 2 },
   ];
   await db.putMany("chips", chips);
   set({ chips });
@@ -176,12 +177,57 @@ export function useToast() {
 
 // ---------- writes ----------
 
+// ---------- change tracking (for sync) ----------
+
+type ChangeListener = (store: StoreName, key: string, value: unknown | null) => void;
+let changeListener: ChangeListener | null = null;
+/** While signed in, cloud.ts hears about every local write so it can upload it. */
+export function onLocalChange(fn: ChangeListener | null) { changeListener = fn; }
+
+const keyOf = (store: StoreName, value: unknown) => {
+  const v = value as Record<string, string>;
+  return store === "budgets" ? v.category : store === "kv" ? v.key : v.id;
+};
+
 async function persist<T>(store: StoreName, value: T) {
   try {
     await db.put(store, value);
+    changeListener?.(store, keyOf(store, value), value);
   } catch {
     showToast("Couldn't save to this browser's storage");
   }
+}
+
+async function remove(store: StoreName, key: string) {
+  await db.delete(store, key);
+  changeListener?.(store, key, null);
+}
+
+/** Every record in the app, for the first upload when a device signs in. */
+export function allRecords(): { store: StoreName; value: unknown }[] {
+  const { expenses, incomes, chips, budgets, bills, accounts, goals, settings } = state;
+  return [
+    ...expenses.map((value) => ({ store: "expenses" as const, value })),
+    ...incomes.map((value) => ({ store: "incomes" as const, value })),
+    ...chips.map((value) => ({ store: "chips" as const, value })),
+    ...budgets.map((value) => ({ store: "budgets" as const, value })),
+    ...bills.map((value) => ({ store: "bills" as const, value })),
+    ...accounts.map((value) => ({ store: "accounts" as const, value })),
+    ...goals.map((value) => ({ store: "goals" as const, value })),
+    { store: "kv" as const, value: { key: "settings", value: settings } },
+  ];
+}
+
+/** After a restore, undo or erase, report what disappeared and what's there now. */
+function reportReplaced(before: { store: StoreName; value: unknown }[]) {
+  if (!changeListener) return;
+  const after = allRecords();
+  const now = new Set(after.map((r) => `${r.store}:${keyOf(r.store, r.value)}`));
+  for (const r of before) {
+    const key = keyOf(r.store, r.value);
+    if (!now.has(`${r.store}:${key}`)) changeListener(r.store, key, null);
+  }
+  for (const r of after) changeListener(r.store, keyOf(r.store, r.value), r.value);
 }
 
 export interface NewExpense {
@@ -231,7 +277,7 @@ export function deleteExpense(id: string, withUndo = true) {
   const victim = state.expenses.find((e) => e.id === id);
   if (!victim) return;
   set({ expenses: state.expenses.filter((e) => e.id !== id) });
-  void db.delete("expenses", id);
+  void remove("expenses", id);
   if (withUndo) {
     showToast(`Deleted ${expenseTitle(victim)} · ${formatMoney(victim.amount)}`, () => {
       set({ expenses: sortExpenses([victim, ...state.expenses]) });
@@ -254,7 +300,7 @@ export function saveChip(chip: Chip) {
 }
 export function deleteChip(id: string) {
   set({ chips: state.chips.filter((c) => c.id !== id) });
-  void db.delete("chips", id);
+  void remove("chips", id);
 }
 
 export function saveBudget(b: CategoryBudget) {
@@ -263,7 +309,7 @@ export function saveBudget(b: CategoryBudget) {
 }
 export function deleteBudget(category: Category) {
   set({ budgets: state.budgets.filter((b) => b.category !== category) });
-  void db.delete("budgets", category);
+  void remove("budgets", category);
 }
 
 export function saveBill(bill: Bill) {
@@ -273,7 +319,7 @@ export function saveBill(bill: Bill) {
 }
 export function deleteBill(id: string) {
   set({ bills: state.bills.filter((b) => b.id !== id) });
-  void db.delete("bills", id);
+  void remove("bills", id);
 }
 
 export function saveAccount(a: Account) {
@@ -283,7 +329,7 @@ export function saveAccount(a: Account) {
 }
 export function deleteAccount(id: string) {
   set({ accounts: state.accounts.filter((a) => a.id !== id) });
-  void db.delete("accounts", id);
+  void remove("accounts", id);
 }
 
 export function saveGoal(g: Goal) {
@@ -293,7 +339,7 @@ export function saveGoal(g: Goal) {
 }
 export function deleteGoal(id: string) {
   set({ goals: state.goals.filter((g) => g.id !== id) });
-  void db.delete("goals", id);
+  void remove("goals", id);
 }
 
 // ---------- income ----------
@@ -310,7 +356,7 @@ export function deleteIncome(id: string, withUndo = true) {
   const victim = state.incomes.find((x) => x.id === id);
   if (!victim) return;
   set({ incomes: state.incomes.filter((x) => x.id !== id) });
-  void db.delete("incomes", id);
+  void remove("incomes", id);
   if (withUndo) showToast(`Deleted ${victim.source || "income"} · ${formatMoney(victim.amount)}`, () => saveIncome(victim));
 }
 
@@ -406,6 +452,7 @@ interface RestorePoint { savedAt: number; json: string }
  * The data it replaces is kept as a restore point, so the restore can be undone.
  */
 export async function restoreBackup(backup: Backup): Promise<void> {
+  const before = allRecords();
   const point: RestorePoint = { savedAt: Date.now(), json: exportJSON() };
   // Keep the lock and backup date from this device; everything else comes from the file.
   const settings: Settings = {
@@ -418,6 +465,7 @@ export async function restoreBackup(backup: Backup): Promise<void> {
     kv: [{ key: "settings", value: settings }, { key: RESTORE_POINT, value: point }],
   });
   await load();
+  reportReplaced(before);
 }
 
 /**
@@ -425,6 +473,7 @@ export async function restoreBackup(backup: Backup): Promise<void> {
  * becomes the new restore point, so nothing logged since the restore is lost for good.
  */
 export async function undoRestore(): Promise<void> {
+  const before = allRecords();
   const kv = await db.all<{ key: string; value: unknown }>("kv");
   const point = kv.find((r) => r.key === RESTORE_POINT)?.value as RestorePoint | undefined;
   if (!point) throw new Error("There's no earlier data to put back.");
@@ -436,6 +485,7 @@ export async function undoRestore(): Promise<void> {
     kv: [{ key: "settings", value: { ...state.settings, ...backup.settings } }, { key: RESTORE_POINT, value: current }],
   });
   await load();
+  reportReplaced(before);
 }
 
 export function exportCSV(): string {
@@ -451,10 +501,12 @@ export function exportCSV(): string {
 }
 
 export async function eraseAll() {
+  const before = allRecords();
   await db.replaceAll(DATA_STORES, {});
   await db.delete("kv", RESTORE_POINT);
   set({ expenses: [], chips: [], budgets: [], bills: [], accounts: [], goals: [], incomes: [], restorePointAt: null });
   await seedChips();
+  reportReplaced(before);
 }
 
 // ---------- backup reminder ----------

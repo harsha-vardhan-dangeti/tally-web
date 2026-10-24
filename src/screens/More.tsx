@@ -12,6 +12,8 @@ import { Icon } from "../ui/icons";
 import { Empty, Field, Sheet, SwipeRow, Toggle } from "../ui/components";
 import { ExpenseRowView, SwipeExpense } from "./Home";
 import { enableLock, lockSupported } from "./lock";
+import { AccountSection, GoogleButton } from "./Account";
+import { cloudAvailable, useCloud } from "../data/cloud";
 
 // ---------------- Inbox ----------------
 
@@ -202,6 +204,7 @@ export function Recap({ open, onClose }: { open: boolean; onClose: () => void })
 
 export function Settings({ open, onClose }: { open: boolean; onClose: () => void }) {
   const s = useTally();
+  const signedIn = useCloud().user !== null;
   const [budget, setBudget] = useState("");
   const [income, setIncome] = useState("");
   const [seen, setSeen] = useState(false);
@@ -253,6 +256,8 @@ export function Settings({ open, onClose }: { open: boolean; onClose: () => void
       </div>
       <p className="t-muted tiny" style={{ margin: 0 }}>Safe to spend today = what's left ÷ days left. Leave rent out of the budget if you track it as a bill.</p>
 
+      <AccountSection />
+
       <div className="card" style={{ background: "var(--surface-2)", padding: "0 14px" }}>
         <Toggle label="Lock with Face ID / Touch ID" hint={lockSupported() ? "A privacy screen using your device's passkey sign-in. It does not encrypt data." : "Not supported in this browser"}
           checked={!!s.settings.lockCredentialId}
@@ -267,7 +272,9 @@ export function Settings({ open, onClose }: { open: boolean; onClose: () => void
       <div className="col gap8">
         <span className="t-strong small">Your data</span>
         <p className="t-muted small" style={{ margin: 0 }}>
-          Everything is stored only in this browser on this device. No account, no server, no tracking.
+          {signedIn
+            ? "Stored in this browser and synced to your account, where only you can read it."
+            : "Everything is stored only in this browser on this device. No account, no server, no tracking."}
           {s.settings.lastBackupAt ? ` Last backup ${new Date(s.settings.lastBackupAt).toLocaleDateString()}.` : " Back up regularly — clearing website data deletes it."}
         </p>
         <div className="row gap8 wrap">
@@ -315,7 +322,7 @@ export function Settings({ open, onClose }: { open: boolean; onClose: () => void
         <button className="btn danger block" onClick={() => setConfirmErase(true)}>Delete all data</button>
       ) : (
         <div className="card col gap8" style={{ background: "var(--danger-soft)" }}>
-          <span className="small" style={{ color: "var(--danger)" }}>Delete every expense, bill, goal and account? This can't be undone.</span>
+          <span className="small" style={{ color: "var(--danger)" }}>{signedIn ? "Delete every expense, bill, goal and account from this browser and from your account on all your devices? This can't be undone." : "Delete every expense, bill, goal and account? This can't be undone."}</span>
           <div className="row gap8">
             <button className="btn" onClick={() => setConfirmErase(false)}>Cancel</button>
             <button className="btn primary" style={{ background: "var(--danger)" }} onClick={async () => { await eraseAll(); showToast("All data deleted"); setConfirmErase(false); }}>Delete everything</button>
@@ -351,10 +358,16 @@ export function Onboarding() {
           <h1 className="display" style={{ fontSize: 34, lineHeight: 1.1 }}>Log a spend in 3 seconds.</h1>
           <p className="t-muted" style={{ margin: 0 }}>Tap a repeat, type a sentence, or fire a Shortcut from your Action Button. Tally turns it into one number: what's safe to spend today.</p>
           <div className="col gap8 small">
-            <span>• Private — everything stays in your browser</span>
+            <span>• Private — stays in your browser unless you turn on sync</span>
             <span>• No sign-up, no bank login</span>
             <span>• Works offline once loaded</span>
           </div>
+          {cloudAvailable && (
+            <div className="col gap8" style={{ paddingTop: 8 }}>
+              <span className="t-muted small">Already use Tally on another device?</span>
+              <GoogleButton label="Sign in with Google to sync" />
+            </div>
+          )}
         </div>
       )}
       {step === 1 && (
