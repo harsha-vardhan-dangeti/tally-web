@@ -62,6 +62,13 @@ A new release installs in the background and waits. `src/data/updates.ts` shows 
 - **Plan:** overall and category budgets; bills and subscriptions (due dates, price-rise flag, auto-log); savings goals.
 - **Inbox:** captured payments wait for a one-tap confirm.
 - **Recap:** month-end forecast, change vs the same point last month, biggest spend, no-spend days, logging streak.
+- **Regular income:** salary and other monthly income add themselves on their day (Plan → Regular income, or "Repeats every month" on an income entry).
+- **Bank statement import:** Settings → Import bank statement reads CSV or Excel exports from net banking (HDFC, ICICI, SBI, Axis and similar layouts), in the browser.
+  - Withdrawals become expenses and deposits become income, with a category and a readable name for each.
+  - Likely duplicates of hand-logged entries and transfers (card bills, own-account moves, SIPs) start unticked.
+  - Re-importing the same statement never adds a row twice.
+  - PDF statements aren't supported.
+- **Account:** optional Google sign-in syncs phone and laptop. **Delete account** removes the account and its synced data.
 - **Settings:** Face ID / Touch ID privacy lock (WebAuthn), JSON backup and restore, CSV export, delete all data.
 - **Desktop:** sidebar layout, plus keyboard shortcuts: `N` add, `S` smart add, `/` search, `Esc` close.
 

@@ -375,6 +375,32 @@ export function deleteIncome(id: string, withUndo = true) {
   if (withUndo) showToast(`Deleted ${victim.source || "income"} · ${formatMoney(victim.amount)}`, () => saveIncome(victim));
 }
 
+/** Adds many expenses and income entries in one go (a bank statement import). */
+export async function importTransactions(expenses: Expense[], incomes: Income[]): Promise<void> {
+  const eIds = new Set(expenses.map((e) => e.id)), iIds = new Set(incomes.map((x) => x.id));
+  set({
+    expenses: sortExpenses([...expenses, ...state.expenses.filter((e) => !eIds.has(e.id))]),
+    incomes: sortIncomes([...incomes, ...state.incomes.filter((x) => !iIds.has(x.id))]),
+  });
+  try {
+    await db.putMany("expenses", expenses);
+    await db.putMany("incomes", incomes);
+  } catch {
+    showToast("Couldn't save to this browser's storage");
+    return;
+  }
+  for (const e of expenses) changeListener?.("expenses", e.id, e);
+  for (const x of incomes) changeListener?.("incomes", x.id, x);
+}
+
+/** Undoes an import. */
+export function removeImported(expenseIds: string[], incomeIds: string[]) {
+  const e = new Set(expenseIds), i = new Set(incomeIds);
+  set({ expenses: state.expenses.filter((x) => !e.has(x.id)), incomes: state.incomes.filter((x) => !i.has(x.id)) });
+  for (const id of expenseIds) void remove("expenses", id);
+  for (const id of incomeIds) void remove("incomes", id);
+}
+
 export function saveRecurringIncome(rule: RecurringIncome) {
   const rest = state.recurringIncomes.filter((x) => x.id !== rule.id);
   set({ recurringIncomes: [...rest, rule].sort((a, b) => a.day - b.day) });

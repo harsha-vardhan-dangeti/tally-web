@@ -13,6 +13,7 @@ import { Empty, Field, Sheet, SwipeRow, Toggle } from "../ui/components";
 import { ExpenseRowView, SwipeExpense } from "./Home";
 import { enableLock, lockSupported } from "./lock";
 import { AccountSection, GoogleButton } from "./Account";
+import { ImportSheet } from "./Import";
 import { cloudAvailable, useCloud } from "../data/cloud";
 
 // ---------------- Inbox ----------------
@@ -209,6 +210,7 @@ export function Settings({ open, onClose }: { open: boolean; onClose: () => void
   const [income, setIncome] = useState("");
   const [seen, setSeen] = useState(false);
   const [confirmErase, setConfirmErase] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [incoming, setIncoming] = useState<Backup | null>(null);
   const [restoring, setRestoring] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -249,88 +251,92 @@ export function Settings({ open, onClose }: { open: boolean; onClose: () => void
   const date = (t: number) => new Date(t).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
 
   return (
-    <Sheet open={open} onClose={close} title="Settings">
-      <div className="row gap8">
-        <Field label="Monthly budget (₹)"><input type="text" inputMode="numeric" value={budget} onChange={(e) => setBudget(e.target.value)} placeholder="55000" /></Field>
-        <Field label="Monthly income (₹)"><input type="text" inputMode="numeric" value={income} onChange={(e) => setIncome(e.target.value)} placeholder="optional" /></Field>
-      </div>
-      <p className="t-muted tiny" style={{ margin: 0 }}>Safe to spend today = what's left ÷ days left. Leave rent out of the budget if you track it as a bill.</p>
-
-      <AccountSection />
-
-      <div className="card" style={{ background: "var(--surface-2)", padding: "0 14px" }}>
-        <Toggle label="Lock with Face ID / Touch ID" hint={lockSupported() ? "A privacy screen using your device's passkey sign-in. It does not encrypt data." : "Not supported in this browser"}
-          checked={!!s.settings.lockCredentialId}
-          onChange={async (v) => {
-            if (!v) return setSettings({ lockCredentialId: null });
-            const id = await enableLock();
-            if (id) { setSettings({ lockCredentialId: id }); showToast("App lock on"); }
-            else showToast("Couldn't turn on the lock in this browser");
-          }} />
-      </div>
-
-      <div className="col gap8">
-        <span className="t-strong small">Your data</span>
-        <p className="t-muted small" style={{ margin: 0 }}>
-          {signedIn
-            ? "Stored in this browser and synced to your account. Other Tally users can't see it."
-            : "Everything is stored only in this browser on this device. No account, no server, no tracking."}
-          {s.settings.lastBackupAt ? ` Last backup ${new Date(s.settings.lastBackupAt).toLocaleDateString()}.` : " Back up regularly — clearing website data deletes it."}
-        </p>
-        <div className="row gap8 wrap">
-          <button className="btn" onClick={() => { download(backupFileName(), exportJSON(), "application/json"); setSettings({ lastBackupAt: Date.now() }); }}>
-            <Icon name="download" size={18} />Back up (JSON)
-          </button>
-          <button className="btn" onClick={() => fileRef.current?.click()}><Icon name="upload" size={18} />Restore</button>
-          <button className="btn" onClick={() => download(`tally-${stamp}.csv`, exportCSV(), "text/csv")}>Export CSV</button>
-          <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={async (e) => {
-            const f = e.target.files?.[0];
-            e.target.value = "";
-            if (!f) return;
-            try { setIncoming(parseBackup(await f.text())); }
-            catch (err) { showToast(err instanceof BackupError ? err.message : "Couldn't read that file. Nothing on this device was changed."); }
-          }} />
+    <>
+      <Sheet open={open} onClose={close} title="Settings">
+        <div className="row gap8">
+          <Field label="Monthly budget (₹)"><input type="text" inputMode="numeric" value={budget} onChange={(e) => setBudget(e.target.value)} placeholder="55000" /></Field>
+          <Field label="Monthly income (₹)"><input type="text" inputMode="numeric" value={income} onChange={(e) => setIncome(e.target.value)} placeholder="optional" /></Field>
         </div>
-        {incoming && (
-          <div className="card col gap8" style={{ background: "var(--warn-soft)" }} role="alertdialog" aria-label="Confirm restore">
-            <span className="small t-strong" style={{ color: "var(--warn)" }}>Replace the data on this device?</span>
-            <span className="small">
-              The backup{incoming.exportedAt ? ` from ${date(Date.parse(incoming.exportedAt))}` : ""} has {count(incoming.expenses.length, "expense")},
-              {" "}{count(incoming.incomes.length, "income entry", "income entries")}, {count(incoming.bills.length, "bill")},
-              {" "}{count(incoming.accounts.length, "account")} and {count(incoming.goals.length, "goal")}.
-              It replaces the {count(s.expenses.length, "expense")} here. You can put the current data back afterwards.
-              {incoming.skipped > 0 && ` ${count(incoming.skipped, "unreadable row")} will be left out.`}
-            </span>
+        <p className="t-muted tiny" style={{ margin: 0 }}>Safe to spend today = what's left ÷ days left. Leave rent out of the budget if you track it as a bill.</p>
+
+        <AccountSection />
+
+        <div className="card" style={{ background: "var(--surface-2)", padding: "0 14px" }}>
+          <Toggle label="Lock with Face ID / Touch ID" hint={lockSupported() ? "A privacy screen using your device's passkey sign-in. It does not encrypt data." : "Not supported in this browser"}
+            checked={!!s.settings.lockCredentialId}
+            onChange={async (v) => {
+              if (!v) return setSettings({ lockCredentialId: null });
+              const id = await enableLock();
+              if (id) { setSettings({ lockCredentialId: id }); showToast("App lock on"); }
+              else showToast("Couldn't turn on the lock in this browser");
+            }} />
+        </div>
+
+        <div className="col gap8">
+          <span className="t-strong small">Your data</span>
+          <p className="t-muted small" style={{ margin: 0 }}>
+            {signedIn
+              ? "Stored in this browser and synced to your account. Other Tally users can't see it."
+              : "Everything is stored only in this browser on this device. No account, no server, no tracking."}
+            {s.settings.lastBackupAt ? ` Last backup ${new Date(s.settings.lastBackupAt).toLocaleDateString()}.` : " Back up regularly — clearing website data deletes it."}
+          </p>
+          <div className="row gap8 wrap">
+            <button className="btn" onClick={() => { download(backupFileName(), exportJSON(), "application/json"); setSettings({ lastBackupAt: Date.now() }); }}>
+              <Icon name="download" size={18} />Back up (JSON)
+            </button>
+            <button className="btn" onClick={() => fileRef.current?.click()}><Icon name="upload" size={18} />Restore</button>
+            <button className="btn" onClick={() => download(`tally-${stamp}.csv`, exportCSV(), "text/csv")}>Export CSV</button>
+            <button className="btn" onClick={() => setImporting(true)}><Icon name="upload" size={18} />Import bank statement</button>
+            <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={async (e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              if (!f) return;
+              try { setIncoming(parseBackup(await f.text())); }
+              catch (err) { showToast(err instanceof BackupError ? err.message : "Couldn't read that file. Nothing on this device was changed."); }
+            }} />
+          </div>
+          {incoming && (
+            <div className="card col gap8" style={{ background: "var(--warn-soft)" }} role="alertdialog" aria-label="Confirm restore">
+              <span className="small t-strong" style={{ color: "var(--warn)" }}>Replace the data on this device?</span>
+              <span className="small">
+                The backup{incoming.exportedAt ? ` from ${date(Date.parse(incoming.exportedAt))}` : ""} has {count(incoming.expenses.length, "expense")},
+                {" "}{count(incoming.incomes.length, "income entry", "income entries")}, {count(incoming.bills.length, "bill")},
+                {" "}{count(incoming.accounts.length, "account")} and {count(incoming.goals.length, "goal")}.
+                It replaces the {count(s.expenses.length, "expense")} here. You can put the current data back afterwards.
+                {incoming.skipped > 0 && ` ${count(incoming.skipped, "unreadable row")} will be left out.`}
+              </span>
+              <div className="row gap8">
+                <button className="btn" onClick={() => setIncoming(null)} disabled={restoring}>Cancel</button>
+                <button className="btn primary" onClick={() => restore(incoming)} disabled={restoring}>{restoring ? "Restoring…" : "Replace and restore"}</button>
+              </div>
+            </div>
+          )}
+          {s.restorePointAt && !incoming && (
+            <div className="row gap8 between small" style={{ flexWrap: "wrap" }}>
+              <span className="t-muted">Tally kept a copy of the data it replaced on {date(s.restorePointAt)}. Swapping keeps a copy of what's here now.</span>
+              <button className="btn ghost" onClick={async () => {
+                try { await undoRestore(); syncForm(); showToast("Swapped in your earlier data"); }
+                catch (err) { showToast((err as Error).message); }
+              }}>Swap it back</button>
+            </div>
+          )}
+        </div>
+
+        {!confirmErase ? (
+          <button className="btn danger block" onClick={() => setConfirmErase(true)}>Delete all data</button>
+        ) : (
+          <div className="card col gap8" style={{ background: "var(--danger-soft)" }}>
+            <span className="small" style={{ color: "var(--danger)" }}>{signedIn ? "Delete every expense, bill, goal and account from this browser and from your account on all your devices? This can't be undone." : "Delete every expense, bill, goal and account? This can't be undone."}</span>
             <div className="row gap8">
-              <button className="btn" onClick={() => setIncoming(null)} disabled={restoring}>Cancel</button>
-              <button className="btn primary" onClick={() => restore(incoming)} disabled={restoring}>{restoring ? "Restoring…" : "Replace and restore"}</button>
+              <button className="btn" onClick={() => setConfirmErase(false)}>Cancel</button>
+              <button className="btn primary" style={{ background: "var(--danger)" }} onClick={async () => { await eraseAll(); showToast("All data deleted"); setConfirmErase(false); }}>Delete everything</button>
             </div>
           </div>
         )}
-        {s.restorePointAt && !incoming && (
-          <div className="row gap8 between small" style={{ flexWrap: "wrap" }}>
-            <span className="t-muted">Tally kept a copy of the data it replaced on {date(s.restorePointAt)}. Swapping keeps a copy of what's here now.</span>
-            <button className="btn ghost" onClick={async () => {
-              try { await undoRestore(); syncForm(); showToast("Swapped in your earlier data"); }
-              catch (err) { showToast((err as Error).message); }
-            }}>Swap it back</button>
-          </div>
-        )}
-      </div>
-
-      {!confirmErase ? (
-        <button className="btn danger block" onClick={() => setConfirmErase(true)}>Delete all data</button>
-      ) : (
-        <div className="card col gap8" style={{ background: "var(--danger-soft)" }}>
-          <span className="small" style={{ color: "var(--danger)" }}>{signedIn ? "Delete every expense, bill, goal and account from this browser and from your account on all your devices? This can't be undone." : "Delete every expense, bill, goal and account? This can't be undone."}</span>
-          <div className="row gap8">
-            <button className="btn" onClick={() => setConfirmErase(false)}>Cancel</button>
-            <button className="btn primary" style={{ background: "var(--danger)" }} onClick={async () => { await eraseAll(); showToast("All data deleted"); setConfirmErase(false); }}>Delete everything</button>
-          </div>
-        </div>
-      )}
-      <p className="t-muted tiny" style={{ margin: 0 }}>Keyboard: <span className="kbd">N</span> new expense · <span className="kbd">S</span> smart add · <span className="kbd">/</span> search · <span className="kbd">Esc</span> close</p>
-    </Sheet>
+        <p className="t-muted tiny" style={{ margin: 0 }}>Keyboard: <span className="kbd">N</span> new expense · <span className="kbd">S</span> smart add · <span className="kbd">/</span> search · <span className="kbd">Esc</span> close</p>
+      </Sheet>
+      <ImportSheet open={importing} onClose={() => setImporting(false)} />
+    </>
   );
 }
 

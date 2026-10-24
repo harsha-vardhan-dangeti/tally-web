@@ -387,3 +387,14 @@ code.inline { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; ba
 .sync-status.danger { color: var(--danger); }
 
 .danger-text { color: var(--danger); }
+
+/* ---------- statement import ---------- */
+.import-file { align-items: center; padding: 8px 8px 8px 12px; border-radius: 12px; background: var(--surface-2); }
+.import-columns summary { font-size: 12px; color: var(--muted); cursor: pointer; }
+.import-columns-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.import-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border-radius: 14px; overflow: hidden; background: var(--surface-2); }
+.import-row { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; }
+.import-row + .import-row { border-top: 1px solid var(--line); }
+.import-row input[type="checkbox"] { width: 20px; height: 20px; margin-top: 2px; accent-color: var(--accent); flex-shrink: 0; }
+.import-row.off .col { opacity: 0.55; }
+.import-cat { min-height: 32px !important; padding: 2px 8px !important; font-size: 13px !important; width: auto !important; border-radius: 8px !important; }
