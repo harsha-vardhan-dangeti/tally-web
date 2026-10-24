@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { cloudAvailable, signInWithGoogle, signOut, syncNow, useCloud } from "../data/cloud";
+import { cloudAvailable, deleteAccount, signInWithGoogle, signOut, syncNow, useCloud } from "../data/cloud";
+import { exportJSON, showToast } from "../data/store";
+import { backupFileName, download } from "../ui/download";
 import { Icon } from "../ui/icons";
 
 /** Google's "G" mark, as Google's sign-in branding asks for on the button. */
@@ -33,7 +35,8 @@ const ago = (t: number) => {
 /** Settings → Account: sign in to sync, see sync status, sign out. Hidden when the build has no Supabase. */
 export function AccountSection() {
   const c = useCloud();
-  const [confirm, setConfirm] = useState<null | "ask" | { pending: number }>(null);
+  const [confirm, setConfirm] = useState<null | "ask" | "delete" | { pending: number }>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   if (!cloudAvailable) return null;
 
@@ -80,6 +83,29 @@ export function AccountSection() {
           <div className="row gap8 wrap">
             <button className="btn" onClick={() => void syncNow()} disabled={c.status === "syncing"}>Sync now</button>
             <button className="btn" onClick={() => setConfirm("ask")}>Sign out</button>
+            <button className="btn ghost danger-text" onClick={() => { setDeleteError(null); setConfirm("delete"); }}>Delete account</button>
+          </div>
+        )}
+        {confirm === "delete" && (
+          <div className="col gap8">
+            <span className="small" style={{ color: "var(--danger)" }}>
+              Delete your Tally account? Everything synced to it is permanently deleted from the server, your other
+              devices are signed out, and Tally's data is removed from this browser. This can't be undone.
+            </span>
+            <button className="btn" onClick={() => download(backupFileName(), exportJSON(), "application/json")}>
+              <Icon name="download" size={18} />Download a backup first
+            </button>
+            {deleteError && <span className="small" style={{ color: "var(--danger)" }}>{deleteError}</span>}
+            <div className="row gap8">
+              <button className="btn" onClick={() => setConfirm(null)} disabled={busy}>Cancel</button>
+              <button className="btn danger" disabled={busy} onClick={async () => {
+                setBusy(true);
+                const result = await deleteAccount();
+                setBusy(false);
+                if (result.ok) { setConfirm(null); showToast("Your account and synced data are deleted"); }
+                else setDeleteError(result.message);
+              }}>{busy ? "Deleting…" : "Delete account"}</button>
+            </div>
           </div>
         )}
         {confirm === "ask" && (
@@ -91,7 +117,7 @@ export function AccountSection() {
             </div>
           </div>
         )}
-        {confirm !== null && confirm !== "ask" && (
+        {confirm !== null && typeof confirm === "object" && (
           <div className="col gap8">
             <span className="small" style={{ color: "var(--danger)" }}>
               {confirm.pending} change{confirm.pending === 1 ? " hasn't" : "s haven't"} uploaded yet. Signing out now loses {confirm.pending === 1 ? "it" : "them"}. Connect to the internet and try again to keep {confirm.pending === 1 ? "it" : "them"}.

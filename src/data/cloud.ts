@@ -247,6 +247,16 @@ export async function startCloud(): Promise<void> {
   setInterval(() => { if (document.visibilityState === "visible") scheduleSync(0); }, 60_000);
 }
 
+/** Removes Tally's data and the sign-in from this browser. The account (if any) is untouched. */
+async function clearDevice() {
+  onLocalChange(null);
+  await client?.auth.signOut({ scope: "local" }).catch(() => {});
+  for (const s of ["expenses", "incomes", "chips", "budgets", "bills", "accounts", "goals", "kv", "outbox"] as StoreName[]) await db.clear(s);
+  try { localStorage.removeItem("tally:homeView"); } catch { /* nothing to remove */ }
+  setCloud({ user: null, status: "signed-out", lastSyncedAt: null, pending: 0, message: null });
+  await load();
+}
+
 /**
  * Signs out and removes Tally's data from this browser (it stays in the account). Refuses when
  * changes couldn't be uploaded, unless `discardUnsynced` is set.
@@ -256,11 +266,29 @@ export async function signOut(discardUnsynced = false): Promise<{ ok: true } | {
   await syncNow();
   const pending = (await db.all<Change>("outbox")).length;
   if (pending > 0 && !discardUnsynced) return { ok: false, pending };
-  onLocalChange(null);
-  await client.auth.signOut({ scope: "local" });
-  for (const s of ["expenses", "incomes", "chips", "budgets", "bills", "accounts", "goals", "kv", "outbox"] as StoreName[]) await db.clear(s);
-  try { localStorage.removeItem("tally:homeView"); } catch { /* nothing to remove */ }
-  setCloud({ user: null, status: "signed-out", lastSyncedAt: null, pending: 0, message: null });
-  await load();
+  await clearDevice();
+  return { ok: true };
+}
+
+/**
+ * Deletes the account and everything synced to it (see api/delete-account.ts), signs out every
+ * device, and clears this browser.
+ */
+export async function deleteAccount(): Promise<{ ok: true } | { ok: false; message: string }> {
+  if (!client || !cloud.user) return { ok: false, message: "Sign in first." };
+  const { data } = await client.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) return { ok: false, message: "Your sign-in has expired. Sign in again, then delete your account." };
+  let res: Response;
+  try {
+    res = await fetch("/api/delete-account", { method: "POST", headers: { authorization: `Bearer ${token}` } });
+  } catch {
+    return { ok: false, message: "You're offline. Connect to the internet to delete your account." };
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ message: "" })) as { message?: string };
+    return { ok: false, message: body.message || "Couldn't delete your account. Nothing was removed; try again." };
+  }
+  await clearDevice();
   return { ok: true };
 }

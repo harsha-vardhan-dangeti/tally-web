@@ -385,3 +385,5 @@ code.inline { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; ba
 .sync-status.good { color: var(--good); }
 .sync-status.warn { color: var(--warn); }
 .sync-status.danger { color: var(--danger); }
+
+.danger-text { color: var(--danger); }
