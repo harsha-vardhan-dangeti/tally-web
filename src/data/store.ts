@@ -38,6 +38,17 @@ export type AccountKind = "bank" | "card" | "cash" | "investment";
 export const ACCOUNT_KIND_LABEL: Record<AccountKind, string> = { bank: "Bank", card: "Credit card", cash: "Cash", investment: "Investment" };
 export interface Account { id: string; name: string; kind: AccountKind; balance: number; order: number; updatedAt: number }
 export interface Goal { id: string; name: string; target: number; saved: number; deadline: number | null }
+/** Income that arrives every month, like a salary. Added to income on its day, once per month. */
+export interface RecurringIncome {
+  id: string;
+  source: string;
+  amount: number; // paise
+  day: number; // 1–28
+  account: string;
+  note: string;
+  autoLog: boolean;
+  lastLoggedMonth: string;
+}
 /** Money received on a given day: salary, a refund, freelance work. */
 export interface Income {
   id: string;
@@ -66,6 +77,7 @@ export interface State {
   accounts: Account[];
   goals: Goal[];
   incomes: Income[];
+  recurringIncomes: RecurringIncome[];
   settings: Settings;
   /** When the last restore replaced this device's data; that data can be put back until the next restore. */
   restorePointAt: number | null;
@@ -76,7 +88,7 @@ const DEFAULT_SETTINGS: Settings = {
 };
 
 let state: State = {
-  ready: false, expenses: [], chips: [], budgets: [], bills: [], accounts: [], goals: [], incomes: [], settings: DEFAULT_SETTINGS,
+  ready: false, expenses: [], chips: [], budgets: [], bills: [], accounts: [], goals: [], incomes: [], recurringIncomes: [], settings: DEFAULT_SETTINGS,
   restorePointAt: null,
 };
 const listeners = new Set<() => void>();
@@ -105,9 +117,10 @@ const sortExpenses = (list: Expense[]) => [...list].sort((a, b) => b.occurredAt 
 // ---------- load ----------
 
 export async function load() {
-  const [expenses, chips, budgets, bills, accounts, goals, incomes, kv] = await Promise.all([
+  const [expenses, chips, budgets, bills, accounts, goals, incomes, recurringIncomes, kv] = await Promise.all([
     db.all<Expense>("expenses"), db.all<Chip>("chips"), db.all<CategoryBudget>("budgets"), db.all<Bill>("bills"),
-    db.all<Account>("accounts"), db.all<Goal>("goals"), db.all<Income>("incomes"), db.all<{ key: string; value: unknown }>("kv"),
+    db.all<Account>("accounts"), db.all<Goal>("goals"), db.all<Income>("incomes"),
+    db.all<RecurringIncome>("recurringIncomes"), db.all<{ key: string; value: unknown }>("kv"),
   ]);
   const settingsRow = kv.find((r) => r.key === "settings");
   const settings = { ...DEFAULT_SETTINGS, ...((settingsRow?.value as Partial<Settings>) ?? {}) };
@@ -116,11 +129,12 @@ export async function load() {
     ready: true,
     expenses: sortExpenses(expenses),
     chips: [...chips].sort((a, b) => a.order - b.order),
-    budgets, bills, accounts: [...accounts].sort((a, b) => a.order - b.order), goals, incomes: sortIncomes(incomes), settings,
+    budgets, bills, accounts: [...accounts].sort((a, b) => a.order - b.order), goals, incomes: sortIncomes(incomes), recurringIncomes, settings,
     restorePointAt: restorePoint?.savedAt ?? null,
   });
   if (chips.length === 0) await seedChips();
   runDueBills();
+  runDueIncome();
   // Ask the browser not to evict our data under storage pressure.
   navigator.storage?.persist?.().catch(() => {});
 }
@@ -205,10 +219,11 @@ async function remove(store: StoreName, key: string) {
 
 /** Every record in the app, for the first upload when a device signs in. */
 export function allRecords(): { store: StoreName; value: unknown }[] {
-  const { expenses, incomes, chips, budgets, bills, accounts, goals, settings } = state;
+  const { expenses, incomes, recurringIncomes, chips, budgets, bills, accounts, goals, settings } = state;
   return [
     ...expenses.map((value) => ({ store: "expenses" as const, value })),
     ...incomes.map((value) => ({ store: "incomes" as const, value })),
+    ...recurringIncomes.map((value) => ({ store: "recurringIncomes" as const, value })),
     ...chips.map((value) => ({ store: "chips" as const, value })),
     ...budgets.map((value) => ({ store: "budgets" as const, value })),
     ...bills.map((value) => ({ store: "bills" as const, value })),
@@ -360,6 +375,43 @@ export function deleteIncome(id: string, withUndo = true) {
   if (withUndo) showToast(`Deleted ${victim.source || "income"} · ${formatMoney(victim.amount)}`, () => saveIncome(victim));
 }
 
+export function saveRecurringIncome(rule: RecurringIncome) {
+  const rest = state.recurringIncomes.filter((x) => x.id !== rule.id);
+  set({ recurringIncomes: [...rest, rule].sort((a, b) => a.day - b.day) });
+  void persist("recurringIncomes", rule);
+}
+
+export function deleteRecurringIncome(id: string) {
+  set({ recurringIncomes: state.recurringIncomes.filter((x) => x.id !== id) });
+  void remove("recurringIncomes", id);
+}
+
+/**
+ * Adds a regular income's payment for the month, once: the income's ID is fixed per rule and month,
+ * and an existing entry (perhaps edited, or added on another device) is left as it is.
+ */
+export function logRecurringIncome(rule: RecurringIncome, now = new Date()) {
+  const key = monthKey(now);
+  const id = `income-${rule.id}-${key}`;
+  if (!state.incomes.some((x) => x.id === id)) {
+    const due = new Date(now.getFullYear(), now.getMonth(), rule.day, 12);
+    saveIncome({
+      id, amount: rule.amount, source: rule.source, note: rule.note, account: rule.account,
+      // Received early: dated today rather than in the future.
+      receivedAt: due.getTime() <= now.getTime() ? due.getTime() : now.getTime(), createdAt: Date.now(),
+    });
+  }
+  saveRecurringIncome({ ...state.recurringIncomes.find((r) => r.id === rule.id) ?? rule, lastLoggedMonth: key });
+}
+
+/** Regular income set to add itself whose day has come this month and that isn't added yet. */
+export function runDueIncome(now = new Date()) {
+  const key = monthKey(now);
+  for (const rule of state.recurringIncomes) {
+    if (rule.autoLog && rule.lastLoggedMonth !== key && rule.day <= now.getDate()) logRecurringIncome(rule, now);
+  }
+}
+
 // ---------- recurring ----------
 
 export function nextDue(bill: Bill, from = new Date()): Date {
@@ -438,12 +490,12 @@ export function handleUrlActions(search: string, open: (sheet: "quickAdd" | "sma
 // ---------- backup ----------
 
 export function exportJSON(): string {
-  const { expenses, chips, budgets, bills, accounts, goals, incomes, settings } = state;
+  const { expenses, chips, budgets, bills, accounts, goals, incomes, recurringIncomes, settings } = state;
   return JSON.stringify({ app: "tally", version: 1, exportedAt: new Date().toISOString(),
-    expenses, chips, budgets, bills, accounts, goals, incomes, settings: { ...settings, lockCredentialId: null } }, null, 2);
+    expenses, chips, budgets, bills, accounts, goals, incomes, recurringIncomes, settings: { ...settings, lockCredentialId: null } }, null, 2);
 }
 
-const DATA_STORES: StoreName[] = ["expenses", "chips", "budgets", "bills", "accounts", "goals", "incomes"];
+const DATA_STORES: StoreName[] = ["expenses", "chips", "budgets", "bills", "accounts", "goals", "incomes", "recurringIncomes"];
 const RESTORE_POINT = "restorePoint";
 interface RestorePoint { savedAt: number; json: string }
 
@@ -461,7 +513,7 @@ export async function restoreBackup(backup: Backup): Promise<void> {
   };
   await db.replaceAll(DATA_STORES, {
     expenses: backup.expenses, chips: backup.chips, budgets: backup.budgets, bills: backup.bills,
-    accounts: backup.accounts, goals: backup.goals, incomes: backup.incomes,
+    accounts: backup.accounts, goals: backup.goals, incomes: backup.incomes, recurringIncomes: backup.recurringIncomes,
     kv: [{ key: "settings", value: settings }, { key: RESTORE_POINT, value: point }],
   });
   await load();
@@ -481,7 +533,7 @@ export async function undoRestore(): Promise<void> {
   const current: RestorePoint = { savedAt: Date.now(), json: exportJSON() };
   await db.replaceAll(DATA_STORES, {
     expenses: backup.expenses, chips: backup.chips, budgets: backup.budgets, bills: backup.bills,
-    accounts: backup.accounts, goals: backup.goals, incomes: backup.incomes,
+    accounts: backup.accounts, goals: backup.goals, incomes: backup.incomes, recurringIncomes: backup.recurringIncomes,
     kv: [{ key: "settings", value: { ...state.settings, ...backup.settings } }, { key: RESTORE_POINT, value: current }],
   });
   await load();
@@ -504,7 +556,7 @@ export async function eraseAll() {
   const before = allRecords();
   await db.replaceAll(DATA_STORES, {});
   await db.delete("kv", RESTORE_POINT);
-  set({ expenses: [], chips: [], budgets: [], bills: [], accounts: [], goals: [], incomes: [], restorePointAt: null });
+  set({ expenses: [], chips: [], budgets: [], bills: [], accounts: [], goals: [], incomes: [], recurringIncomes: [], restorePointAt: null });
   await seedChips();
   reportReplaced(before);
 }

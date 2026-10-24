@@ -148,6 +148,8 @@ async function apply(rows: RemoteRow[]): Promise<number> {
   const localSettings = (await db.get<{ value: Record<string, unknown> }>("kv", "settings"))?.value;
   for (const r of todo) {
     const store = STORE_OF[r.kind];
+    // A record type added by a newer version of Tally: leave it for that version.
+    if (!store) continue;
     if (r.deleted) {
       if (r.kind !== "settings") await db.delete(store, r.record_id);
     } else {
@@ -251,7 +253,7 @@ export async function startCloud(): Promise<void> {
 async function clearDevice() {
   onLocalChange(null);
   await client?.auth.signOut({ scope: "local" }).catch(() => {});
-  for (const s of ["expenses", "incomes", "chips", "budgets", "bills", "accounts", "goals", "kv", "outbox"] as StoreName[]) await db.clear(s);
+  for (const s of ["expenses", "incomes", "recurringIncomes", "chips", "budgets", "bills", "accounts", "goals", "kv", "outbox"] as StoreName[]) await db.clear(s);
   try { localStorage.removeItem("tally:homeView"); } catch { /* nothing to remove */ }
   setCloud({ user: null, status: "signed-out", lastSyncedAt: null, pending: 0, message: null });
   await load();

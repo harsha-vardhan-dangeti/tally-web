@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { handleUrlActions, load, runDueBills, useTally, type Expense } from "./data/store";
+import { handleUrlActions, load, runDueBills, runDueIncome, useTally, type Expense } from "./data/store";
 import { Icon } from "./ui/icons";
 import { ToastHost, UpdateBar, useLongPress } from "./ui/components";
 import { Home } from "./screens/Home";
@@ -41,10 +41,10 @@ export function App() {
   // Signed in with Google: pick up the session and keep this device in step with the others.
   useEffect(() => { if (s.ready) void startCloud(); }, [s.ready]);
 
-  // Tally may stay open for days: when it comes back into view, add any bills that fell due meanwhile.
+  // Tally may stay open for days: when it comes back into view, add bills and income that fell due meanwhile.
   useEffect(() => {
     if (!s.ready) return;
-    const onVisible = () => { if (document.visibilityState === "visible") runDueBills(); };
+    const onVisible = () => { if (document.visibilityState === "visible") { runDueBills(); runDueIncome(); } };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [s.ready]);

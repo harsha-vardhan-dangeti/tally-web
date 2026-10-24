@@ -1,5 +1,5 @@
 import { CATEGORIES, type Category } from "../core/categories";
-import type { Account, AccountKind, Bill, CategoryBudget, Chip, Expense, Goal, Income, Settings, Source } from "./store";
+import type { Account, AccountKind, Bill, CategoryBudget, Chip, Expense, Goal, Income, RecurringIncome, Settings, Source } from "./store";
 
 /** Checks a backup file completely before anything on the device is replaced. Pure: no storage access. */
 
@@ -14,6 +14,7 @@ export interface Backup {
   accounts: Account[];
   goals: Goal[];
   incomes: Income[];
+  recurringIncomes: RecurringIncome[];
   settings: Partial<Settings>;
   /** Rows outside expenses that were unreadable and left out. */
   skipped: number;
@@ -110,6 +111,13 @@ export function parseBackup(text: string): Backup {
     return { id: rowId, amount, receivedAt, source: str(r.source), note: str(r.note), account: str(r.account), createdAt: time(r.createdAt) ?? receivedAt };
   });
 
+  const recurringIncomes = optionalRows<RecurringIncome>(data.recurringIncomes, (r) => {
+    const rowId = id(r.id), amount = paise(r.amount), day = int(r.day, 0);
+    if (!rowId || !amount || day < 1 || day > 28) return null;
+    return { id: rowId, amount, day, source: str(r.source), account: str(r.account), note: str(r.note),
+      autoLog: r.autoLog !== false, lastLoggedMonth: str(r.lastLoggedMonth) };
+  });
+
   const s = isRow(data.settings) ? data.settings : {};
   const settings: Partial<Settings> = {};
   if (typeof s.onboarded === "boolean") settings.onboarded = s.onboarded;
@@ -126,7 +134,8 @@ export function parseBackup(text: string): Backup {
     accounts: uniqueBy(accounts.rows, (r) => r.id),
     goals: uniqueBy(goals.rows, (r) => r.id),
     incomes: uniqueBy(incomes.rows, (r) => r.id),
+    recurringIncomes: uniqueBy(recurringIncomes.rows, (r) => r.id),
     settings,
-    skipped: chips.skipped + budgets.skipped + bills.skipped + accounts.skipped + goals.skipped + incomes.skipped,
+    skipped: chips.skipped + budgets.skipped + bills.skipped + accounts.skipped + goals.skipped + incomes.skipped + recurringIncomes.skipped,
   };
 }

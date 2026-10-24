@@ -6,13 +6,13 @@ import type { StoreName } from "./db";
  * deletion is a row with deleted = true so other devices remove it too.
  */
 
-export type SyncKind = "expense" | "income" | "chip" | "budget" | "bill" | "account" | "goal" | "settings";
+export type SyncKind = "expense" | "income" | "recurring_income" | "chip" | "budget" | "bill" | "account" | "goal" | "settings";
 
 export const KIND_OF: Partial<Record<StoreName, SyncKind>> = {
-  expenses: "expense", incomes: "income", chips: "chip", budgets: "budget", bills: "bill", accounts: "account", goals: "goal", kv: "settings",
+  expenses: "expense", incomes: "income", recurringIncomes: "recurring_income", chips: "chip", budgets: "budget", bills: "bill", accounts: "account", goals: "goal", kv: "settings",
 };
 export const STORE_OF: Record<SyncKind, StoreName> = {
-  expense: "expenses", income: "incomes", chip: "chips", budget: "budgets", bill: "bills", account: "accounts", goal: "goals", settings: "kv",
+  expense: "expenses", income: "incomes", recurring_income: "recurringIncomes", chip: "chips", budget: "budgets", bill: "bills", account: "accounts", goal: "goals", settings: "kv",
 };
 
 /** A local change waiting to be uploaded. Keyed so a later edit of the same record replaces it. */

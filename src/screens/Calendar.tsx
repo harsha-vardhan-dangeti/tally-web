@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react";
 import {
-  counts, deleteIncome, expenseTitle, saveIncome, share, uid, useTally, type Expense, type Income,
+  counts, deleteIncome, expenseTitle, runDueIncome, saveIncome, saveRecurringIncome, share, uid, useTally, type Expense, type Income,
 } from "../data/store";
-import { monthRange, sameDay, startOfDay } from "../core/budget";
+import { monthKey, monthRange, sameDay, startOfDay } from "../core/budget";
 import { compactMoney, formatMoney, parsePaise } from "../core/money";
 import { Icon } from "../ui/icons";
-import { Empty, Field, Sheet } from "../ui/components";
+import { Empty, Field, Sheet, Toggle } from "../ui/components";
 import { ExpenseRowView } from "./Home";
 
 /** Spent and received per day of the month. Index 0 is the 1st. */
@@ -163,6 +163,7 @@ export function IncomeEditor({ value, onClose }: { value: { income: Income | nul
   const [account, setAccount] = useState("");
   const [date, setDate] = useState("");
   const [note, setNote] = useState("");
+  const [repeats, setRepeats] = useState(false);
   const [seen, setSeen] = useState<typeof value>(null);
   if (value !== seen) {
     setSeen(value);
@@ -172,8 +173,11 @@ export function IncomeEditor({ value, onClose }: { value: { income: Income | nul
       setAccount(existing?.account ?? s.accounts.find((a) => a.kind === "bank")?.name ?? "Bank");
       setDate(toDateInput(existing ? new Date(existing.receivedAt) : value.day));
       setNote(existing?.note ?? "");
+      setRepeats(false);
     }
   }
+  // Entries added by a regular income are named "income-<rule>-<month>".
+  const fromRule = existing ? s.recurringIncomes.find((r) => existing.id.startsWith(`income-${r.id}-`)) : undefined;
   const paise = parsePaise(amount);
   const accounts = [...new Set(["Bank", "UPI", "Cash", ...s.accounts.map((a) => a.name)])];
 
@@ -182,10 +186,23 @@ export function IncomeEditor({ value, onClose }: { value: { income: Income | nul
     const [y, m, d] = date.split("-").map(Number);
     // Keep the original time when only other fields changed; otherwise noon on the chosen day.
     const keep = existing && toDateInput(new Date(existing.receivedAt)) === date;
+    const receivedAt = keep ? existing.receivedAt : new Date(y, m - 1, d, 12).getTime();
+    let id = existing?.id ?? uid();
+    if (repeats && !existing) {
+      // Becomes a regular income: this entry is its first month, and later months add themselves.
+      const ruleId = uid();
+      const month = monthKey(new Date(receivedAt));
+      id = `income-${ruleId}-${month}`;
+      saveRecurringIncome({
+        id: ruleId, source: source.trim(), amount: paise, day: Math.min(d, 28), account: account.trim(), note: note.trim(),
+        autoLog: true, lastLoggedMonth: month,
+      });
+    }
     saveIncome({
-      id: existing?.id ?? uid(), amount: paise, source: source.trim(), note: note.trim(), account: account.trim(),
-      receivedAt: keep ? existing.receivedAt : new Date(y, m - 1, d, 12).getTime(), createdAt: existing?.createdAt ?? Date.now(),
+      id, amount: paise, source: source.trim(), note: note.trim(), account: account.trim(),
+      receivedAt, createdAt: existing?.createdAt ?? Date.now(),
     });
+    if (repeats && !existing) runDueIncome();
     onClose();
   };
 
@@ -214,6 +231,14 @@ export function IncomeEditor({ value, onClose }: { value: { income: Income | nul
         </Field>
       </div>
       <Field label="Note"><input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional" /></Field>
+      {!existing && (
+        <Toggle label="Repeats every month" hint="Adds itself on this day each month, like a salary. Manage it in Plan." checked={repeats} onChange={setRepeats} />
+      )}
+      {fromRule && (
+        <p className="t-muted small" style={{ margin: 0 }}>
+          Added by your regular income ({fromRule.source || "income"}, on the {fromRule.day}). Change or stop it in Plan.
+        </p>
+      )}
       <button className="btn primary block" disabled={!paise || !date} onClick={save}>{existing ? "Save changes" : "Add income"}</button>
       {existing && (
         <button className="btn danger block" onClick={() => { deleteIncome(existing.id); onClose(); }}>Delete this income</button>

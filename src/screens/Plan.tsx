@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import {
-  counts, deleteBill, deleteBudget, deleteGoal, inMonth, logBill, monthSpent, nextDue, runDueBills, saveBill, saveBudget, saveGoal, share,
-  showToast, uid, useTally, type Bill, type Goal,
+  counts, deleteBill, deleteBudget, deleteGoal, deleteRecurringIncome, inMonth, logBill, logRecurringIncome, monthSpent, nextDue,
+  runDueBills, runDueIncome, saveBill, saveBudget, saveGoal, saveRecurringIncome, share, showToast, uid, useTally,
+  type Bill, type Goal, type RecurringIncome,
 } from "../data/store";
 import { CATEGORIES, CATEGORY_META, type Category } from "../core/categories";
 import { monthKey } from "../core/budget";
@@ -15,6 +16,7 @@ export function Plan() {
   const [budgetCat, setBudgetCat] = useState<Category | null>(null);
   const [bill, setBill] = useState<Bill | "new" | null>(null);
   const [goal, setGoal] = useState<Goal | "new" | null>(null);
+  const [regular, setRegular] = useState<RecurringIncome | "new" | null>(null);
 
   const spentByCat = useMemo(() => {
     const m = new Map<Category, number>();
@@ -100,6 +102,36 @@ export function Plan() {
       </section>
 
       <section className="col gap8">
+        <div className="section-title">
+          <span>Regular income</span>
+          {s.recurringIncomes.length > 0 && (
+            <span className="t-muted num">{formatMoney(s.recurringIncomes.reduce((t, r) => t + r.amount, 0))} a month</span>
+          )}
+        </div>
+        <div className="card flush divided">
+          {s.recurringIncomes.length === 0 && (
+            <Empty title="No regular income yet" body="Add your salary or anything that arrives every month. Tally adds it to your income on that day." />
+          )}
+          {s.recurringIncomes.map((r) => (
+            <button key={r.id} className="list-row" style={{ width: "100%", border: 0, background: "none", textAlign: "left" }} onClick={() => setRegular(r)}>
+              <span className="cat-icon income-icon" style={{ width: 40, height: 40 }}><Icon name="download" size={20} /></span>
+              <span className="grow col">
+                <span className="t-strong ellipsis">{r.source || "Income"}</span>
+                <span className="tiny t-muted">
+                  On the {ordinal(r.day)}
+                  {r.lastLoggedMonth === monthKey(now) ? " · received this month" : r.day <= now.getDate() ? " · not in income yet" : r.autoLog ? " · adds on the day" : ""}
+                </span>
+              </span>
+              <span className="t-strong num in">+{formatMoney(r.amount)}</span>
+            </button>
+          ))}
+          <button className="list-row btn ghost" style={{ width: "100%", borderRadius: 0, justifyContent: "flex-start" }} onClick={() => setRegular("new")}>
+            <Icon name="plus" size={18} /> Add regular income
+          </button>
+        </div>
+      </section>
+
+      <section className="col gap8">
         <div className="section-title"><span>Goals</span><button className="btn ghost" onClick={() => setGoal("new")}>+ New goal</button></div>
         <div className="card col gap16">
           {s.goals.length === 0 && <Empty title="No goals yet" body="Emergency fund, a trip, a new laptop — set a target and track it." />}
@@ -124,6 +156,7 @@ export function Plan() {
       <BudgetEditor category={budgetCat} onClose={() => setBudgetCat(null)} />
       <BillEditor value={bill} onClose={() => setBill(null)} />
       <GoalEditor value={goal} onClose={() => setGoal(null)} />
+      <RegularIncomeEditor value={regular} onClose={() => setRegular(null)} />
     </div>
   );
 }
@@ -261,6 +294,88 @@ function GoalEditor({ value, onClose }: { value: Goal | "new" | null; onClose: (
         onClose();
       }}>Save goal</button>
       {goal && <button className="btn danger block" onClick={() => { deleteGoal(goal.id); onClose(); }}>Delete goal</button>}
+    </Sheet>
+  );
+}
+
+const ordinal = (n: number) => `${n}${n % 10 === 1 && n !== 11 ? "st" : n % 10 === 2 && n !== 12 ? "nd" : n % 10 === 3 && n !== 13 ? "rd" : "th"}`;
+const INCOME_SOURCES = ["Salary", "Freelance", "Rent received", "Interest", "Pension", "Other"];
+
+function RegularIncomeEditor({ value, onClose }: { value: RecurringIncome | "new" | null; onClose: () => void }) {
+  const s = useTally();
+  const rule = value && value !== "new" ? value : null;
+  const [f, setF] = useState({ source: "Salary", amount: "", day: 1, account: "", note: "", autoLog: true, logNow: true });
+  const [seen, setSeen] = useState<typeof value>(null);
+  if (value !== seen) {
+    setSeen(value);
+    const bank = s.accounts.find((a) => a.kind === "bank")?.name ?? "Bank";
+    setF(rule
+      ? { source: rule.source, amount: String(rule.amount / 100), day: rule.day, account: rule.account, note: rule.note, autoLog: rule.autoLog, logNow: false }
+      : { source: "Salary", amount: "", day: Math.min(new Date().getDate(), 28), account: bank, note: "", autoLog: true, logNow: true });
+  }
+  const p = parsePaise(f.amount);
+  const now = new Date();
+  const monthName = now.toLocaleDateString([], { month: "long" });
+  const receivedThisMonth = rule?.lastLoggedMonth === monthKey(now);
+  // A new regular income whose day has already come this month: offer to add this month's too.
+  const askLogNow = !rule && f.day <= now.getDate();
+  const save = () => {
+    if (!p) return;
+    const saved: RecurringIncome = {
+      id: rule?.id ?? uid(), source: f.source.trim(), amount: p, day: f.day, account: f.account.trim(), note: f.note.trim(), autoLog: f.autoLog,
+      lastLoggedMonth: rule?.lastLoggedMonth ?? (askLogNow && !f.logNow ? monthKey(now) : ""),
+    };
+    saveRecurringIncome(saved);
+    if (askLogNow && f.logNow) {
+      logRecurringIncome(saved, now);
+      showToast(`Added ${saved.source || "income"} · ${formatMoney(saved.amount)} for ${monthName}`);
+    } else {
+      runDueIncome(now);
+    }
+    onClose();
+  };
+  return (
+    <Sheet open={value !== null} onClose={onClose} title={rule ? "Edit regular income" : "New regular income"}>
+      <div className="col gap8">
+        <span className="small t-strong">From</span>
+        <div className="row gap8 wrap">
+          {INCOME_SOURCES.map((x) => (
+            <button key={x} className={`chip${f.source === x ? " on" : ""}`} aria-pressed={f.source === x} onClick={() => setF({ ...f, source: x })}>{x}</button>
+          ))}
+        </div>
+        <input type="text" aria-label="Source" value={f.source} onChange={(e) => setF({ ...f, source: e.target.value })} placeholder="Employer, client or reason" />
+      </div>
+      <div className="row gap8">
+        <Field label="Amount (₹)"><input type="text" inputMode="decimal" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} placeholder="120000" /></Field>
+        <Field label="Arrives on">
+          <select value={f.day} onChange={(e) => setF({ ...f, day: Number(e.target.value) })}>
+            {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{ordinal(d)}</option>)}
+          </select>
+        </Field>
+      </div>
+      <Field label="Received in"><input type="text" value={f.account} onChange={(e) => setF({ ...f, account: e.target.value })} /></Field>
+      <div>
+        <Toggle label="Add to income on that day" hint="Each month, on or after the day, it's added to that month's income" checked={f.autoLog} onChange={(v) => setF({ ...f, autoLog: v })} />
+        {askLogNow && (
+          <Toggle label={`Add ${monthName}'s now`} hint="The day has already come this month" checked={f.logNow} onChange={(v) => setF({ ...f, logNow: v })} />
+        )}
+      </div>
+      {rule && (receivedThisMonth
+        ? <p className="t-muted small" style={{ margin: 0 }}><Icon name="check" size={14} /> {monthName}'s is in your income.</p>
+        : (
+          <button className="btn block" onClick={() => {
+            logRecurringIncome(rule, now);
+            showToast(`Added ${rule.source || "income"} · ${formatMoney(rule.amount)} for ${monthName}`);
+            onClose();
+          }}>Add {monthName}'s to income</button>
+        ))}
+      <button className="btn primary block" disabled={!p || !f.source.trim()} onClick={save}>Save</button>
+      {rule && (
+        <button className="btn danger block" onClick={() => { deleteRecurringIncome(rule.id); onClose(); }}>
+          Stop this regular income
+        </button>
+      )}
+      {rule && <p className="t-muted tiny" style={{ margin: 0 }}>Stopping it keeps the income already added.</p>}
     </Sheet>
   );
 }
