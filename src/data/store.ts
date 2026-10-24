@@ -1,0 +1,381 @@
+import { useSyncExternalStore } from "react";
+import { db, type StoreName } from "./db";
+import { type Category, guessCategory } from "../core/categories";
+import { crossedThreshold, monthKey, monthRange, sameDay, snapshot, type BudgetSnapshot } from "../core/budget";
+import { formatMoney } from "../core/money";
+import { yourShare } from "../core/smartParser";
+
+export type Source = "manual" | "smart" | "shortcut" | "capture" | "receipt" | "recurring" | "import";
+export const SOURCE_LABEL: Record<Source, string> = {
+  manual: "Logged in Tally", smart: "Smart add", shortcut: "Logged from a Shortcut",
+  capture: "Captured payment", receipt: "Scanned receipt", recurring: "Recurring bill", import: "Imported",
+};
+
+export interface Expense {
+  id: string;
+  amount: number; // paise
+  merchant: string;
+  note: string;
+  category: Category;
+  account: string;
+  occurredAt: number; // epoch ms
+  createdAt: number;
+  source: Source;
+  pending: boolean;
+  splitWays: number;
+  splitWith: string;
+  exclude: boolean;
+  recurring: boolean;
+}
+export interface Chip { id: string; title: string; amount: number; category: Category; order: number }
+export interface CategoryBudget { category: Category; limit: number }
+export interface Bill {
+  id: string; name: string; amount: number; prevAmount: number; day: number; category: Category;
+  account: string; isSubscription: boolean; autoLog: boolean; lastLoggedMonth: string;
+}
+export type AccountKind = "bank" | "card" | "cash" | "investment";
+export const ACCOUNT_KIND_LABEL: Record<AccountKind, string> = { bank: "Bank", card: "Credit card", cash: "Cash", investment: "Investment" };
+export interface Account { id: string; name: string; kind: AccountKind; balance: number; order: number; updatedAt: number }
+export interface Goal { id: string; name: string; target: number; saved: number; deadline: number | null }
+export interface Settings {
+  onboarded: boolean;
+  monthlyBudget: number;
+  monthlyIncome: number;
+  defaultAccount: string;
+  lockCredentialId: string | null;
+  lastBackupAt: number | null;
+}
+
+export interface State {
+  ready: boolean;
+  expenses: Expense[];
+  chips: Chip[];
+  budgets: CategoryBudget[];
+  bills: Bill[];
+  accounts: Account[];
+  goals: Goal[];
+  settings: Settings;
+}
+
+const DEFAULT_SETTINGS: Settings = {
+  onboarded: false, monthlyBudget: 0, monthlyIncome: 0, defaultAccount: "UPI", lockCredentialId: null, lastBackupAt: null,
+};
+
+let state: State = {
+  ready: false, expenses: [], chips: [], budgets: [], bills: [], accounts: [], goals: [], settings: DEFAULT_SETTINGS,
+};
+const listeners = new Set<() => void>();
+const emit = () => listeners.forEach((l) => l());
+function set(patch: Partial<State>) {
+  state = { ...state, ...patch };
+  emit();
+}
+
+export function useTally(): State {
+  return useSyncExternalStore(
+    (l) => { listeners.add(l); return () => listeners.delete(l); },
+    () => state,
+  );
+}
+export const getState = () => state;
+
+export const uid = () =>
+  (globalThis.crypto && "randomUUID" in crypto) ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+const sortExpenses = (list: Expense[]) => [...list].sort((a, b) => b.occurredAt - a.occurredAt);
+
+// ---------- load ----------
+
+export async function load() {
+  const [expenses, chips, budgets, bills, accounts, goals, kv] = await Promise.all([
+    db.all<Expense>("expenses"), db.all<Chip>("chips"), db.all<CategoryBudget>("budgets"), db.all<Bill>("bills"),
+    db.all<Account>("accounts"), db.all<Goal>("goals"), db.all<{ key: string; value: unknown }>("kv"),
+  ]);
+  const settingsRow = kv.find((r) => r.key === "settings");
+  const settings = { ...DEFAULT_SETTINGS, ...((settingsRow?.value as Partial<Settings>) ?? {}) };
+  set({
+    ready: true,
+    expenses: sortExpenses(expenses),
+    chips: [...chips].sort((a, b) => a.order - b.order),
+    budgets, bills, accounts: [...accounts].sort((a, b) => a.order - b.order), goals, settings,
+  });
+  if (chips.length === 0) await seedChips();
+  runDueBills();
+  // Ask the browser not to evict our data under storage pressure.
+  navigator.storage?.persist?.().catch(() => {});
+}
+
+async function seedChips() {
+  const chips: Chip[] = [
+    { id: uid(), title: "Coffee", amount: 18_000, category: "food", order: 0 },
+    { id: uid(), title: "Auto", amount: 12_000, category: "transport", order: 1 },
+    { id: uid(), title: "Lunch", amount: 35_000, category: "food", order: 2 },
+  ];
+  await db.putMany("chips", chips);
+  set({ chips });
+}
+
+// ---------- selectors ----------
+
+export const counts = (e: Expense) => !e.pending && !e.exclude;
+export const share = (e: Expense) => yourShare(e.amount, e.splitWays);
+export const expenseTitle = (e: Expense) => e.merchant || e.note || e.category[0].toUpperCase() + e.category.slice(1);
+
+export function inMonth(list: Expense[], d: Date) {
+  const [start, end] = monthRange(d);
+  return list.filter((e) => e.occurredAt >= start.getTime() && e.occurredAt < end.getTime());
+}
+
+export function monthSpent(list: Expense[], d: Date) {
+  return inMonth(list, d).filter(counts).reduce((s, e) => s + share(e), 0);
+}
+
+export function budgetSnapshot(s: State, now = new Date()): BudgetSnapshot {
+  const month = inMonth(s.expenses, now).filter(counts);
+  const spent = month.reduce((t, e) => t + share(e), 0);
+  const today = month.filter((e) => sameDay(new Date(e.occurredAt), now)).reduce((t, e) => t + share(e), 0);
+  return snapshot(s.settings.monthlyBudget, spent, today, now);
+}
+
+// ---------- toast ----------
+
+export interface Toast { id: number; message: string; undo?: () => void }
+let toast: Toast | null = null;
+const toastListeners = new Set<() => void>();
+let toastTimer: ReturnType<typeof setTimeout> | undefined;
+export function showToast(message: string, undo?: () => void) {
+  toast = { id: Date.now(), message, undo };
+  toastListeners.forEach((l) => l());
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { toast = null; toastListeners.forEach((l) => l()); }, 5000);
+}
+export function dismissToast() { toast = null; toastListeners.forEach((l) => l()); }
+export function useToast() {
+  return useSyncExternalStore((l) => { toastListeners.add(l); return () => toastListeners.delete(l); }, () => toast);
+}
+
+// ---------- writes ----------
+
+async function persist<T>(store: StoreName, value: T) {
+  try {
+    await db.put(store, value);
+  } catch {
+    showToast("Couldn't save to this browser's storage");
+  }
+}
+
+export interface NewExpense {
+  amount: number; category: Category; merchant?: string; note?: string; account?: string | null;
+  occurredAt?: number; source: Source; pending?: boolean; splitWays?: number; splitWith?: string;
+}
+
+/** The single write path for every way of logging. */
+export function addExpense(input: NewExpense): Expense {
+  const before = monthSpent(state.expenses, new Date());
+  const e: Expense = {
+    id: uid(), amount: input.amount, merchant: input.merchant ?? "", note: input.note ?? "",
+    category: input.category, account: input.account || state.settings.defaultAccount,
+    occurredAt: input.occurredAt ?? Date.now(), createdAt: Date.now(), source: input.source,
+    pending: input.pending ?? false, splitWays: Math.max(input.splitWays ?? 1, 1), splitWith: input.splitWith ?? "",
+    exclude: false, recurring: false,
+  };
+  set({ expenses: sortExpenses([e, ...state.expenses]) });
+  void persist("expenses", e);
+  checkThreshold(before);
+  return e;
+}
+
+function checkThreshold(before: number) {
+  const after = monthSpent(state.expenses, new Date());
+  const pct = crossedThreshold(before, after, state.settings.monthlyBudget);
+  if (pct) {
+    const left = state.settings.monthlyBudget - after;
+    setTimeout(() => showToast(pct === 100
+      ? `Monthly budget used up · ${formatMoney(-left)} over`
+      : `80% of budget used · ${formatMoney(left)} left`), 1200);
+  }
+}
+
+export function updateExpense(id: string, patch: Partial<Expense>) {
+  const list = state.expenses.map((e) => (e.id === id ? { ...e, ...patch } : e));
+  set({ expenses: sortExpenses(list) });
+  const updated = list.find((e) => e.id === id);
+  if (updated) void persist("expenses", updated);
+}
+
+export function deleteExpense(id: string, withUndo = true) {
+  const victim = state.expenses.find((e) => e.id === id);
+  if (!victim) return;
+  set({ expenses: state.expenses.filter((e) => e.id !== id) });
+  void db.delete("expenses", id);
+  if (withUndo) {
+    showToast(`Deleted ${expenseTitle(victim)} · ${formatMoney(victim.amount)}`, () => {
+      set({ expenses: sortExpenses([victim, ...state.expenses]) });
+      void persist("expenses", victim);
+    });
+  }
+}
+
+export function setSettings(patch: Partial<Settings>) {
+  const settings = { ...state.settings, ...patch };
+  set({ settings });
+  void persist("kv", { key: "settings", value: settings });
+}
+
+export function saveChip(chip: Chip) {
+  const exists = state.chips.some((c) => c.id === chip.id);
+  const chips = exists ? state.chips.map((c) => (c.id === chip.id ? chip : c)) : [...state.chips, chip];
+  set({ chips });
+  void persist("chips", chip);
+}
+export function deleteChip(id: string) {
+  set({ chips: state.chips.filter((c) => c.id !== id) });
+  void db.delete("chips", id);
+}
+
+export function saveBudget(b: CategoryBudget) {
+  set({ budgets: [...state.budgets.filter((x) => x.category !== b.category), b] });
+  void persist("budgets", b);
+}
+export function deleteBudget(category: Category) {
+  set({ budgets: state.budgets.filter((b) => b.category !== category) });
+  void db.delete("budgets", category);
+}
+
+export function saveBill(bill: Bill) {
+  const exists = state.bills.some((b) => b.id === bill.id);
+  set({ bills: exists ? state.bills.map((b) => (b.id === bill.id ? bill : b)) : [...state.bills, bill] });
+  void persist("bills", bill);
+}
+export function deleteBill(id: string) {
+  set({ bills: state.bills.filter((b) => b.id !== id) });
+  void db.delete("bills", id);
+}
+
+export function saveAccount(a: Account) {
+  const exists = state.accounts.some((x) => x.id === a.id);
+  set({ accounts: exists ? state.accounts.map((x) => (x.id === a.id ? a : x)) : [...state.accounts, a] });
+  void persist("accounts", a);
+}
+export function deleteAccount(id: string) {
+  set({ accounts: state.accounts.filter((a) => a.id !== id) });
+  void db.delete("accounts", id);
+}
+
+export function saveGoal(g: Goal) {
+  const exists = state.goals.some((x) => x.id === g.id);
+  set({ goals: exists ? state.goals.map((x) => (x.id === g.id ? g : x)) : [...state.goals, g] });
+  void persist("goals", g);
+}
+export function deleteGoal(id: string) {
+  set({ goals: state.goals.filter((g) => g.id !== id) });
+  void db.delete("goals", id);
+}
+
+// ---------- recurring ----------
+
+export function nextDue(bill: Bill, from = new Date()): Date {
+  const today = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  const thisMonth = new Date(from.getFullYear(), from.getMonth(), bill.day);
+  return thisMonth >= today ? thisMonth : new Date(from.getFullYear(), from.getMonth() + 1, bill.day);
+}
+
+export function makeRecurring(e: Expense) {
+  updateExpense(e.id, { recurring: true });
+  const name = expenseTitle(e);
+  if (state.bills.some((b) => b.name === name)) return;
+  const day = Math.min(new Date(e.occurredAt).getDate(), 28);
+  saveBill({
+    id: uid(), name, amount: e.amount, prevAmount: e.amount, day, category: e.category, account: e.account,
+    isSubscription: e.category === "fun" || e.category === "bills", autoLog: false,
+    lastLoggedMonth: monthKey(new Date(e.occurredAt)),
+  });
+}
+
+export function runDueBills(now = new Date()) {
+  const key = monthKey(now);
+  for (const bill of state.bills) {
+    if (bill.autoLog && bill.lastLoggedMonth !== key && bill.day <= now.getDate()) {
+      addExpense({
+        amount: bill.amount, category: bill.category, merchant: bill.name, account: bill.account,
+        occurredAt: new Date(now.getFullYear(), now.getMonth(), bill.day, 9).getTime(), source: "recurring",
+      });
+      saveBill({ ...bill, lastLoggedMonth: key });
+    }
+  }
+}
+
+// ---------- URL actions (for iOS Shortcuts, Action Button, bookmarks) ----------
+
+/**
+ *  ?log=180&cat=food&note=Coffee         → logs immediately
+ *  ?capture=640&merchant=Chutneys         → adds to Inbox as pending (Apple Pay automation)
+ *  ?add  /  ?smart                        → opens Quick Add / Smart add
+ */
+export function handleUrlActions(search: string, open: (sheet: "quickAdd" | "smartAdd") => void) {
+  const params = new URLSearchParams(search);
+  if (![...params.keys()].length) return;
+  const num = (v: string | null) => {
+    const n = v ? parseFloat(v.replace(/[^\d.]/g, "")) : NaN;
+    return Number.isFinite(n) && n > 0 ? Math.round(n * 100) : null;
+  };
+  const log = num(params.get("log"));
+  const capture = num(params.get("capture"));
+  if (log) {
+    const note = params.get("note") ?? "";
+    const cat = (params.get("cat") as Category) || guessCategory(note);
+    addExpense({ amount: log, category: cat, note, account: params.get("account"), source: "shortcut" });
+    showToast(`Logged ${note || "expense"} · ${formatMoney(log)}`);
+  } else if (capture) {
+    const merchant = params.get("merchant") ?? "";
+    addExpense({ amount: capture, category: guessCategory(merchant), merchant, account: params.get("card") || "Card",
+      source: "capture", pending: true });
+    showToast(`Captured ${merchant || "payment"} · ${formatMoney(capture)} · check Inbox`);
+  } else if (params.has("add")) {
+    open("quickAdd");
+  } else if (params.has("smart")) {
+    open("smartAdd");
+  }
+}
+
+// ---------- backup ----------
+
+export function exportJSON(): string {
+  const { expenses, chips, budgets, bills, accounts, goals, settings } = state;
+  return JSON.stringify({ app: "tally", version: 1, exportedAt: new Date().toISOString(),
+    expenses, chips, budgets, bills, accounts, goals, settings: { ...settings, lockCredentialId: null } }, null, 2);
+}
+
+export async function importJSON(text: string): Promise<number> {
+  const data = JSON.parse(text);
+  if (data.app !== "tally" || !Array.isArray(data.expenses)) throw new Error("Not a Tally backup file");
+  const stores: [StoreName, unknown[]][] = [
+    ["expenses", data.expenses], ["chips", data.chips ?? []], ["budgets", data.budgets ?? []],
+    ["bills", data.bills ?? []], ["accounts", data.accounts ?? []], ["goals", data.goals ?? []],
+  ];
+  for (const [name, rows] of stores) {
+    await db.clear(name);
+    await db.putMany(name, rows);
+  }
+  await db.put("kv", { key: "settings", value: { ...state.settings, ...data.settings, lockCredentialId: state.settings.lockCredentialId } });
+  await load();
+  return data.expenses.length;
+}
+
+export function exportCSV(): string {
+  const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+  const rows = ["date,amount_inr,your_share_inr,category,merchant,note,account,status,split_ways,source"];
+  for (const e of state.expenses) {
+    rows.push([
+      new Date(e.occurredAt).toISOString(), (e.amount / 100).toFixed(2), (share(e) / 100).toFixed(2), e.category,
+      e.merchant, e.note, e.account, e.pending ? "pending" : "confirmed", String(e.splitWays), e.source,
+    ].map(esc).join(","));
+  }
+  return rows.join("\n");
+}
+
+export async function eraseAll() {
+  for (const s of ["expenses", "chips", "budgets", "bills", "accounts", "goals"] as StoreName[]) await db.clear(s);
+  set({ expenses: [], chips: [], budgets: [], bills: [], accounts: [], goals: [] });
+  await seedChips();
+}
