@@ -273,7 +273,7 @@ export function Settings({ open, onClose }: { open: boolean; onClose: () => void
         <span className="t-strong small">Your data</span>
         <p className="t-muted small" style={{ margin: 0 }}>
           {signedIn
-            ? "Stored in this browser and synced to your account, where only you can read it."
+            ? "Stored in this browser and synced to your account. Other Tally users can't see it."
             : "Everything is stored only in this browser on this device. No account, no server, no tracking."}
           {s.settings.lastBackupAt ? ` Last backup ${new Date(s.settings.lastBackupAt).toLocaleDateString()}.` : " Back up regularly — clearing website data deletes it."}
         </p>

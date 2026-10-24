@@ -2,10 +2,10 @@
 
 Log a spend in 3 seconds and always know **what's safe to spend today**. It's a mobile-first web app (PWA), so you can add it to your iPhone Home Screen, and it also works on Android and desktop.
 
-- **Private by design:** all data stays in the browser (IndexedDB). There's no account, no server and no tracking.
+- **Account optional:** without one, data stays in the browser (IndexedDB). Sign in with Google to sync phone and laptop through Supabase. No ads or tracking.
 - **Works offline** after the first load: the service worker caches every file of a release.
 - **Updates in place:** a new deploy downloads in the background and the app shows *Update ready → Reload*. Data is untouched.
-- **Stack:** React 19, TypeScript, Vite. Plain CSS with light/dark themes. No UI framework.
+- **Stack:** React 19, TypeScript, Vite, Supabase (auth + Postgres), one Vercel function. Plain CSS with light/dark themes.
 
 ## Site map
 
@@ -120,7 +120,25 @@ Vercel → your project → **Settings → Domains** → add `tally.yourdomain.c
 
 ## Data and privacy
 
-- Data lives in this browser's IndexedDB. Clearing website data deletes it, so use **Settings → Back up (JSON)** regularly.
-- The app asks the browser to keep its storage persistent (`navigator.storage.persist()`).
-- The only network requests after load are optional: the first receipt scan downloads the OCR engine and its English model from a public CDN.
-- The Face ID lock is a privacy screen built on the device's passkey sign-in. Without a server, it does not encrypt the data.
+- **Signed out:** data lives in this browser's IndexedDB. Clearing website data deletes it, so use **Settings → Back up (JSON)** regularly. The app asks the browser to keep its storage persistent.
+- **Signed in:** the browser keeps its working copy and also syncs to the `sync_records` table in Supabase (AWS us-east-1). Row-level security lets each person read and write only their own rows.
+- **Deleting:** Settings → Account → **Delete account** calls `api/delete-account.ts`, which signs out every session and deletes the user; their rows go with it.
+- The first receipt scan downloads the OCR engine and its English model from jsDelivr. Photos are read on the device.
+- The Face ID lock is a privacy screen built on the device's passkey sign-in. It does not encrypt the data.
+
+## Sign-in and sync
+
+| Piece | Where |
+|---|---|
+| Sync rules (pure, tested) | `src/data/syncCore.ts` |
+| Sign-in, outbox, push/pull | `src/data/cloud.ts` |
+| Account UI | `src/screens/Account.tsx` |
+| Database schema, RLS, `sync_push()` | `supabase/migrations/` |
+| Account deletion | `api/delete-account.ts` (needs `SUPABASE_URL` and `SUPABASE_SECRET_KEY` on Vercel) |
+
+- Every local write lands in the `outbox` store, uploads through `sync_push()` (the newest edit wins), and other devices pull rows changed since their last server timestamp.
+- On a device's first sign-in, the account's data comes first, then anything only that device has is added.
+- **Setup:** the Supabase integration on Vercel provides `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, which are built into the app. Run `vercel env pull` for local development.
+- **Migrations:** apply with `supabase db push --db-url "$POSTGRES_URL_NON_POOLING"`.
+- **Google:** enable the Google provider in Supabase with an OAuth client whose redirect URI is `https://<project>.supabase.co/auth/v1/callback`. Allow the site's URLs under Authentication → URL Configuration.
+

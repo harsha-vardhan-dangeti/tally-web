@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <script src="/forward.js"></script>
     <title>Tally: know what's safe to spend today</title>
-    <meta name="description" content="A free expense tracker for rupee budgets. Log a spend in three seconds and see what's safe to spend today. No sign-up, works offline, and your data stays on your device." />
+    <meta name="description" content="A free expense tracker for rupee budgets. Log a spend in three seconds and see what's safe to spend today. Works offline with no sign-up, or sign in with Google to sync your phone and laptop." />
     <meta name="theme-color" content="#F3F4F6" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0B0D12" media="(prefers-color-scheme: dark)" />
     <meta property="og:title" content="Tally: know what's safe to spend today" />
-    <meta property="og:description" content="Log a spend in three seconds. No sign-up, works offline, and your data stays on your device." />
+    <meta property="og:description" content="Log a spend in three seconds. Works offline with no sign-up, or sign in with Google to sync your devices." />
     <meta property="og:type" content="website" />
     <meta property="og:image" content="/icons/icon-512.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
@@ -32,9 +32,9 @@
     <main>
       <section class="hero-site wrap-x">
         <div class="hero-copy">
-          <p class="eyebrow">Expense tracker · free · no sign-up</p>
+          <p class="eyebrow">Expense tracker · free · sign-up optional</p>
           <h1>Know what's safe to spend today.</h1>
-          <p class="lede">Log a spend in three seconds by typing a sentence or tapping a repeat. Tally keeps your month on budget, and everything you log stays in your browser.</p>
+          <p class="lede">Log a spend in three seconds by typing a sentence or tapping a repeat. Tally keeps your month on budget. Use it without an account, or sign in with Google to keep your phone and laptop in step.</p>
           <div class="cta-row">
             <a class="btn-site primary big" href="/app" data-open-app>Open Tally</a>
             <a class="btn-site big" href="#data">How your data is stored</a>
@@ -112,15 +112,17 @@
 
       <section class="band data wrap-x" id="data" aria-labelledby="data-title">
         <div class="data-head">
-          <h2 id="data-title">Your data stays on your device</h2>
-          <p>Tally has no accounts and no server that stores expenses. The website delivers the app; your numbers never leave the browser you use it in.</p>
+          <h2 id="data-title">Your data, your choice</h2>
+          <p>Without an account, nothing you log leaves your browser. Sign in with Google and Tally keeps a copy in your account, so your phone and laptop show the same numbers.</p>
         </div>
         <dl class="facts">
-          <div><dt>Where it's stored</dt><dd>In this browser's own database (IndexedDB) on your device. Tally asks the browser to keep it from being cleared to free up space.</dd></div>
-          <div><dt>What gets sent</dt><dd>Nothing you log. The only download after the first visit is the receipt reader, fetched from jsDelivr the first time you scan a receipt. The photo itself is read on your device.</dd></div>
+          <div><dt>Without an account</dt><dd>Everything stays in this browser's own database (IndexedDB) on your device. Nothing you log is sent anywhere.</dd></div>
+          <div><dt>Signed in with Google</dt><dd>Your records are also stored in Tally's database (Supabase, in the United States). Other Tally users can't see them. Your device keeps its own copy, so Tally still works offline.</dd></div>
+          <div><dt>Deleting it</dt><dd>Settings → <i>Delete account</i> removes your account and everything synced to it. <i>Delete all data</i> clears what's stored.</dd></div>
+          <div><dt>Receipt photos</dt><dd>Read on your device. The receipt reader itself is downloaded from jsDelivr the first time you scan one; the photo isn't uploaded.</dd></div>
           <div><dt>When Tally updates</dt><dd>A new version downloads in the background and Tally shows <i>Update ready</i>. Reloading swaps the app's files; your expenses aren't touched.</dd></div>
           <div><dt>Backups</dt><dd>One tap saves a JSON file you keep. Restoring checks the file before anything changes, and you can put your earlier data back afterwards.</dd></div>
-          <div><dt>The trade-off</dt><dd>Clearing this site's data in your browser deletes your expenses, and data doesn't sync between devices. Tally reminds you to back up every 30 days.</dd></div>
+          <div><dt>The trade-off</dt><dd>Without an account, clearing this site's data in your browser deletes your expenses, so Tally reminds you to back up every 30 days.</dd></div>
         </dl>
       </section>
 

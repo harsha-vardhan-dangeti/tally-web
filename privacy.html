@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Privacy · Tally</title>
-    <meta name="description" content="How Tally handles your data: it stays in your browser, on your device. No accounts, no server storage, no analytics." />
+    <meta name="description" content="How Tally handles your data: in your browser without an account, or synced to your account when you sign in with Google. No ads or trackers." />
     <meta name="theme-color" content="#F3F4F6" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0B0D12" media="(prefers-color-scheme: dark)" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
@@ -21,36 +21,44 @@
 
     <main class="article wrap-x">
       <h1>Privacy</h1>
-      <p class="updated">Last updated 24 October 2026</p>
-      <p>Tally is built so that we never have your financial data. There's no account to create and no server that receives or stores what you log.</p>
+      <p class="updated">Last updated 25 October 2026</p>
+      <p>You can use Tally in two ways. Without an account, nothing you log leaves your browser. If you sign in with Google, Tally also keeps your records in its database so your devices stay in step. You choose, and you can delete everything at any time.</p>
 
-      <h2>What Tally stores, and where</h2>
+      <h2>Without an account</h2>
       <ul>
-        <li>Your expenses, repeats, budgets, bills, accounts, goals and settings are saved in your browser's IndexedDB on your device.</li>
-        <li>One more item is kept in your browser's local storage: a flag saying you've set Tally up, so this website can show "Open your Tally". It contains no expense data.</li>
-        <li>Data stays in the browser you used. It doesn't sync to your other devices or browsers.</li>
+        <li>Your expenses, income, repeats, budgets, bills, accounts, goals and settings are saved in your browser's database (IndexedDB) on your device.</li>
+        <li>Nothing you log is sent to any server.</li>
+        <li>Clearing this site's data in your browser deletes it, so back up from Settings now and then.</li>
       </ul>
 
-      <h2>What leaves your device</h2>
+      <h2>Signed in with Google</h2>
       <ul>
-        <li><b>Nothing you log.</b> Expenses are never uploaded.</li>
-        <li><b>The app itself</b> is downloaded from this website and cached for offline use. Our hosting provider, Vercel, handles those requests and may keep standard server logs (such as IP address and time) for security and reliability.</li>
-        <li><b>The receipt reader.</b> The first time you scan a receipt, the text-recognition engine and its English language file are downloaded from the jsDelivr CDN. The photo is read on your device and isn't uploaded.</li>
+        <li><b>What's stored:</b> the same records as above, plus your name, email address and Google profile photo, which Google shares when you sign in. Tally doesn't ask Google for anything else.</li>
+        <li><b>Where:</b> in Tally's database, run by Supabase on servers in the United States (AWS us-east-1). Your device also keeps its own copy, so Tally works offline and uploads changes when you're back online.</li>
+        <li><b>Who can see it:</b> only your account can read or change your records; other Tally users can't. The person who runs Tally can access the database to keep it working, as with any online service.</li>
+        <li><b>Signing out</b> removes Tally's data from that browser. It stays in your account.</li>
       </ul>
-      <p>Tally has no analytics, ads or third-party trackers.</p>
+
+      <h2>Deleting your data</h2>
+      <ul>
+        <li><b>Delete account</b> (Settings → Account) permanently deletes your account and everything synced to it, signs out your other devices, and clears this browser. Download a backup first if you want to keep your records.</li>
+        <li><b>Delete all data</b> (Settings) clears your records. When you're signed in, that includes the copy in your account.</li>
+      </ul>
+
+      <h2>Services Tally uses</h2>
+      <ul>
+        <li><b>Vercel</b> hosts the website and app, and may keep standard server logs (such as IP address and time) for security and reliability.</li>
+        <li><b>Supabase</b> stores signed-in people's records and handles sign-in.</li>
+        <li><b>Google</b> handles "Sign in with Google".</li>
+        <li><b>jsDelivr</b> serves the receipt reader the first time you scan a receipt. The photo is read on your device and isn't uploaded.</li>
+      </ul>
+      <p>Tally has no ads, analytics or third-party trackers, and never sells or shares your data.</p>
 
       <h2>App lock</h2>
       <p>The Face ID / Touch ID lock uses your device's passkey sign-in to hide the app until you unlock it. It's a privacy screen: it doesn't encrypt the data stored in your browser.</p>
 
-      <h2>Updates</h2>
-      <p>When a new version of Tally is released, your browser downloads the new app files in the background and Tally shows <i>Update ready</i>. Reloading switches to the new files. Updates don't read, change or upload your data.</p>
-
-      <h2>Backups and deleting your data</h2>
-      <ul>
-        <li><b>Back up</b> in Settings saves a JSON file to your device. Keep it somewhere safe; anyone with the file can read it.</li>
-        <li><b>Restore</b> checks the file before replacing anything, and keeps your previous data so you can put it back.</li>
-        <li><b>Delete all data</b> in Settings removes everything Tally stored. Clearing this site's data in your browser settings does the same.</li>
-      </ul>
+      <h2>Backups and imports</h2>
+      <p>Backups are JSON files saved to your device; anyone with the file can read it. Bank statements you import are read in your browser, and only the transactions you choose to add are saved.</p>
     </main>
 
     <footer class="site-foot wrap-x">
