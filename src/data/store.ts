@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { db, type StoreName } from "./db";
-import { CATEGORIES, type Category, guessCategory, toCategory } from "../core/categories";
+import { categoryMeta, guessCategory, isCategory, setCategoryDefs, toCategory, type Category, type CategoryDef } from "../core/categories";
 import { crossedThreshold, monthKey, monthRange, sameDay, snapshot, type BudgetSnapshot } from "../core/budget";
 import { formatMoney } from "../core/money";
 import { yourShare } from "../core/smartParser";
@@ -38,6 +38,19 @@ export type AccountKind = "bank" | "card" | "cash" | "investment";
 export const ACCOUNT_KIND_LABEL: Record<AccountKind, string> = { bank: "Bank", card: "Credit card", cash: "Cash", investment: "Investment" };
 export interface Account { id: string; name: string; kind: AccountKind; balance: number; order: number; updatedAt: number }
 export interface Goal { id: string; name: string; target: number; saved: number; deadline: number | null }
+/** Money moved between two of the user's accounts. Not spending: it only changes the two balances. */
+export interface Transfer {
+  id: string;
+  fromId: string;
+  toId: string;
+  /** Account names when it was made, for the history after an account is renamed or deleted. */
+  fromName: string;
+  toName: string;
+  amount: number; // paise
+  note: string;
+  occurredAt: number; // epoch ms
+  createdAt: number;
+}
 /** Income that arrives every month, like a salary. Added to income on its day, once per month. */
 export interface RecurringIncome {
   id: string;
@@ -66,6 +79,8 @@ export interface Settings {
   defaultAccount: string;
   lockCredentialId: string | null;
   lastBackupAt: number | null;
+  /** Changes to the built-in categories and the user's own categories (see resolveCategories). */
+  categories: CategoryDef[];
 }
 
 export interface State {
@@ -78,22 +93,24 @@ export interface State {
   goals: Goal[];
   incomes: Income[];
   recurringIncomes: RecurringIncome[];
+  transfers: Transfer[];
   settings: Settings;
   /** When the last restore replaced this device's data; that data can be put back until the next restore. */
   restorePointAt: number | null;
 }
 
 const DEFAULT_SETTINGS: Settings = {
-  onboarded: false, monthlyBudget: 0, monthlyIncome: 0, defaultAccount: "UPI", lockCredentialId: null, lastBackupAt: null,
+  onboarded: false, monthlyBudget: 0, monthlyIncome: 0, defaultAccount: "UPI", lockCredentialId: null, lastBackupAt: null, categories: [],
 };
 
 let state: State = {
-  ready: false, expenses: [], chips: [], budgets: [], bills: [], accounts: [], goals: [], incomes: [], recurringIncomes: [], settings: DEFAULT_SETTINGS,
-  restorePointAt: null,
+  ready: false, expenses: [], chips: [], budgets: [], bills: [], accounts: [], goals: [], incomes: [], recurringIncomes: [], transfers: [],
+  settings: DEFAULT_SETTINGS, restorePointAt: null,
 };
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 function set(patch: Partial<State>) {
+  if (patch.settings && patch.settings !== state.settings) setCategoryDefs(patch.settings.categories);
   state = { ...state, ...patch };
   emit();
 }
@@ -117,21 +134,24 @@ const sortExpenses = (list: Expense[]) => [...list].sort((a, b) => b.occurredAt 
 // ---------- load ----------
 
 export async function load() {
-  const [expenses, chips, budgets, bills, accounts, goals, incomes, recurringIncomes, kv] = await Promise.all([
+  const [expenses, chips, budgets, bills, accounts, goals, incomes, recurringIncomes, transfers, kv] = await Promise.all([
     db.all<Expense>("expenses"), db.all<Chip>("chips"), db.all<CategoryBudget>("budgets"), db.all<Bill>("bills"),
     db.all<Account>("accounts"), db.all<Goal>("goals"), db.all<Income>("incomes"),
-    db.all<RecurringIncome>("recurringIncomes"), db.all<{ key: string; value: unknown }>("kv"),
+    db.all<RecurringIncome>("recurringIncomes"), db.all<Transfer>("transfers"), db.all<{ key: string; value: unknown }>("kv"),
   ]);
   const settingsRow = kv.find((r) => r.key === "settings");
   const settings = { ...DEFAULT_SETTINGS, ...((settingsRow?.value as Partial<Settings>) ?? {}) };
   const restorePoint = kv.find((r) => r.key === RESTORE_POINT)?.value as RestorePoint | undefined;
   // Rows can arrive from links and other devices, so an unknown category never reaches the screens.
+  setCategoryDefs(settings.categories);
   const fix = <T extends { category: Category }>(x: T): T => ({ ...x, category: toCategory(x.category) });
   set({
     ready: true,
     expenses: sortExpenses(expenses.map(fix)),
     chips: chips.map(fix).sort((a, b) => a.order - b.order),
-    budgets: budgets.filter((b) => CATEGORIES.includes(b.category)), bills: bills.map(fix), accounts: [...accounts].sort((a, b) => a.order - b.order), goals, incomes: sortIncomes(incomes), recurringIncomes, settings,
+    budgets: budgets.filter((b) => isCategory(b.category)), bills: bills.map(fix),
+    accounts: [...accounts].sort((a, b) => a.order - b.order), goals, incomes: sortIncomes(incomes), recurringIncomes,
+    transfers: sortTransfers(transfers), settings,
     restorePointAt: restorePoint?.savedAt ?? null,
   });
   if (chips.length === 0) await seedChips();
@@ -156,7 +176,7 @@ async function seedChips() {
 
 export const counts = (e: Expense) => !e.pending && !e.exclude;
 export const share = (e: Expense) => yourShare(e.amount, e.splitWays);
-export const expenseTitle = (e: Expense) => e.merchant || e.note || e.category[0].toUpperCase() + e.category.slice(1);
+export const expenseTitle = (e: Expense) => e.merchant || e.note || categoryMeta(e.category).title;
 
 export function inMonth(list: Expense[], d: Date) {
   const [start, end] = monthRange(d);
@@ -215,13 +235,17 @@ async function persist<T>(store: StoreName, value: T) {
 }
 
 async function remove(store: StoreName, key: string) {
-  await db.delete(store, key);
-  changeListener?.(store, key, null);
+  try {
+    await db.delete(store, key);
+    changeListener?.(store, key, null);
+  } catch {
+    showToast("Couldn't save to this browser's storage");
+  }
 }
 
 /** Every record in the app, for the first upload when a device signs in. */
 export function allRecords(): { store: StoreName; value: unknown }[] {
-  const { expenses, incomes, recurringIncomes, chips, budgets, bills, accounts, goals, settings } = state;
+  const { expenses, incomes, recurringIncomes, chips, budgets, bills, accounts, goals, transfers, settings } = state;
   return [
     ...expenses.map((value) => ({ store: "expenses" as const, value })),
     ...incomes.map((value) => ({ store: "incomes" as const, value })),
@@ -231,6 +255,7 @@ export function allRecords(): { store: StoreName; value: unknown }[] {
     ...bills.map((value) => ({ store: "bills" as const, value })),
     ...accounts.map((value) => ({ store: "accounts" as const, value })),
     ...goals.map((value) => ({ store: "goals" as const, value })),
+    ...transfers.map((value) => ({ store: "transfers" as const, value })),
     { store: "kv" as const, value: { key: "settings", value: settings } },
   ];
 }
@@ -347,6 +372,81 @@ export function saveAccount(a: Account) {
 export function deleteAccount(id: string) {
   set({ accounts: state.accounts.filter((a) => a.id !== id) });
   void remove("accounts", id);
+}
+
+// ---------- transfers ----------
+
+const sortTransfers = (list: Transfer[]) => [...list].sort((a, b) => b.occurredAt - a.occurredAt);
+
+/**
+ * An account after `amount` paise go into it (negative: come out of it). A card's balance is what's
+ * owed, so money into a card pays it down and money out of it adds to the debt.
+ */
+export const moneyIn = (a: Account, amount: number): Account =>
+  ({ ...a, balance: a.balance + (a.kind === "card" ? -amount : amount), updatedAt: Date.now() });
+
+function applyTransfer(t: Transfer, undo: boolean) {
+  const n = undo ? -t.amount : t.amount;
+  // An account deleted since the transfer has no balance left to fix.
+  const from = state.accounts.find((a) => a.id === t.fromId);
+  if (from) saveAccount(moneyIn(from, -n));
+  const to = state.accounts.find((a) => a.id === t.toId);
+  if (to) saveAccount(moneyIn(to, n));
+}
+
+export function addTransfer(input: { fromId: string; toId: string; amount: number; note: string; occurredAt: number }): Transfer | null {
+  const from = state.accounts.find((a) => a.id === input.fromId);
+  const to = state.accounts.find((a) => a.id === input.toId);
+  if (!from || !to || from.id === to.id || !(input.amount > 0)) return null;
+  const t: Transfer = { id: uid(), ...input, fromName: from.name, toName: to.name, createdAt: Date.now() };
+  applyTransfer(t, false);
+  set({ transfers: sortTransfers([t, ...state.transfers]) });
+  void persist("transfers", t);
+  return t;
+}
+
+/** Removes a transfer and puts both balances back. */
+export function deleteTransfer(id: string, withUndo = true) {
+  const t = state.transfers.find((x) => x.id === id);
+  if (!t) return;
+  applyTransfer(t, true);
+  set({ transfers: state.transfers.filter((x) => x.id !== id) });
+  void remove("transfers", id);
+  if (withUndo) {
+    showToast(`Removed transfer · ${formatMoney(t.amount)}`, () => {
+      applyTransfer(t, false);
+      set({ transfers: sortTransfers([t, ...state.transfers]) });
+      void persist("transfers", t);
+    });
+  }
+}
+
+// ---------- categories ----------
+
+/** Saves one category's settings: a new one, a renamed built-in, a hidden one. */
+export function saveCategory(def: CategoryDef) {
+  const rest = state.settings.categories.filter((c) => c.id !== def.id);
+  setSettings({ categories: [...rest, def] });
+}
+
+/** Deletes one of the user's own categories; its expenses, repeats and bills move to Other. */
+export async function deleteCategory(id: Category) {
+  const moved = state.expenses.filter((e) => e.category === id).map((e) => ({ ...e, category: "other" }));
+  const chips = state.chips.filter((c) => c.category === id).map((c) => ({ ...c, category: "other" }));
+  const bills = state.bills.filter((b) => b.category === id).map((b) => ({ ...b, category: "other" }));
+  const swap = <T extends { id: string }>(list: T[], changed: T[]) => list.map((x) => changed.find((c) => c.id === x.id) ?? x);
+  setSettings({ categories: state.settings.categories.filter((c) => c.id !== id) });
+  set({ expenses: swap(state.expenses, moved), chips: swap(state.chips, chips), bills: swap(state.bills, bills) });
+  if (state.budgets.some((b) => b.category === id)) deleteBudget(id);
+  try {
+    await db.putMany("expenses", moved);
+  } catch {
+    showToast("Couldn't save to this browser's storage");
+    return;
+  }
+  for (const e of moved) changeListener?.("expenses", e.id, e);
+  for (const c of chips) void persist("chips", c);
+  for (const b of bills) void persist("bills", b);
 }
 
 export function saveGoal(g: Goal) {
@@ -518,12 +618,12 @@ export function handleUrlActions(search: string, open: (sheet: "quickAdd" | "sma
 // ---------- backup ----------
 
 export function exportJSON(): string {
-  const { expenses, chips, budgets, bills, accounts, goals, incomes, recurringIncomes, settings } = state;
+  const { expenses, chips, budgets, bills, accounts, goals, incomes, recurringIncomes, transfers, settings } = state;
   return JSON.stringify({ app: "tally", version: 1, exportedAt: new Date().toISOString(),
-    expenses, chips, budgets, bills, accounts, goals, incomes, recurringIncomes, settings: { ...settings, lockCredentialId: null } }, null, 2);
+    expenses, chips, budgets, bills, accounts, goals, incomes, recurringIncomes, transfers, settings: { ...settings, lockCredentialId: null } }, null, 2);
 }
 
-const DATA_STORES: StoreName[] = ["expenses", "chips", "budgets", "bills", "accounts", "goals", "incomes", "recurringIncomes"];
+const DATA_STORES: StoreName[] = ["expenses", "chips", "budgets", "bills", "accounts", "goals", "incomes", "recurringIncomes", "transfers"];
 const RESTORE_POINT = "restorePoint";
 interface RestorePoint { savedAt: number; json: string }
 
@@ -542,6 +642,7 @@ export async function restoreBackup(backup: Backup): Promise<void> {
   await db.replaceAll(DATA_STORES, {
     expenses: backup.expenses, chips: backup.chips, budgets: backup.budgets, bills: backup.bills,
     accounts: backup.accounts, goals: backup.goals, incomes: backup.incomes, recurringIncomes: backup.recurringIncomes,
+    transfers: backup.transfers,
     kv: [{ key: "settings", value: settings }, { key: RESTORE_POINT, value: point }],
   });
   await load();
@@ -562,6 +663,7 @@ export async function undoRestore(): Promise<void> {
   await db.replaceAll(DATA_STORES, {
     expenses: backup.expenses, chips: backup.chips, budgets: backup.budgets, bills: backup.bills,
     accounts: backup.accounts, goals: backup.goals, incomes: backup.incomes, recurringIncomes: backup.recurringIncomes,
+    transfers: backup.transfers,
     kv: [{ key: "settings", value: { ...state.settings, ...backup.settings } }, { key: RESTORE_POINT, value: current }],
   });
   await load();
@@ -584,7 +686,7 @@ export async function eraseAll() {
   const before = allRecords();
   await db.replaceAll(DATA_STORES, {});
   await db.delete("kv", RESTORE_POINT);
-  set({ expenses: [], chips: [], budgets: [], bills: [], accounts: [], goals: [], incomes: [], recurringIncomes: [], restorePointAt: null });
+  set({ expenses: [], chips: [], budgets: [], bills: [], accounts: [], goals: [], incomes: [], recurringIncomes: [], transfers: [], restorePointAt: null });
   await seedChips();
   reportReplaced(before);
 }

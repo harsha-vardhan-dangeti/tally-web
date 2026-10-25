@@ -3,7 +3,7 @@ import { compactMoney, formatMoney, parsePaise } from "./money";
 import { crossedThreshold, monthKey, snapshot } from "./budget";
 import { parseExpense, parseLines } from "./smartParser";
 import { parseReceipt } from "./receiptParser";
-import { toCategory } from "./categories";
+import { categoryMeta, guessCategory, pickableCategories, resolveCategories, setCategoryDefs, toCategory } from "./categories";
 
 describe("money", () => {
   it("formats with Indian grouping", () => {
@@ -57,6 +57,40 @@ describe("categories", () => {
     expect(toCategory("pwn")).toBe("other");
     expect(toCategory(null, "transport")).toBe("transport");
     expect(toCategory("__proto__")).toBe("other");
+  });
+
+  it("adds the user's own categories, renames and hides built-ins", () => {
+    setCategoryDefs([
+      { id: "c-gym", title: "Gym", icon: "dumbbell", tint: "#0E7C86", keywords: ["cult", "protein"], hidden: false },
+      { id: "fun", title: "Going out", icon: "sparkle", tint: "#BF2E73", keywords: [], hidden: true },
+    ]);
+    expect(toCategory("c-gym")).toBe("c-gym");
+    expect(categoryMeta("fun").title).toBe("Going out");
+    expect(pickableCategories()).not.toContain("fun");
+    expect(pickableCategories("fun")).toContain("fun");
+    // Their own words and name win over the built-in "gym" → Health.
+    expect(guessCategory("gym 1500")).toBe("c-gym");
+    expect(guessCategory("cult fit")).toBe("c-gym");
+    // A hidden category isn't guessed.
+    expect(guessCategory("netflix")).toBe("other");
+    setCategoryDefs([]);
+    expect(guessCategory("gym")).toBe("health");
+    expect(toCategory("c-gym")).toBe("other");
+  });
+
+  it("checks categories that arrive from sync or a backup", () => {
+    const defs = resolveCategories([
+      { id: "c-a", title: "  ", icon: "x" },                 // no name: dropped
+      { id: "c-b", title: "Pets", icon: "nope", tint: "red; background: url(x)" },
+      { id: "other", hidden: true },                          // Other can't be hidden
+      { id: "__proto__", title: "x" },
+      "junk",
+    ]);
+    const pets = defs.find((d) => d.id === "c-b")!;
+    expect(pets).toMatchObject({ title: "Pets", icon: "grid", tint: "#565C69" });
+    expect(defs.find((d) => d.id === "c-a")).toBeUndefined();
+    expect(defs.find((d) => d.id === "other")?.hidden).toBe(false);
+    expect(defs).toHaveLength(9);
   });
 });
 

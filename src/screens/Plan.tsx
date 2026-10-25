@@ -4,7 +4,7 @@ import {
   runDueBills, runDueIncome, saveBill, saveBudget, saveGoal, saveRecurringIncome, share, showToast, uid, useTally,
   type Bill, type Goal, type RecurringIncome,
 } from "../data/store";
-import { CATEGORIES, CATEGORY_META, type Category } from "../core/categories";
+import { categoryMeta, pickableCategories, type Category } from "../core/categories";
 import { monthKey } from "../core/budget";
 import { formatMoney, parsePaise } from "../core/money";
 import { Icon } from "../ui/icons";
@@ -29,7 +29,7 @@ export function Plan() {
   const due14 = upcoming.filter((b) => nextDue(b).getTime() - now.getTime() < 14 * 86_400_000).reduce((t, b) => t + b.amount, 0);
   const overall = s.settings.monthlyBudget;
   const spent = monthSpent(s.expenses, now);
-  const unbudgeted = CATEGORIES.filter((c) => !s.budgets.some((b) => b.category === c));
+  const unbudgeted = pickableCategories().filter((c) => !s.budgets.some((b) => b.category === c));
 
   return (
     <div className="page wide">
@@ -46,7 +46,7 @@ export function Plan() {
           )}
           {[...s.budgets].sort((a, b) => a.category.localeCompare(b.category)).map((b) => (
             <button key={b.category} onClick={() => setBudgetCat(b.category)} style={{ border: 0, background: "none", padding: 0, textAlign: "left" }}>
-              <BudgetLine label={CATEGORY_META[b.category].title} spent={spentByCat.get(b.category) ?? 0} limit={b.limit} />
+              <BudgetLine label={categoryMeta(b.category).title} spent={spentByCat.get(b.category) ?? 0} limit={b.limit} />
             </button>
           ))}
           {unbudgeted.length > 0 && (
@@ -54,7 +54,7 @@ export function Plan() {
               <span className="t-muted">Add a category budget</span>
               <select value="" onChange={(e) => e.target.value && setBudgetCat(e.target.value as Category)}>
                 <option value="">Choose a category…</option>
-                {unbudgeted.map((c) => <option key={c} value={c}>{CATEGORY_META[c].title}</option>)}
+                {unbudgeted.map((c) => <option key={c} value={c}>{categoryMeta(c).title}</option>)}
               </select>
             </label>
           )}
@@ -184,7 +184,7 @@ function BudgetEditor({ category, onClose }: { category: Category | null; onClos
   if (category !== seen) { setSeen(category); setAmount(existing ? String(existing.limit / 100) : ""); }
   const p = parsePaise(amount);
   return (
-    <Sheet open={!!category} onClose={onClose} title={category ? `${CATEGORY_META[category].title} budget` : ""}>
+    <Sheet open={!!category} onClose={onClose} title={category ? `${categoryMeta(category).title} budget` : ""}>
       <Field label="Monthly limit (₹)"><input type="text" inputMode="numeric" autoFocus value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
       <button className="btn primary block" disabled={!p} onClick={() => { saveBudget({ category: category!, limit: p! }); onClose(); }}>Save</button>
       {existing && <button className="btn danger block" onClick={() => { deleteBudget(category!); onClose(); }}>Remove budget</button>}
@@ -237,7 +237,7 @@ function BillEditor({ value, onClose }: { value: Bill | "new" | null; onClose: (
       </div>
       <Field label="Category">
         <select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value as Category })}>
-          {CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_META[c].title}</option>)}
+          {pickableCategories(f.category).map((c) => <option key={c} value={c}>{categoryMeta(c).title}</option>)}
         </select>
       </Field>
       <div>

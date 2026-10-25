@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
-import { ACCOUNT_KIND_LABEL, deleteAccount, saveAccount, uid, useTally, type Account, type AccountKind } from "../data/store";
+import {
+  ACCOUNT_KIND_LABEL, addTransfer, deleteAccount, deleteTransfer, moneyIn, saveAccount, showToast, uid, useTally, type Account, type AccountKind,
+} from "../data/store";
 import { addMonths, monthRange } from "../core/budget";
-import { CATEGORY_META } from "../core/categories";
+import { categoryMeta } from "../core/categories";
 import { compactMoney, formatMoney, parsePaise } from "../core/money";
 import {
   categoryBreakdown, cumulative, insights, monthStats, monthlyTotals, paymentSplit, spentThroughDay, topMerchants, weekdayAverages, WEEKDAYS,
@@ -19,6 +21,8 @@ const pct = (part: number, whole: number) => Math.round((part / Math.max(whole, 
 export function Finances() {
   const s = useTally();
   const [editing, setEditing] = useState<Account | "new" | null>(null);
+  const [moving, setMoving] = useState(false);
+  const [allTransfers, setAllTransfers] = useState(false);
   const [offset, setOffset] = useState(0);
   const now = new Date();
   const month = addMonths(now, offset);
@@ -140,7 +144,7 @@ export function Finances() {
               <SpendCalendar month={month} daily={stats.daily} counts={stats.dailyCount} elapsed={stats.elapsed} budget={budget} />
               <p className="viz-foot">
                 {stats.noSpendDays} no-spend day{stats.noSpendDays === 1 ? "" : "s"}
-                {stats.biggest && <> · biggest: {stats.biggest.merchant || stats.biggest.note || CATEGORY_META[stats.biggest.category].title}, {formatMoney(Math.floor(stats.biggest.amount / stats.biggest.splitWays))}</>}
+                {stats.biggest && <> · biggest: {stats.biggest.merchant || stats.biggest.note || categoryMeta(stats.biggest.category).title}, {formatMoney(Math.floor(stats.biggest.amount / stats.biggest.splitWays))}</>}
               </p>
             </ChartCard>
             <ChartCard title="How you pay" subtitle={`${monthName}, by payment method`}
@@ -154,13 +158,13 @@ export function Finances() {
           <ChartCard title="Where it went" subtitle={`By category, with your usual monthly spend for comparison`}
             legend={rows.some((r) => r.average) ? <><LegendItem kind="bar" label={monthName} /><LegendItem kind="tick" label="Usual month (average of up to 3)" /></> : undefined}
             table={<DataTable head={["Category", monthName, "Share", "Usual month", "Budget"]}
-              rows={rows.map((r) => [CATEGORY_META[r.category].title, formatMoney(r.total), `${Math.round(r.share * 100)}%`,
+              rows={rows.map((r) => [categoryMeta(r.category).title, formatMoney(r.total), `${Math.round(r.share * 100)}%`,
                 r.average !== null ? formatMoney(r.average) : "—", r.limit ? formatMoney(r.limit) : "—"])} />}>
             {rows.length === 0 ? <Empty title="Nothing logged this month" body="Categories appear as you log." /> : (
               <BarList markerLabel="Usual month" rows={rows.map((r) => ({
                 key: r.category,
                 lead: <CategoryIcon category={r.category} size={32} />,
-                label: CATEGORY_META[r.category].title,
+                label: categoryMeta(r.category).title,
                 value: r.total,
                 marker: r.average,
                 flag: r.limit ? <LimitFlag total={r.total} limit={r.limit} /> : undefined,
@@ -216,7 +220,12 @@ export function Finances() {
         </section>
 
         <section className="col gap8">
-          <div className="section-title"><span>Accounts</span><button className="btn ghost" onClick={() => setEditing("new")}>+ Add</button></div>
+          <div className="section-title"><span>Accounts</span>
+            <span className="row gap4">
+              {s.accounts.length >= 2 && <button className="btn ghost" onClick={() => setMoving(true)}><Icon name="transfer" size={16} />Transfer</button>}
+              <button className="btn ghost" onClick={() => setEditing("new")}>+ Add</button>
+            </span>
+          </div>
           <div className="card flush divided">
             {s.accounts.length === 0 && <Empty title="No accounts yet" body="Add your bank, cards, cash and investments to see your net worth. Balances are entered by you." />}
             {s.accounts.map((acct) => (
@@ -225,16 +234,42 @@ export function Finances() {
                   <span className="t-strong">{acct.name}</span>
                   <span className="t-muted tiny">{ACCOUNT_KIND_LABEL[acct.kind]} · updated {new Date(acct.updatedAt).toLocaleDateString([], { day: "numeric", month: "short" })}</span>
                 </span>
-                <span className="t-strong num" style={{ color: acct.kind === "card" ? "var(--warn)" : undefined }}>
-                  {acct.kind === "card" ? "−" : ""}{formatMoney(acct.balance)}
-                </span>
+                <AccountBalance acct={acct} />
               </button>
             ))}
           </div>
         </section>
+
+        {s.transfers.length > 0 && (
+          <section className="col gap8">
+            <div className="section-title"><span>Transfers</span>
+              {s.transfers.length > 5 && <button className="btn ghost" onClick={() => setAllTransfers(!allTransfers)}>{allTransfers ? "Show fewer" : `Show all ${s.transfers.length}`}</button>}
+            </div>
+            <div className="card flush divided">
+              {(allTransfers ? s.transfers : s.transfers.slice(0, 5)).map((t) => {
+                const name = (id: string, fallback: string) => s.accounts.find((x) => x.id === id)?.name ?? fallback;
+                return (
+                  <div key={t.id} className="list-row">
+                    <span className="grow col" style={{ minWidth: 0 }}>
+                      <span className="t-strong ellipsis">{name(t.fromId, t.fromName)} → {name(t.toId, t.toName)}</span>
+                      <span className="t-muted tiny ellipsis">
+                        {new Date(t.occurredAt).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })}{t.note ? ` · ${t.note}` : ""}
+                      </span>
+                    </span>
+                    <span className="t-strong num">{formatMoney(t.amount)}</span>
+                    <button className="icon-btn" aria-label={`Remove transfer of ${formatMoney(t.amount)} and put both balances back`} onClick={() => deleteTransfer(t.id)}>
+                      <Icon name="trash" size={18} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
       </div>
 
       <AccountEditor value={editing} onClose={() => setEditing(null)} />
+      <TransferSheet open={moving} onClose={() => setMoving(false)} />
     </div>
   );
 }
@@ -271,6 +306,88 @@ function Stat({ label, value, color }: { label: string; value: string; color?: s
   );
 }
 
+/** A card shows what's owed as a negative; money left over on a card shows as positive. */
+function AccountBalance({ acct }: { acct: Account }) {
+  const value = acct.kind === "card" ? -acct.balance : acct.balance;
+  return <span className="t-strong num" style={{ color: value < 0 ? "var(--warn)" : undefined }}>{formatMoney(value)}</span>;
+}
+
+const today = () => new Date().toLocaleDateString("en-CA"); // yyyy-mm-dd in local time
+
+function TransferSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const s = useTally();
+  const [fromId, setFromId] = useState("");
+  const [toId, setToId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [date, setDate] = useState(today);
+  const [note, setNote] = useState("");
+  const [seen, setSeen] = useState(false);
+  if (open !== seen) {
+    setSeen(open);
+    if (open) {
+      // Most transfers leave a bank: start there, going to the first other account.
+      const from = s.accounts.find((a) => a.kind === "bank") ?? s.accounts[0];
+      setFromId(from?.id ?? "");
+      setToId(s.accounts.find((a) => a.id !== from?.id)?.id ?? "");
+      setAmount("");
+      setDate(today());
+      setNote("");
+    }
+  }
+  const from = s.accounts.find((a) => a.id === fromId);
+  const to = s.accounts.find((a) => a.id === toId);
+  const paise = parsePaise(amount) ?? 0;
+  const ready = from && to && from.id !== to.id && paise > 0 && date;
+  const shown = (a: Account) => formatMoney(a.kind === "card" ? -a.balance : a.balance);
+  const after = (a: Account, n: number) => shown(moneyIn(a, n));
+
+  const save = () => {
+    if (!ready) return;
+    const [y, m, d] = date.split("-").map(Number);
+    const at = new Date(y, m - 1, d, 12);
+    const isToday = at.toDateString() === new Date().toDateString();
+    const t = addTransfer({ fromId: from.id, toId: to.id, amount: paise, note: note.trim(), occurredAt: isToday ? Date.now() : at.getTime() });
+    if (t) showToast(`Moved ${formatMoney(paise)} from ${from.name} to ${to.name}`, () => deleteTransfer(t.id, false));
+    onClose();
+  };
+
+  return (
+    <Sheet open={open} onClose={onClose} title="Transfer between accounts">
+      <div className="row gap8">
+        <Field label="From">
+          <select value={fromId} onChange={(e) => { setFromId(e.target.value); if (e.target.value === toId) setToId(fromId); }}>
+            {s.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        </Field>
+        <Field label="To">
+          <select value={toId} onChange={(e) => { setToId(e.target.value); if (e.target.value === fromId) setFromId(toId); }}>
+            {s.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        </Field>
+      </div>
+      <div className="row gap8">
+        <Field label="Amount (₹)">
+          <input type="text" inputMode="decimal" autoFocus value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="5000" />
+        </Field>
+        <Field label="Date"><input type="date" value={date} max={today()} onChange={(e) => setDate(e.target.value)} /></Field>
+      </div>
+      <Field label="Note"><input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="optional, like “Card bill”" /></Field>
+
+      {from && to && from.id !== to.id && (
+        <div className="card col gap4 small" style={{ background: "var(--surface-2)" }} aria-live="polite">
+          <div className="row between"><span className="t-muted">{from.name}</span><span className="num">{shown(from)} → <b>{after(from, -paise)}</b></span></div>
+          <div className="row between"><span className="t-muted">{to.name}</span><span className="num">{shown(to)} → <b>{after(to, paise)}</b></span></div>
+          <span className="t-muted tiny">
+            {to.kind === "card" ? "Paying a card lowers what you owe. " : ""}A transfer isn't spending, so your budget doesn't change.
+          </span>
+        </div>
+      )}
+
+      <button className="btn primary block" disabled={!ready} onClick={save}>{paise ? `Transfer ${formatMoney(paise)}` : "Enter an amount"}</button>
+    </Sheet>
+  );
+}
+
 function AccountEditor({ value, onClose }: { value: Account | "new" | null; onClose: () => void }) {
   const s = useTally();
   const acct = value && value !== "new" ? value : null;
@@ -296,7 +413,9 @@ function AccountEditor({ value, onClose }: { value: Account | "new" | null; onCl
         <input type="text" inputMode="decimal" value={balance} onChange={(e) => setBalance(e.target.value)} placeholder="0" />
       </Field>
       <button className="btn primary block" disabled={!name} onClick={() => {
-        saveAccount({ id: acct?.id ?? uid(), name, kind, balance: parsePaise(balance) ?? 0, order: acct?.order ?? s.accounts.length, updatedAt: Date.now() });
+        // A transfer can leave a balance below zero, so a leading minus is kept.
+        const amount = (parsePaise(balance.trim().replace(/^[-−]/, "")) ?? 0) * (/^\s*[-−]/.test(balance) ? -1 : 1);
+        saveAccount({ id: acct?.id ?? uid(), name, kind, balance: amount, order: acct?.order ?? s.accounts.length, updatedAt: Date.now() });
         onClose();
       }}>Save</button>
       {acct && <button className="btn danger block" onClick={() => { deleteAccount(acct.id); onClose(); }}>Delete account</button>}

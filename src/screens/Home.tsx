@@ -5,7 +5,7 @@ import {
 } from "../data/store";
 import { addMonths, sameDay, snapshot, startOfDay } from "../core/budget";
 import { formatMoney, parsePaise } from "../core/money";
-import { CATEGORIES, CATEGORY_META, type Category } from "../core/categories";
+import { categoryMeta, pickableCategories, type Category } from "../core/categories";
 import { CategoryIcon, Icon } from "../ui/icons";
 import { Empty, Field, Sheet, SwipeRow, useLongPress } from "../ui/components";
 import { DaySheet, IncomeEditor, MonthCalendar } from "./Calendar";
@@ -18,7 +18,7 @@ export function ExpenseRowView({ e }: { e: Expense }) {
       <div className="grow col gap4">
         <span className="t-strong ellipsis">{expenseTitle(e)}</span>
         <span className="t-muted tiny ellipsis">
-          {CATEGORY_META[e.category].title} · {e.account} · {time}{e.exclude ? " · not in budget" : ""}
+          {categoryMeta(e.category).title} · {e.account} · {time}{e.exclude ? " · not in budget" : ""}
         </span>
       </div>
       <div className="col amt">
@@ -299,7 +299,7 @@ function ChipEditor({ chip, open, onClose }: { chip: Chip | null; open: boolean;
       <Field label="Amount (₹)"><input type="text" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="180" /></Field>
       <Field label="Category">
         <select value={category} onChange={(e) => setCategory(e.target.value as Category)}>
-          {CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_META[c].title}</option>)}
+          {pickableCategories(category).map((c) => <option key={c} value={c}>{categoryMeta(c).title}</option>)}
         </select>
       </Field>
       <button className="btn primary block" disabled={!title || !paise} onClick={() => {

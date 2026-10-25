@@ -2,7 +2,7 @@ import "./landing.css";
 import { parseExpense, yourShare, type ParsedExpense } from "../core/smartParser";
 import { sameDay, snapshot } from "../core/budget";
 import { formatMoney } from "../core/money";
-import { CATEGORY_META } from "../core/categories";
+import { categoryMeta } from "../core/categories";
 
 /** The hero demo: Tally's real Smart add parser and budget maths, on a sample month. Nothing is stored. */
 
@@ -50,7 +50,7 @@ function renderParse() {
     parseOut.append(field("Waiting for", "an amount, like 350 or 1.2k"));
     return;
   }
-  const meta = CATEGORY_META[p.category];
+  const meta = categoryMeta(p.category);
   parseOut.append(field("Amount", formatMoney(p.amount, { showPaise: true })));
   if (p.splitWays > 1) parseOut.append(field("Your share", `${formatMoney(yourShare(p.amount, p.splitWays))} of ${p.splitWays}`));
   parseOut.append(field("Category", meta.title, meta.tint));
@@ -66,10 +66,10 @@ function renderLog() {
     const li = document.createElement("li");
     const name = document.createElement("span");
     const amt = document.createElement("span");
-    name.textContent = p.merchant || p.note || CATEGORY_META[p.category].title;
+    name.textContent = p.merchant || p.note || categoryMeta(p.category).title;
     amt.textContent = `−${formatMoney(yourShare(p.amount, p.splitWays))}`;
     amt.className = "num";
-    li.style.setProperty("--tint", CATEGORY_META[p.category].tint);
+    li.style.setProperty("--tint", categoryMeta(p.category).tint);
     li.append(name, amt);
     return li;
   }));

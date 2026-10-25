@@ -3,7 +3,7 @@ import {
   findTable, guessBank, looksLikeTransfer, matchExisting, parseCsv, readTransactions,
   type ColumnMap, type StatementTable, type StatementTxn,
 } from "../core/statement";
-import { CATEGORIES, CATEGORY_META, type Category } from "../core/categories";
+import { categoryMeta, pickableCategories, type Category } from "../core/categories";
 import { formatMoney } from "../core/money";
 import { importTransactions, removeImported, showToast, useTally, type Expense, type Income } from "../data/store";
 import { Icon } from "../ui/icons";
@@ -231,7 +231,7 @@ function ImportRow({ t, day, picked, onToggle, maybeLogged, transfer, category, 
         <div className="row gap8 wrap" style={{ marginTop: 4 }}>
           {t.direction === "debit" && (
             <select className="import-cat" aria-label={`Category for ${t.name}`} value={category} onChange={(e) => onCategory(e.target.value as Category)}>
-              {CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_META[c].title}</option>)}
+              {pickableCategories(category).map((c) => <option key={c} value={c}>{categoryMeta(c).title}</option>)}
             </select>
           )}
           {maybeLogged && <span className="tag warn">Looks like one you already logged</span>}

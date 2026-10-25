@@ -1,10 +1,10 @@
 /** Tiny IndexedDB wrapper: this device's working copy. When signed in, cloud.ts also syncs it to Supabase. */
 
 const DB_NAME = "tally";
-// 2: adds "incomes". 3: adds "outbox" (changes waiting to sync). 4: adds "recurringIncomes".
+// 2: adds "incomes". 3: adds "outbox" (changes waiting to sync). 4: adds "recurringIncomes". 5: adds "transfers".
 // New stores are created on upgrade; existing data is untouched.
-const DB_VERSION = 4;
-export const STORES = ["expenses", "chips", "budgets", "bills", "accounts", "goals", "incomes", "recurringIncomes", "kv", "outbox"] as const;
+const DB_VERSION = 5;
+export const STORES = ["expenses", "chips", "budgets", "bills", "accounts", "goals", "incomes", "recurringIncomes", "transfers", "kv", "outbox"] as const;
 export type StoreName = (typeof STORES)[number];
 
 let dbPromise: Promise<IDBDatabase> | null = null;

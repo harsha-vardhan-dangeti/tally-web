@@ -1,5 +1,4 @@
-import type { Category } from "../core/categories";
-import { CATEGORY_META } from "../core/categories";
+import { categoryMeta, type Category } from "../core/categories";
 
 const paths: Record<string, string> = {
   home: "M4 11l8-7 8 7v9H4z",
@@ -36,6 +35,12 @@ const paths: Record<string, string> = {
   sun: "M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8M12 2v2M12 20v2M2 12h2M20 12h2",
   alert: "M12 4l9 16H3zM12 10v4M12 17v.5",
   info: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M12 11v6M12 7.5v.5",
+  gift: "M4 11h16v9H4zM3 7h18v4H3zM12 7v13M12 7c-1.5-3.5-5.5-3.5-5 0M12 7c1.5-3.5 5.5-3.5 5 0",
+  book: "M5 5a2 2 0 0 1 2-2h12v15H7a2 2 0 0 0-2 2zM5 20a2 2 0 0 0 2 1h12v-3",
+  plane: "M3 12l18-8-6 17-3-7zM12 14l9-10",
+  phone: "M8 3h8v18H8zM11 18h2",
+  dumbbell: "M3 10v4M6 7v10M18 7v10M21 10v4M6 12h12",
+  transfer: "M4 8h14M14 4l4 4-4 4M20 16H6M10 12l-4 4 4 4",
 };
 
 export function Icon({ name, size = 22, stroke = 2, label }: { name: string; size?: number; stroke?: number; label?: string }) {
@@ -49,7 +54,7 @@ export function Icon({ name, size = 22, stroke = 2, label }: { name: string; siz
 }
 
 export function CategoryIcon({ category, size = 40 }: { category: Category; size?: number }) {
-  const meta = CATEGORY_META[category] ?? CATEGORY_META.other;
+  const meta = categoryMeta(category);
   return (
     <span className="cat-icon" style={{ width: size, height: size, color: meta.tint, background: `color-mix(in srgb, ${meta.tint} 14%, transparent)` }}>
       <Icon name={meta.icon} size={Math.round(size * 0.5)} />

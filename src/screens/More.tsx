@@ -6,7 +6,7 @@ import {
 import { BackupError, parseBackup, type Backup } from "../data/backup";
 import { backupFileName, download } from "../ui/download";
 import { addMonths, snapshot, startOfDay } from "../core/budget";
-import { CATEGORIES, CATEGORY_META, type Category } from "../core/categories";
+import { allCategories, categoryMeta, pickableCategories, type Category } from "../core/categories";
 import { formatMoney, parsePaise } from "../core/money";
 import { Icon } from "../ui/icons";
 import { Empty, Field, Sheet, SwipeRow, Toggle } from "../ui/components";
@@ -14,6 +14,7 @@ import { ExpenseRowView, SwipeExpense } from "./Home";
 import { enableLock, lockSupported } from "./lock";
 import { AccountSection, GoogleButton } from "./Account";
 import { ImportSheet } from "./Import";
+import { CategoriesSheet } from "./Categories";
 import { cloudAvailable, useCloud } from "../data/cloud";
 
 // ---------------- Inbox ----------------
@@ -53,7 +54,7 @@ export function Inbox({ onOpen }: { onOpen: (e: Expense) => void }) {
                 <ExpenseRowView e={e} />
                 <div className="row gap8" style={{ padding: "0 14px 12px" }} onPointerDown={(ev) => ev.stopPropagation()} onPointerUp={(ev) => ev.stopPropagation()}>
                   <select aria-label="Category" value={e.category} onChange={(ev) => updateExpense(e.id, { category: ev.target.value as Category })} style={{ flex: 1 }}>
-                    {CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_META[c].title}</option>)}
+                    {pickableCategories(e.category).map((c) => <option key={c} value={c}>{categoryMeta(c).title}</option>)}
                   </select>
                   <button className="icon-btn" aria-label="Discard" onClick={() => deleteExpense(e.id)}><Icon name="close" size={18} /></button>
                   <button className="btn primary" onClick={() => confirm(e)}>Confirm</button>
@@ -105,7 +106,7 @@ export function Search({ open, onClose, onOpen }: { open: boolean; onClose: () =
   const results = useMemo(() => {
     const query = q.trim().toLowerCase();
     return s.expenses.filter((e) => !e.pending && (!cat || e.category === cat) &&
-      (!query || [e.merchant, e.note, e.account, CATEGORY_META[e.category].title, (e.amount / 100).toString()].some((f) => f.toLowerCase().includes(query))));
+      (!query || [e.merchant, e.note, e.account, categoryMeta(e.category).title, (e.amount / 100).toString()].some((f) => f.toLowerCase().includes(query))));
   }, [q, cat, s.expenses]);
   const total = results.reduce((t, e) => t + share(e), 0);
 
@@ -113,8 +114,8 @@ export function Search({ open, onClose, onOpen }: { open: boolean; onClose: () =
     <Sheet open={open} onClose={onClose} title="Search">
       <input type="search" autoFocus placeholder="Merchant, note, amount…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search expenses" />
       <div className="chips" style={{ margin: "0 -20px", padding: "2px 20px" }}>
-        {CATEGORIES.map((c) => (
-          <button key={c} className={`chip${cat === c ? " on" : ""}`} aria-pressed={cat === c} onClick={() => setCat(cat === c ? null : c)}>{CATEGORY_META[c].title}</button>
+        {pickableCategories().map((c) => (
+          <button key={c} className={`chip${cat === c ? " on" : ""}`} aria-pressed={cat === c} onClick={() => setCat(cat === c ? null : c)}>{categoryMeta(c).title}</button>
         ))}
       </div>
       <div className="row between small"><span className="t-strong">{results.length} results</span><span className="t-strong num">{formatMoney(total)}</span></div>
@@ -136,7 +137,7 @@ export function Recap({ open, onClose }: { open: boolean; onClose: () => void })
   const last = addMonths(now, -1);
   const lastSoFar = inMonth(s.expenses, last).filter((e) => counts(e) && new Date(e.occurredAt).getDate() <= now.getDate());
   const sum = (l: Expense[], c: Category) => l.filter((e) => e.category === c).reduce((t, e) => t + share(e), 0);
-  const changes = CATEGORIES.map((c) => ({ c, now: sum(thisMonth, c), before: sum(lastSoFar, c) }))
+  const changes = allCategories().map(({ id: c }) => ({ c, now: sum(thisMonth, c), before: sum(lastSoFar, c) }))
     .filter((x) => x.now || x.before).sort((a, b) => Math.abs(b.now - b.before) - Math.abs(a.now - a.before)).slice(0, 5);
   const biggest = [...thisMonth].sort((a, b) => share(b) - share(a))[0];
   const spendDays = new Set(thisMonth.map((e) => new Date(e.occurredAt).getDate()));
@@ -178,7 +179,7 @@ export function Recap({ open, onClose }: { open: boolean; onClose: () => void })
               const pct = before ? Math.round(((n - before) / before) * 100) : null;
               return (
                 <div key={c} className="list-row">
-                  <span className="grow col"><span className="t-strong">{CATEGORY_META[c].title}</span>
+                  <span className="grow col"><span className="t-strong">{categoryMeta(c).title}</span>
                     <span className="tiny t-muted num">{formatMoney(n)} vs {formatMoney(before)}</span></span>
                   <span className={`tag ${pct === null ? "" : pct > 0 ? "warn" : "good"}`}>{pct === null ? "new" : `${pct > 0 ? "+" : ""}${pct}%`}</span>
                 </div>
@@ -211,6 +212,7 @@ export function Settings({ open, onClose }: { open: boolean; onClose: () => void
   const [seen, setSeen] = useState(false);
   const [confirmErase, setConfirmErase] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [categories, setCategories] = useState(false);
   const [incoming, setIncoming] = useState<Backup | null>(null);
   const [restoring, setRestoring] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -260,6 +262,13 @@ export function Settings({ open, onClose }: { open: boolean; onClose: () => void
         <p className="t-muted tiny" style={{ margin: 0 }}>Safe to spend today = what's left ÷ days left. Leave rent out of the budget if you track it as a bill.</p>
 
         <AccountSection />
+
+        <button className="list-row card" style={{ width: "100%", background: "var(--surface-2)", textAlign: "left" }} onClick={() => setCategories(true)}>
+          <Icon name="grid" size={20} />
+          <span className="grow col"><span className="t-strong">Categories</span>
+            <span className="t-muted tiny">Add your own, rename or hide them</span></span>
+          <Icon name="next" size={16} />
+        </button>
 
         <div className="card" style={{ background: "var(--surface-2)", padding: "0 14px" }}>
           <Toggle label="Lock with Face ID / Touch ID" hint={lockSupported() ? "A privacy screen using your device's passkey sign-in. It does not encrypt data." : "Not supported in this browser"}
@@ -336,6 +345,7 @@ export function Settings({ open, onClose }: { open: boolean; onClose: () => void
         <p className="t-muted tiny" style={{ margin: 0 }}>Keyboard: <span className="kbd">N</span> new expense · <span className="kbd">S</span> smart add · <span className="kbd">/</span> search · <span className="kbd">Esc</span> close</p>
       </Sheet>
       <ImportSheet open={importing} onClose={() => setImporting(false)} />
+      <CategoriesSheet open={categories} onClose={() => setCategories(false)} />
     </>
   );
 }

@@ -1,7 +1,7 @@
 import type { CategoryBudget, Expense } from "../data/store";
 import { yourShare } from "./smartParser";
 import { addMonths, daysInMonth, monthRange, sameDay, startOfDay } from "./budget";
-import { CATEGORY_META, type Category } from "./categories";
+import { categoryMeta, type Category } from "./categories";
 import { formatMoney } from "./money";
 
 /**
@@ -151,7 +151,7 @@ export interface MerchantRow { name: string; count: number; total: number; categ
 export function topMerchants(expenses: Expense[], start: Date, end: Date, n = 5): MerchantRow[] {
   const groups = new Map<string, MerchantRow>();
   for (const e of spendIn(expenses, start, end)) {
-    const name = (e.merchant || e.note || CATEGORY_META[e.category].title).trim();
+    const name = (e.merchant || e.note || categoryMeta(e.category).title).trim();
     const key = name.toLowerCase();
     const row = groups.get(key) ?? { name, count: 0, total: 0, category: e.category };
     row.count++;
@@ -216,10 +216,10 @@ export function insights(expenses: Expense[], month: Date, now: Date, budget: nu
   const fall = moves.filter((m) => m.pct <= -0.25 && -m.change >= 50_000).sort((a, b) => a.change - b.change)[0];
   const point = stats.isCurrent ? "by this point in" : "in";
   if (rise) {
-    out.push({ tone: "warn", title: `${CATEGORY_META[rise.r.category].title} is up ${Math.round(rise.pct * 100)}% on your usual`,
+    out.push({ tone: "warn", title: `${categoryMeta(rise.r.category).title} is up ${Math.round(rise.pct * 100)}% on your usual`,
       detail: `${formatMoney(rise.r.total)} so far, against about ${formatMoney(rise.expected)} ${point} a typical month.` });
   } else if (fall) {
-    out.push({ tone: "good", title: `${CATEGORY_META[fall.r.category].title} is down ${Math.round(-fall.pct * 100)}% on your usual`,
+    out.push({ tone: "good", title: `${categoryMeta(fall.r.category).title} is down ${Math.round(-fall.pct * 100)}% on your usual`,
       detail: `${formatMoney(fall.r.total)} so far, against about ${formatMoney(fall.expected)} ${point} a typical month.` });
   }
 

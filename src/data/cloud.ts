@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { db, type StoreName } from "./db";
+import { db, STORES, type StoreName } from "./db";
 import { allRecords, load, onLocalChange } from "./store";
 import {
   changeKey, firstSignInPlan, fromSyncData, KIND_OF, nextCursor, pullFrom, rowsToApply, STORE_OF, toSyncData,
@@ -253,7 +253,7 @@ export async function startCloud(): Promise<void> {
 async function clearDevice() {
   onLocalChange(null);
   await client?.auth.signOut({ scope: "local" }).catch(() => {});
-  for (const s of ["expenses", "incomes", "recurringIncomes", "chips", "budgets", "bills", "accounts", "goals", "kv", "outbox"] as StoreName[]) await db.clear(s);
+  for (const s of STORES) await db.clear(s);
   try { localStorage.removeItem("tally:homeView"); } catch { /* nothing to remove */ }
   setCloud({ user: null, status: "signed-out", lastSyncedAt: null, pending: 0, message: null });
   await load();

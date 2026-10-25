@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from "react";
 import { addExpense, deleteExpense, setSettings, showToast, useTally } from "../data/store";
-import { CATEGORIES, CATEGORY_META, type Category } from "../core/categories";
+import { categoryMeta, pickableCategories, type Category } from "../core/categories";
 import { formatMoney } from "../core/money";
 import { parseLines, yourShare } from "../core/smartParser";
 import { parseReceipt } from "../core/receiptParser";
@@ -58,8 +58,9 @@ export function QuickAdd({ open, onClose, onSmart, initialDate }: {
   });
 
   const cycle = (dir: number) => {
-    const i = CATEGORIES.indexOf(category);
-    setCategory(CATEGORIES[(i + dir + CATEGORIES.length) % CATEGORIES.length]);
+    const list = pickableCategories(category);
+    const i = list.indexOf(category);
+    setCategory(list[(i + dir + list.length) % list.length]);
   };
 
   const save = (keepOpen: boolean) => {
@@ -75,7 +76,7 @@ export function QuickAdd({ open, onClose, onSmart, initialDate }: {
       setDigits("");
       setNote("");
     } else {
-      showToast(`Logged ${formatMoney(amount)} · ${CATEGORY_META[category].title}`, () => deleteExpense(e.id, false));
+      showToast(`Logged ${formatMoney(amount)} · ${categoryMeta(category).title}`, () => deleteExpense(e.id, false));
       onClose();
     }
   };
@@ -98,9 +99,9 @@ export function QuickAdd({ open, onClose, onSmart, initialDate }: {
       </div>
 
       <div className="cat-grid" role="group" aria-label="Category">
-        {CATEGORIES.map((c) => (
+        {pickableCategories(category).map((c) => (
           <button key={c} className="cat-btn" aria-pressed={c === category} onClick={() => setCategory(c)}>
-            <Icon name={CATEGORY_META[c].icon} size={20} />{CATEGORY_META[c].title}
+            <Icon name={categoryMeta(c).icon} size={20} />{categoryMeta(c).title}
           </button>
         ))}
       </div>
@@ -129,7 +130,7 @@ export function QuickAdd({ open, onClose, onSmart, initialDate }: {
             if (saveStart.current !== null && saveStart.current - e.clientY > 40) { swipedSave.current = true; save(true); }
             saveStart.current = null;
           }}>
-          {amount ? `Save ${formatMoney(amount)} · ${CATEGORY_META[category].title}` : "Enter an amount"}
+          {amount ? `Save ${formatMoney(amount)} · ${categoryMeta(category).title}` : "Enter an amount"}
         </button>
         <button className="btn ghost" disabled={!amount} onClick={() => save(true)}>Save and add another (or swipe up on Save)</button>
       </div>
@@ -206,11 +207,11 @@ export function SmartAdd({ open, onClose }: { open: boolean; onClose: () => void
             <div key={i} className="col gap8" style={{ padding: 14 }}>
               <div className="row gap12">
                 <CategoryIcon category={p.category} size={32} />
-                <span className="grow t-strong ellipsis">{p.merchant ?? (p.note || CATEGORY_META[p.category].title)}</span>
+                <span className="grow t-strong ellipsis">{p.merchant ?? (p.note || categoryMeta(p.category).title)}</span>
                 <span className="t-strong num">{formatMoney(p.amount, { showPaise: true })}</span>
               </div>
               <div className="row gap4 wrap">
-                <span className="tag">{CATEGORY_META[p.category].title}</span>
+                <span className="tag">{categoryMeta(p.category).title}</span>
                 {p.merchant && p.note && <span className="tag">{p.note}</span>}
                 <span className="tag">{sameDayLabel(p.date)}</span>
                 <span className="tag">{p.account ?? s.settings.defaultAccount}</span>

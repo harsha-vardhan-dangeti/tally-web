@@ -1,5 +1,5 @@
-import { CATEGORIES, type Category } from "../core/categories";
-import type { Account, AccountKind, Bill, CategoryBudget, Chip, Expense, Goal, Income, RecurringIncome, Settings, Source } from "./store";
+import { isCustomId, resolveCategories, type Category } from "../core/categories";
+import type { Account, AccountKind, Bill, CategoryBudget, Chip, Expense, Goal, Income, RecurringIncome, Settings, Source, Transfer } from "./store";
 
 /** Checks a backup file completely before anything on the device is replaced. Pure: no storage access. */
 
@@ -15,6 +15,7 @@ export interface Backup {
   goals: Goal[];
   incomes: Income[];
   recurringIncomes: RecurringIncome[];
+  transfers: Transfer[];
   settings: Partial<Settings>;
   /** Rows outside expenses that were unreadable and left out. */
   skipped: number;
@@ -32,10 +33,9 @@ const bool = (v: unknown) => v === true;
 const paise = (v: unknown) => (Number.isSafeInteger(v) && (v as number) > 0 ? (v as number) : null);
 const int = (v: unknown, fallback: number) => (Number.isSafeInteger(v) ? (v as number) : fallback);
 const time = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null);
-const category = (v: unknown): Category => (CATEGORIES.includes(v as Category) ? (v as Category) : "other");
 const id = (v: unknown) => (typeof v === "string" && v.trim() ? v : null);
 
-function expense(r: unknown, i: number): Expense {
+function expense(r: unknown, i: number, category: (v: unknown) => Category): Expense {
   const where = `Expense ${i + 1} in this file`;
   if (!isRow(r)) throw new BackupError(`${where} is unreadable.`);
   const rowId = id(r.id), amount = paise(r.amount), occurredAt = time(r.occurredAt);
@@ -76,14 +76,20 @@ export function parseBackup(text: string): Backup {
     throw new BackupError("This backup was made by a newer version of Tally. Reload Tally to update it, then restore again.");
   }
 
-  const expenses = uniqueBy(data.expenses.map(expense), (e) => e.id);
+  // The file's own categories come first: its expenses may use ones the user added.
+  const s = isRow(data.settings) ? data.settings : {};
+  const defs = resolveCategories(s.categories);
+  const known = new Set(defs.map((d) => d.id));
+  const category = (v: unknown): Category => (typeof v === "string" && known.has(v) ? v : "other");
+
+  const expenses = uniqueBy(data.expenses.map((r, i) => expense(r, i, category)), (e) => e.id);
   const chips = optionalRows<Chip>(data.chips, (r) => {
     const rowId = id(r.id), amount = paise(r.amount);
     return rowId && amount && str(r.title) ? { id: rowId, title: str(r.title), amount, category: category(r.category), order: int(r.order, 0) } : null;
   });
   const budgets = optionalRows<CategoryBudget>(data.budgets, (r) => {
     const limit = paise(r.limit);
-    return CATEGORIES.includes(r.category as Category) && limit ? { category: r.category as Category, limit } : null;
+    return typeof r.category === "string" && known.has(r.category) && limit ? { category: r.category, limit } : null;
   });
   const bills = optionalRows<Bill>(data.bills, (r) => {
     const rowId = id(r.id), amount = paise(r.amount), day = int(r.day, 0);
@@ -118,12 +124,20 @@ export function parseBackup(text: string): Backup {
       autoLog: r.autoLog !== false, lastLoggedMonth: str(r.lastLoggedMonth) };
   });
 
-  const s = isRow(data.settings) ? data.settings : {};
+  const transfers = optionalRows<Transfer>(data.transfers, (r) => {
+    const rowId = id(r.id), fromId = id(r.fromId), toId = id(r.toId), amount = paise(r.amount), occurredAt = time(r.occurredAt);
+    if (!rowId || !fromId || !toId || fromId === toId || !amount || occurredAt === null) return null;
+    return { id: rowId, fromId, toId, fromName: str(r.fromName), toName: str(r.toName), amount, note: str(r.note), occurredAt,
+      createdAt: time(r.createdAt) ?? occurredAt };
+  });
+
   const settings: Partial<Settings> = {};
   if (typeof s.onboarded === "boolean") settings.onboarded = s.onboarded;
   if (Number.isSafeInteger(s.monthlyBudget) && (s.monthlyBudget as number) >= 0) settings.monthlyBudget = s.monthlyBudget as number;
   if (Number.isSafeInteger(s.monthlyIncome) && (s.monthlyIncome as number) >= 0) settings.monthlyIncome = s.monthlyIncome as number;
   if (typeof s.defaultAccount === "string" && s.defaultAccount) settings.defaultAccount = s.defaultAccount;
+  // Only what differs from the built-ins is kept, in the checked form.
+  if (Array.isArray(s.categories)) settings.categories = defs.filter((d) => isCustomId(d.id) || (s.categories as unknown[]).some((c) => isRow(c) && c.id === d.id));
 
   return {
     exportedAt: typeof data.exportedAt === "string" ? data.exportedAt : null,
@@ -135,7 +149,9 @@ export function parseBackup(text: string): Backup {
     goals: uniqueBy(goals.rows, (r) => r.id),
     incomes: uniqueBy(incomes.rows, (r) => r.id),
     recurringIncomes: uniqueBy(recurringIncomes.rows, (r) => r.id),
+    transfers: uniqueBy(transfers.rows, (r) => r.id),
     settings,
-    skipped: chips.skipped + budgets.skipped + bills.skipped + accounts.skipped + goals.skipped + incomes.skipped + recurringIncomes.skipped,
+    skipped: chips.skipped + budgets.skipped + bills.skipped + accounts.skipped + goals.skipped + incomes.skipped + recurringIncomes.skipped
+      + transfers.skipped,
   };
 }

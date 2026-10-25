@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { deleteExpense, expenseTitle, makeRecurring, share, SOURCE_LABEL, updateExpense, useTally, type Expense } from "../data/store";
-import { CATEGORIES, CATEGORY_META, type Category } from "../core/categories";
+import { categoryMeta, pickableCategories, type Category } from "../core/categories";
 import { formatMoney, parsePaise } from "../core/money";
 import { CategoryIcon } from "../ui/icons";
 import { Field, Sheet, Toggle } from "../ui/components";
@@ -26,7 +26,7 @@ export function Detail({ id, onClose }: { id: string | null; onClose: () => void
   };
 
   return (
-    <Sheet open={!!id} onClose={() => { commitAmount(); onClose(); }} title={CATEGORY_META[e.category].title}>
+    <Sheet open={!!id} onClose={() => { commitAmount(); onClose(); }} title={categoryMeta(e.category).title}>
       <div className="col gap8" style={{ alignItems: "center", textAlign: "center" }}>
         <CategoryIcon category={e.category} size={56} />
         <input type="text" aria-label="Merchant" value={e.merchant} placeholder="Merchant"
@@ -50,7 +50,7 @@ export function Detail({ id, onClose }: { id: string | null; onClose: () => void
 
       <Field label="Category">
         <select value={e.category} onChange={(ev) => set({ category: ev.target.value as Category })}>
-          {CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_META[c].title}</option>)}
+          {pickableCategories(e.category).map((c) => <option key={c} value={c}>{categoryMeta(c).title}</option>)}
         </select>
       </Field>
       <div className="row gap8">

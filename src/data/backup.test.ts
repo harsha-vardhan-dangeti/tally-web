@@ -67,4 +67,21 @@ describe("parseBackup", () => {
     expect(b.expenses).toHaveLength(1);
     expect(b.expenses[0].amount).toBe(200);
   });
+
+  it("keeps the file's own categories and transfers, checked", () => {
+    const gym = { id: "c-gym", title: "Gym", icon: "dumbbell", tint: "#0E7C86", keywords: ["cult"], hidden: false };
+    const b = parseBackup(file({
+      expenses: [expense({ category: "c-gym" }), expense({ id: "e2", category: "c-unknown" })],
+      budgets: [{ category: "c-gym", limit: 300_000 }, { category: "c-unknown", limit: 100 }],
+      transfers: [
+        { id: "t1", fromId: "a1", toId: "a2", fromName: "HDFC", toName: "Card", amount: 500_000, note: "Card bill", occurredAt: 1_760_000_000_000 },
+        { id: "t2", fromId: "a1", toId: "a1", amount: 100, occurredAt: 1_760_000_000_000 },
+      ],
+      settings: { categories: [gym, { id: "fun", title: "Going out", hidden: true }, { id: "<script>", title: "x" }] },
+    }));
+    expect(b.expenses.map((e) => e.category)).toEqual(["c-gym", "other"]);
+    expect(b.budgets).toEqual([{ category: "c-gym", limit: 300_000 }]);
+    expect(b.transfers).toEqual([expect.objectContaining({ id: "t1", amount: 500_000, note: "Card bill" })]);
+    expect(b.settings.categories?.map((c) => [c.id, c.title, c.hidden])).toEqual([["fun", "Going out", true], ["c-gym", "Gym", false]]);
+  });
 });
