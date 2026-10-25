@@ -3,6 +3,10 @@ export type Category =
 
 export const CATEGORIES: Category[] = ["food", "transport", "groceries", "shopping", "bills", "fun", "health", "other"];
 
+/** A category from outside the app (a link, a synced row): anything unknown becomes the fallback. */
+export const toCategory = (v: unknown, fallback: Category = "other"): Category =>
+  CATEGORIES.includes(v as Category) ? (v as Category) : fallback;
+
 export const CATEGORY_META: Record<Category, { title: string; icon: string; tint: string; keywords: string[] }> = {
   food: {
     title: "Food", icon: "food", tint: "#B34D0D",

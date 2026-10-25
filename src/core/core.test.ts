@@ -3,6 +3,7 @@ import { compactMoney, formatMoney, parsePaise } from "./money";
 import { crossedThreshold, monthKey, snapshot } from "./budget";
 import { parseExpense, parseLines } from "./smartParser";
 import { parseReceipt } from "./receiptParser";
+import { toCategory } from "./categories";
 
 describe("money", () => {
   it("formats with Indian grouping", () => {
@@ -47,6 +48,15 @@ describe("budget", () => {
     expect(crossedThreshold(70_000, 120_000, 100_000)).toBe(100);
     expect(crossedThreshold(85_000, 90_000, 100_000)).toBeNull();
     expect(monthKey(new Date(2026, 2, 5))).toBe("2026-03");
+  });
+});
+
+describe("categories", () => {
+  it("keeps known categories and replaces anything else", () => {
+    expect(toCategory("food")).toBe("food");
+    expect(toCategory("pwn")).toBe("other");
+    expect(toCategory(null, "transport")).toBe("transport");
+    expect(toCategory("__proto__")).toBe("other");
   });
 });
 

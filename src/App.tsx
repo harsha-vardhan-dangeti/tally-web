@@ -35,6 +35,7 @@ export function App() {
   const [addDate, setAddDate] = useState<Date | null>(null);
   const [dbBlocked, setDbBlocked] = useState(false);
   const [locked, setLocked] = useState(false);
+  const [unlocked, setUnlocked] = useState(false);
 
   useEffect(() => { void load(); }, []);
 
@@ -79,10 +80,11 @@ export function App() {
   }, [s.ready, s.settings.lockCredentialId]);
 
   useEffect(() => {
-    if (!s.ready || !s.settings.onboarded || urlHandled) return;
+    // With the lock on, a link only logs once the owner has unlocked.
+    if (!s.ready || !s.settings.onboarded || urlHandled || (s.settings.lockCredentialId && !unlocked)) return;
     urlHandled = true; // StrictMode runs effects twice in dev; log only once.
     handleUrlActions(INITIAL_SEARCH, (name) => setSheet(name));
-  }, [s.ready, s.settings.onboarded]);
+  }, [s.ready, s.settings.onboarded, s.settings.lockCredentialId, unlocked]);
 
   useEffect(() => { history.replaceState(null, "", tab === "home" ? location.pathname : `#${tab}`); }, [tab]);
 
@@ -180,7 +182,7 @@ export function App() {
           <div className="col gap16" style={{ alignItems: "center" }}>
             <Icon name="lock" size={40} />
             <h2>Tally is locked</h2>
-            <button className="btn primary" onClick={async () => { if (await unlock(s.settings.lockCredentialId!)) setLocked(false); }}>Unlock</button>
+            <button className="btn primary" onClick={async () => { if (await unlock(s.settings.lockCredentialId!)) { setLocked(false); setUnlocked(true); } }}>Unlock</button>
           </div>
         </div>
       )}

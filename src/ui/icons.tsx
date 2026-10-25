@@ -49,7 +49,7 @@ export function Icon({ name, size = 22, stroke = 2, label }: { name: string; siz
 }
 
 export function CategoryIcon({ category, size = 40 }: { category: Category; size?: number }) {
-  const meta = CATEGORY_META[category];
+  const meta = CATEGORY_META[category] ?? CATEGORY_META.other;
   return (
     <span className="cat-icon" style={{ width: size, height: size, color: meta.tint, background: `color-mix(in srgb, ${meta.tint} 14%, transparent)` }}>
       <Icon name={meta.icon} size={Math.round(size * 0.5)} />

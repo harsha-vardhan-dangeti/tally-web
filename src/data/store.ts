@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { db, type StoreName } from "./db";
-import { type Category, guessCategory } from "../core/categories";
+import { CATEGORIES, type Category, guessCategory, toCategory } from "../core/categories";
 import { crossedThreshold, monthKey, monthRange, sameDay, snapshot, type BudgetSnapshot } from "../core/budget";
 import { formatMoney } from "../core/money";
 import { yourShare } from "../core/smartParser";
@@ -125,11 +125,13 @@ export async function load() {
   const settingsRow = kv.find((r) => r.key === "settings");
   const settings = { ...DEFAULT_SETTINGS, ...((settingsRow?.value as Partial<Settings>) ?? {}) };
   const restorePoint = kv.find((r) => r.key === RESTORE_POINT)?.value as RestorePoint | undefined;
+  // Rows can arrive from links and other devices, so an unknown category never reaches the screens.
+  const fix = <T extends { category: Category }>(x: T): T => ({ ...x, category: toCategory(x.category) });
   set({
     ready: true,
-    expenses: sortExpenses(expenses),
-    chips: [...chips].sort((a, b) => a.order - b.order),
-    budgets, bills, accounts: [...accounts].sort((a, b) => a.order - b.order), goals, incomes: sortIncomes(incomes), recurringIncomes, settings,
+    expenses: sortExpenses(expenses.map(fix)),
+    chips: chips.map(fix).sort((a, b) => a.order - b.order),
+    budgets: budgets.filter((b) => CATEGORIES.includes(b.category)), bills: bills.map(fix), accounts: [...accounts].sort((a, b) => a.order - b.order), goals, incomes: sortIncomes(incomes), recurringIncomes, settings,
     restorePointAt: restorePoint?.savedAt ?? null,
   });
   if (chips.length === 0) await seedChips();
@@ -259,7 +261,7 @@ export function addExpense(input: NewExpense): Expense {
   const before = monthSpent(state.expenses, new Date());
   const e: Expense = {
     id: input.id ?? uid(), amount: input.amount, merchant: input.merchant ?? "", note: input.note ?? "",
-    category: input.category, account: input.account || state.settings.defaultAccount,
+    category: toCategory(input.category), account: input.account || state.settings.defaultAccount,
     occurredAt: input.occurredAt ?? Date.now(), createdAt: Date.now(), source: input.source,
     pending: input.pending ?? false, splitWays: Math.max(input.splitWays ?? 1, 1), splitWith: input.splitWith ?? "",
     exclude: false, recurring: false,
@@ -498,7 +500,7 @@ export function handleUrlActions(search: string, open: (sheet: "quickAdd" | "sma
   const capture = num(params.get("capture"));
   if (log) {
     const note = params.get("note") ?? "";
-    const cat = (params.get("cat") as Category) || guessCategory(note);
+    const cat = toCategory(params.get("cat"), guessCategory(note));
     addExpense({ amount: log, category: cat, note, account: params.get("account"), source: "shortcut" });
     showToast(`Logged ${note || "expense"} · ${formatMoney(log)}`);
   } else if (capture) {
