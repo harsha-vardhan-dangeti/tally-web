@@ -1,13 +1,14 @@
 import { useMemo, useState } from "react";
 import {
-  counts, deleteBill, deleteBudget, deleteGoal, deleteRecurringIncome, inMonth, logBill, logRecurringIncome, monthSpent, nextDue,
-  runDueBills, runDueIncome, saveBill, saveBudget, saveGoal, saveRecurringIncome, share, showToast, uid, useTally,
+  counts, deleteBill, deleteBudget, deleteGoal, deleteRecurringIncome, dismissRecurring, inMonth, logBill, logRecurringIncome, monthSpent, nextDue,
+  recurringSuggestions, runDueBills, runDueIncome, saveBill, saveBudget, saveGoal, saveRecurringIncome, share, showToast, uid, useTally,
   type Bill, type Goal, type RecurringIncome,
 } from "../data/store";
 import { categoryMeta, pickableCategories, type Category } from "../core/categories";
 import { monthKey } from "../core/budget";
 import { formatMoney, parsePaise } from "../core/money";
-import { Icon } from "../ui/icons";
+import { CategoryIcon, Icon } from "../ui/icons";
+import type { RecurringCharge } from "../core/recurring";
 import { Empty, Field, Progress, Sheet, Toggle } from "../ui/components";
 
 export function Plan() {
@@ -30,6 +31,8 @@ export function Plan() {
   const overall = s.settings.monthlyBudget;
   const spent = monthSpent(s.expenses, now);
   const unbudgeted = pickableCategories().filter((c) => !s.budgets.some((b) => b.category === c));
+  const found = useMemo(() => recurringSuggestions(s, now.getTime()), [s.expenses, s.bills, s.settings.dismissedRecurring]); // eslint-disable-line react-hooks/exhaustive-deps
+  const foundMonthly = found.filter((r) => !r.maybeStopped).reduce((t, r) => t + r.monthlyCost, 0);
 
   return (
     <div className="page wide">
@@ -101,6 +104,21 @@ export function Plan() {
         )}
       </section>
 
+      {found.length > 0 && (
+        <section className="col gap8" id="recurring">
+          <div className="section-title">
+            <span>Found in your spending</span>
+            {foundMonthly > 0 && <span className="t-muted num">about {formatMoney(foundMonthly)} a month</span>}
+          </div>
+          <div className="card flush divided">
+            {found.map((r) => <FoundCharge key={r.key} r={r} />)}
+          </div>
+          <p className="t-muted tiny" style={{ margin: "0 4px" }}>
+            Charges that repeat at a steady interval for about the same amount. Track the ones you still pay for; dismiss the rest.
+          </p>
+        </section>
+      )}
+
       <section className="col gap8">
         <div className="section-title">
           <span>Regular income</span>
@@ -157,6 +175,47 @@ export function Plan() {
       <BillEditor value={bill} onClose={() => setBill(null)} />
       <GoalEditor value={goal} onClose={() => setGoal(null)} />
       <RegularIncomeEditor value={regular} onClose={() => setRegular(null)} />
+    </div>
+  );
+}
+
+const CADENCE_WORD = { weekly: "Weekly", monthly: "Monthly", quarterly: "Every 3 months", yearly: "Yearly" } as const;
+
+function FoundCharge({ r }: { r: RecurringCharge }) {
+  const day = (t: number) => new Date(t).toLocaleDateString([], { day: "numeric", month: "short" });
+  const track = () => {
+    saveBill({
+      id: uid(), name: r.name, amount: r.amount, prevAmount: r.previousAmount ?? r.amount, day: r.day, category: r.category, account: r.account,
+      // Its payments already reach Tally (logged or imported), so the bill only reminds; it doesn't add them again.
+      isSubscription: true, autoLog: false, lastLoggedMonth: monthKey(new Date(r.lastAt)),
+    });
+    showToast(`Tracking ${r.name} in bills`);
+  };
+  const dismiss = () => {
+    dismissRecurring(r.key);
+    showToast(`Won't suggest ${r.name} again`, () => dismissRecurring(r.key, true));
+  };
+  return (
+    <div className="found-row">
+      <CategoryIcon category={r.category} size={40} />
+      <div className="grow col gap4" style={{ minWidth: 0 }}>
+        <div className="row gap8">
+          <span className="t-strong ellipsis grow">{r.name}</span>
+          <span className="t-strong num">{formatMoney(r.amount)}</span>
+        </div>
+        <span className="tiny t-muted">
+          {CADENCE_WORD[r.cadence]} · {r.count} charges · last {day(r.lastAt)}{r.maybeStopped ? "" : ` · next around ${day(r.nextAt)}`}
+        </span>
+        <div className="row gap8 wrap">
+          {r.previousAmount !== null && r.amount > r.previousAmount && <span className="tag warn">Price up from {formatMoney(r.previousAmount)}</span>}
+          {r.maybeStopped && <span className="tag">May have stopped</span>}
+          {r.cadence !== "monthly" && <span className="tag">{formatMoney(r.monthlyCost)} a month</span>}
+        </div>
+        <div className="row gap8" style={{ marginTop: 4 }}>
+          {r.cadence === "monthly" && !r.maybeStopped && <button className="btn small-btn" onClick={track}><Icon name="plus" size={14} />Track as bill</button>}
+          <button className="btn ghost small-btn" onClick={dismiss}>Not a subscription</button>
+        </div>
+      </div>
     </div>
   );
 }

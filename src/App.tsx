@@ -2,30 +2,36 @@ import { useCallback, useEffect, useState } from "react";
 import { handleUrlActions, load, runDueBills, runDueIncome, useTally, type Expense } from "./data/store";
 import { Icon } from "./ui/icons";
 import { ToastHost, UpdateBar, useLongPress } from "./ui/components";
-import { Home } from "./screens/Home";
+import { Home } from "./screens/Dashboard";
+import { Activity } from "./screens/Activity";
+import { Reports } from "./screens/Reports";
+import { Accounts } from "./screens/Accounts";
 import { QuickAdd, SmartAdd } from "./screens/AddSheets";
 import { Detail } from "./screens/Detail";
-import { Finances } from "./screens/Finances";
 import { Plan } from "./screens/Plan";
 import { Inbox, Onboarding, Recap, Search, Settings } from "./screens/More";
 import { unlock } from "./screens/lock";
 import { startCloud } from "./data/cloud";
 
-type Tab = "home" | "finances" | "plan" | "inbox";
+type Tab = "home" | "activity" | "reports" | "plan" | "accounts" | "inbox";
 
 // Read once at startup, before the tab effect rewrites the URL.
 const INITIAL_SEARCH = typeof location !== "undefined" ? location.search : "";
 let urlHandled = false;
 type SheetName = "quickAdd" | "smartAdd" | "search" | "recap" | "settings" | null;
 
-const TABS: { id: Tab; label: string; icon: string }[] = [
-  { id: "home", label: "Home", icon: "home" },
-  { id: "finances", label: "Finances", icon: "chart" },
-  { id: "plan", label: "Plan", icon: "target" },
-  { id: "inbox", label: "Inbox", icon: "inbox" },
+/** `phone`: shown in the phone's tab bar too. Accounts is reached from Home's net worth card there. */
+const TABS: { id: Tab; label: string; icon: string; phone: boolean }[] = [
+  { id: "home", label: "Home", icon: "home", phone: true },
+  { id: "activity", label: "Activity", icon: "inbox", phone: true },
+  { id: "reports", label: "Reports", icon: "chart", phone: true },
+  { id: "plan", label: "Plan", icon: "target", phone: true },
+  { id: "accounts", label: "Accounts", icon: "card", phone: false },
+  { id: "inbox", label: "Inbox", icon: "check", phone: true },
 ];
 
-const tabFromHash = (): Tab => TABS.find((t) => `#${t.id}` === location.hash)?.id ?? "home";
+// Links and bookmarks from before the redesign used #finances.
+const tabFromHash = (): Tab => (location.hash === "#finances" ? "reports" : TABS.find((t) => `#${t.id}` === location.hash)?.id ?? "home");
 
 export function App() {
   const s = useTally();
@@ -86,7 +92,10 @@ export function App() {
     handleUrlActions(INITIAL_SEARCH, (name) => setSheet(name));
   }, [s.ready, s.settings.onboarded, s.settings.lockCredentialId, unlocked]);
 
-  useEffect(() => { history.replaceState(null, "", tab === "home" ? location.pathname : `#${tab}`); }, [tab]);
+  useEffect(() => {
+    history.replaceState(null, "", tab === "home" ? location.pathname : `#${tab}`);
+    window.scrollTo(0, 0);
+  }, [tab]);
 
   const openDetail = useCallback((e: Expense) => setDetailId(e.id), []);
   const close = useCallback(() => setSheet(null), []);
@@ -118,12 +127,13 @@ export function App() {
   const pending = s.expenses.filter((e) => e.pending).length;
   // Inbox only matters when an iPhone Shortcut has captured something to review.
   const tabs = TABS.filter((t) => t.id !== "inbox" || pending > 0 || tab === "inbox");
+  const phoneTabs = tabs.filter((t) => t.phone);
 
   return (
     <div className="shell">
       <nav className="sidebar" aria-label="Main">
         <div className="brand">
-          <span className="cat-icon" style={{ width: 34, height: 34, background: "var(--accent)", color: "var(--accent-ink)", borderRadius: 10 }}>
+          <span className="brand-mark">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><path d="M6 5v14M10 5v14M14 5v14M18 5v14M4 15L20 9" /></svg>
           </span>
           Tally
@@ -146,21 +156,25 @@ export function App() {
         <UpdateBar />
         {tab === "home" && (
           <Home onOpen={openDetail} onAdd={(day) => { setAddDate(day ?? null); setSheet("quickAdd"); }} onSearch={() => setSheet("search")}
-            onRecap={() => setSheet("recap")} onInbox={() => setTab("inbox")} onSettings={() => setSheet("settings")} />
+            onRecap={() => setSheet("recap")} onInbox={() => setTab("inbox")} onSettings={() => setSheet("settings")} go={setTab} />
         )}
-        {tab === "finances" && <Finances />}
+        {tab === "activity" && (
+          <Activity onOpen={openDetail} onAdd={(day) => { setAddDate(day ?? null); setSheet("quickAdd"); }} onSearch={() => setSheet("search")} />
+        )}
+        {tab === "reports" && <Reports />}
         {tab === "plan" && <Plan />}
+        {tab === "accounts" && <Accounts />}
         {tab === "inbox" && <Inbox onOpen={openDetail} />}
       </main>
 
-      <nav className="tabbar" aria-label="Main" style={{ gridTemplateColumns: `repeat(${tabs.length + 1}, minmax(0, 1fr))` }}>
-        {tabs.slice(0, 2).map((t) => (
+      <nav className="tabbar" aria-label="Main" style={{ gridTemplateColumns: `repeat(${phoneTabs.length + 1}, minmax(0, 1fr))` }}>
+        {phoneTabs.slice(0, 2).map((t) => (
           <button key={t.id} className="tab" aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}>
             <Icon name={t.icon} />{t.label}
           </button>
         ))}
         <AddFab onTap={() => setSheet("quickAdd")} onLong={() => setSheet("smartAdd")} />
-        {tabs.slice(2).map((t) => (
+        {phoneTabs.slice(2).map((t) => (
           <button key={t.id} className="tab" aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}
             aria-label={t.id === "inbox" && pending ? `Inbox, ${pending} to review` : undefined}>
             <Icon name={t.icon} />{t.label}

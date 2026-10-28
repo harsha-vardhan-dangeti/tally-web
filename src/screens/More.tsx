@@ -10,11 +10,12 @@ import { allCategories, categoryMeta, pickableCategories, type Category } from "
 import { formatMoney, parsePaise } from "../core/money";
 import { Icon } from "../ui/icons";
 import { Empty, Field, Sheet, SwipeRow, Toggle } from "../ui/components";
-import { ExpenseRowView, SwipeExpense } from "./Home";
+import { ExpenseRowView, SwipeExpense } from "./Activity";
 import { enableLock, lockSupported } from "./lock";
 import { AccountSection, GoogleButton } from "./Account";
 import { ImportSheet } from "./Import";
 import { CategoriesSheet } from "./Categories";
+import { RulesSheet } from "./Rules";
 import { cloudAvailable, useCloud } from "../data/cloud";
 
 // ---------------- Inbox ----------------
@@ -213,6 +214,7 @@ export function Settings({ open, onClose }: { open: boolean; onClose: () => void
   const [confirmErase, setConfirmErase] = useState(false);
   const [importing, setImporting] = useState(false);
   const [categories, setCategories] = useState(false);
+  const [rules, setRules] = useState(false);
   const [incoming, setIncoming] = useState<Backup | null>(null);
   const [restoring, setRestoring] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -263,12 +265,20 @@ export function Settings({ open, onClose }: { open: boolean; onClose: () => void
 
         <AccountSection />
 
-        <button className="list-row card" style={{ width: "100%", background: "var(--surface-2)", textAlign: "left" }} onClick={() => setCategories(true)}>
-          <Icon name="grid" size={20} />
-          <span className="grow col"><span className="t-strong">Categories</span>
-            <span className="t-muted tiny">Add your own, rename or hide them</span></span>
-          <Icon name="next" size={16} />
-        </button>
+        <div className="card flush divided" style={{ background: "var(--surface-2)", boxShadow: "none" }}>
+          <button className="list-row row-btn" onClick={() => setCategories(true)}>
+            <Icon name="grid" size={20} />
+            <span className="grow col"><span className="t-strong">Categories</span>
+              <span className="t-muted tiny">Add your own, rename or hide them</span></span>
+            <Icon name="next" size={16} />
+          </button>
+          <button className="list-row row-btn" onClick={() => setRules(true)}>
+            <Icon name="split" size={20} />
+            <span className="grow col"><span className="t-strong">Rules</span>
+              <span className="t-muted tiny">{s.settings.rules.length ? `${s.settings.rules.length} rule${s.settings.rules.length === 1 ? "" : "s"} · ` : ""}“Swiggy is always Food”</span></span>
+            <Icon name="next" size={16} />
+          </button>
+        </div>
 
         <div className="card" style={{ background: "var(--surface-2)", padding: "0 14px" }}>
           <Toggle label="Lock with Face ID / Touch ID" hint={lockSupported() ? "A privacy screen using your device's passkey sign-in. It does not encrypt data." : "Not supported in this browser"}
@@ -346,6 +356,7 @@ export function Settings({ open, onClose }: { open: boolean; onClose: () => void
       </Sheet>
       <ImportSheet open={importing} onClose={() => setImporting(false)} />
       <CategoriesSheet open={categories} onClose={() => setCategories(false)} />
+      <RulesSheet open={rules} onClose={() => setRules(false)} />
     </>
   );
 }

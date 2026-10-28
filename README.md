@@ -58,16 +58,21 @@ A new release installs in the background and waits. `src/data/updates.ts` shows 
   - Type `lunch 350 at chutneys, split with arjun`, or several lines at once.
   - Receipt photo OCR runs in the browser with Tesseract (WebAssembly).
 - **Expense detail:** edit everything, split N ways (only your share counts toward the budget), repeat monthly, exclude from budget.
-- **Finances:** net worth from your accounts, 6-month spending chart, category donut.
-- **Plan:** overall and category budgets; bills and subscriptions (due dates, price-rise flag, auto-log); savings goals.
+- **Home:** safe to spend today (with the month drawn as tally marks), cash flow, what's due in 14 days, budgets, net worth and recent activity.
+- **Activity:** every expense by month, as a list or calendar, filtered by category.
+- **Reports:** cash flow for any period (where the money went, income vs spending by month, savings rate), spending grouped by category, place or payment method, filters, CSV export, and a month-in-detail view.
+- **Accounts:** net worth over time from month-end balances, accounts grouped by type, and transfers between accounts.
+- **Plan:** overall and category budgets; bills and subscriptions (due dates, price-rise flag, auto-log); repeating charges found in your spending (`src/core/recurring.ts`); savings goals.
 - **Inbox:** captured payments wait for a one-tap confirm.
 - **Recap:** month-end forecast, change vs the same point last month, biggest spend, no-spend days, logging streak.
 - **Regular income:** salary and other monthly income add themselves on their day (Plan → Regular income, or "Repeats every month" on an income entry).
-- **Bank statement import:** Settings → Import bank statement reads CSV or Excel exports from net banking (HDFC, ICICI, SBI, Axis and similar layouts), in the browser.
+- **Bank statement import:** Settings → Import bank statement reads PDF, Excel or CSV statements from net banking (HDFC, ICICI, SBI, Axis and similar layouts), in the browser.
   - Withdrawals become expenses and deposits become income, with a category and a readable name for each.
   - Likely duplicates of hand-logged entries and transfers (card bills, own-account moves, SIPs) start unticked.
   - Re-importing the same statement never adds a row twice.
-  - PDF statements aren't supported.
+  - PDFs are read with pdf.js (`src/core/pdfTable.ts` rebuilds the table from word positions); password-protected PDFs ask for the password. Scanned PDFs have no text and can't be read.
+  - The column layout you confirm for a bank is remembered for next time.
+- **Rules:** Settings → Rules, or "Always" while importing or editing an expense: "Swiggy is always Food", optionally with a cleaner name.
 - **Account:** optional Google sign-in syncs phone and laptop. **Delete account** removes the account and its synced data.
 - **Settings:** Face ID / Touch ID privacy lock (WebAuthn), JSON backup and restore, CSV export, delete all data.
 - **Desktop:** sidebar layout, plus keyboard shortcuts: `N` add, `S` smart add, `/` search, `Esc` close.

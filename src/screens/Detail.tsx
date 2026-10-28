@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { deleteExpense, expenseTitle, makeRecurring, share, SOURCE_LABEL, updateExpense, useTally, type Expense } from "../data/store";
+import { deleteExpense, expenseTitle, makeRecurring, saveRule, share, showToast, SOURCE_LABEL, uid, updateExpense, useTally, type Expense } from "../data/store";
 import { categoryMeta, pickableCategories, type Category } from "../core/categories";
 import { formatMoney, parsePaise } from "../core/money";
 import { CategoryIcon } from "../ui/icons";
@@ -15,7 +15,9 @@ export function Detail({ id, onClose }: { id: string | null; onClose: () => void
   const s = useTally();
   const e: Expense | undefined = s.expenses.find((x) => x.id === id);
   const [amount, setAmount] = useState("");
-  useEffect(() => { if (e) setAmount(String(e.amount / 100)); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The category this sheet opened with: after changing it, offer to make the change a rule.
+  const [openedWith, setOpenedWith] = useState<Category | null>(null);
+  useEffect(() => { if (e) { setAmount(String(e.amount / 100)); setOpenedWith(e.category); } }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!e) return <Sheet open={false} onClose={onClose} title="">{null}</Sheet>;
   const set = (patch: Partial<Expense>) => updateExpense(e.id, patch);
@@ -53,6 +55,13 @@ export function Detail({ id, onClose }: { id: string | null; onClose: () => void
           {pickableCategories(e.category).map((c) => <option key={c} value={c}>{categoryMeta(c).title}</option>)}
         </select>
       </Field>
+      {e.merchant.trim().length >= 2 && openedWith !== null && e.category !== openedWith
+        && !s.settings.rules.some((r) => r.match === e.merchant.trim().toLowerCase() && r.category === e.category) && (
+        <button className="btn ghost small-btn" style={{ alignSelf: "flex-start", marginTop: -6 }} onClick={() => {
+          saveRule({ id: uid(), match: e.merchant.trim().toLowerCase(), category: e.category, rename: "" });
+          showToast(`From now on, ${e.merchant.trim()} is ${categoryMeta(e.category).title}`);
+        }}>Always put {e.merchant.trim()} in {categoryMeta(e.category).title}</button>
+      )}
       <div className="row gap8">
         <Field label="Paid from"><input type="text" value={e.account} onChange={(ev) => set({ account: ev.target.value })} /></Field>
         <Field label="When">

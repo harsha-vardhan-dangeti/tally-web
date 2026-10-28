@@ -1,4 +1,5 @@
 import { isCustomId, resolveCategories, type Category } from "../core/categories";
+import { sanitizeRules } from "../core/rules";
 import type { Account, AccountKind, Bill, CategoryBudget, Chip, Expense, Goal, Income, RecurringIncome, Settings, Source, Transfer } from "./store";
 
 /** Checks a backup file completely before anything on the device is replaced. Pure: no storage access. */
@@ -102,7 +103,11 @@ export function parseBackup(text: string): Backup {
   const accounts = optionalRows<Account>(data.accounts, (r) => {
     const rowId = id(r.id);
     if (!rowId || !str(r.name) || !KINDS.includes(r.kind as AccountKind) || !Number.isSafeInteger(r.balance)) return null;
-    return { id: rowId, name: str(r.name), kind: r.kind as AccountKind, balance: r.balance as number, order: int(r.order, 0), updatedAt: time(r.updatedAt) ?? Date.now() };
+    const history = isRow(r.history)
+      ? Object.fromEntries(Object.entries(r.history).filter(([k, v]) => /^\d{4}-\d{2}$/.test(k) && Number.isSafeInteger(v)) as [string, number][])
+      : undefined;
+    return { id: rowId, name: str(r.name), kind: r.kind as AccountKind, balance: r.balance as number, order: int(r.order, 0), updatedAt: time(r.updatedAt) ?? Date.now(),
+      ...(history ? { history } : {}) };
   });
   const goals = optionalRows<Goal>(data.goals, (r) => {
     const rowId = id(r.id), target = paise(r.target);
@@ -136,6 +141,8 @@ export function parseBackup(text: string): Backup {
   if (Number.isSafeInteger(s.monthlyBudget) && (s.monthlyBudget as number) >= 0) settings.monthlyBudget = s.monthlyBudget as number;
   if (Number.isSafeInteger(s.monthlyIncome) && (s.monthlyIncome as number) >= 0) settings.monthlyIncome = s.monthlyIncome as number;
   if (typeof s.defaultAccount === "string" && s.defaultAccount) settings.defaultAccount = s.defaultAccount;
+  if (Array.isArray(s.rules)) settings.rules = sanitizeRules(s.rules).filter((r) => known.has(r.category));
+  if (Array.isArray(s.dismissedRecurring)) settings.dismissedRecurring = s.dismissedRecurring.filter((k): k is string => typeof k === "string").slice(-200);
   // Only what differs from the built-ins is kept, in the checked form.
   if (Array.isArray(s.categories)) settings.categories = defs.filter((d) => isCustomId(d.id) || (s.categories as unknown[]).some((c) => isRow(c) && c.id === d.id));
 

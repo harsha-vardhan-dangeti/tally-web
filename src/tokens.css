@@ -1,33 +1,46 @@
-/* Tally colour tokens, shared by the app and the website. */
+/* Tally design tokens, shared by the app and the website.
+   Slate and marigold: slate ink for text and the summary card, marigold for the one thing to press
+   (and for the days you have left). --brand is a fill that needs --brand-ink on top; --accent is
+   the readable version of it for text, links, focus and selected states. Charts keep their own
+   validated palette (--viz-*). */
 :root {
-  --bg: #F3F4F6;
+  --font-body: "Hanken Grotesk Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+  --font-display: "Bricolage Grotesque Variable", "Hanken Grotesk Variable", -apple-system, system-ui, sans-serif;
+
+  --bg: #F1F2F4;
   --surface: #FFFFFF;
-  --surface-2: #F7F8FA;
-  --fill: #EEF0F3;
-  --line: #E3E5EA;
-  --ink: #0E1116;
-  --ink-2: #3A3F4B;
-  --muted: #565C69;
-  --accent: #3446D6;
+  --surface-2: #F6F7F9;
+  --fill: #ECEDF1;
+  --line: #E1E3E9;
+  --ink: #141823;
+  --ink-2: #3B4150;
+  --muted: #5B6272;
+  --brand: #F2B33D;
+  --brand-ink: #1C1503;
+  --brand-soft: #FFF2D3;
+  --accent: #8A5A00;
   --accent-ink: #FFFFFF;
-  --accent-soft: #EEF0FF;
-  --hero: #0E1116;
-  --hero-ink: #FFFFFF;
-  --hero-muted: #B9BECA;
-  --hero-fill: #262C38;
-  --hero-bar: #8C9BFF;
+  --accent-soft: #FFF2D3;
+  --hero: #161C2A;
+  --hero-ink: #F7F4EC;
+  --hero-muted: #AEB6C6;
+  --hero-fill: #262E40;
+  --hero-bar: #F2B33D;
   --good: #0B7A47;
-  --good-soft: #E7F6EE;
+  --good-soft: #E5F5EC;
   --warn: #A3480C;
-  --warn-soft: #FFF4E5;
+  --warn-soft: #FFF1E2;
   --danger: #C2321F;
   --danger-soft: #FDECEA;
-  --shadow: 0 8px 24px rgba(14, 17, 22, 0.10);
-  --radius: 20px;
-  /* Charts (see src/ui/charts.tsx). De-emphasis grey, hairline grid, a one-hue sequential ramp for the
-     spending calendar, and the first four validated categorical slots for payment methods. */
+  --shadow: 0 1px 2px rgba(20, 24, 35, 0.04), 0 8px 24px rgba(20, 24, 35, 0.08);
+  --shadow-sm: 0 1px 2px rgba(20, 24, 35, 0.05);
+  --radius: 18px;
+  /* Charts (see src/ui/charts.tsx). The emphasis series, de-emphasis grey, hairline grid, a one-hue
+     sequential ramp for the spending calendar, and four validated categorical slots. */
+  --viz-emph: #2A78D6;
   --viz-muted: #C5CAD3;
   --viz-grid: #E9EBEF;
+  --viz-link: #C9CED8;
   --viz-seq-1: #CDE2FB; --viz-seq-2: #9EC5F4; --viz-seq-3: #6DA7EC; --viz-seq-4: #3987E5; --viz-seq-5: #256ABF;
   --viz-seq-ink-1: #0E1116; --viz-seq-ink-2: #0E1116; --viz-seq-ink-3: #0E1116; --viz-seq-ink-4: #FFFFFF; --viz-seq-ink-5: #FFFFFF;
   --viz-cat-1: #2A78D6; --viz-cat-2: #EB6834; --viz-cat-3: #1BAF7A; --viz-cat-4: #EDA100;
@@ -35,12 +48,13 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0B0D12; --surface: #171A21; --surface-2: #1C2029; --fill: #232833; --line: #2A2F3A;
-    --ink: #F2F3F5; --ink-2: #D0D4DC; --muted: #A3A9B6; --accent: #8C9BFF; --accent-ink: #0B0D12; --accent-soft: #1F2540;
-    --hero: #1C2130; --hero-fill: #2A3040; --hero-bar: #8C9BFF;
+    --bg: #0D1016; --surface: #161A22; --surface-2: #1B2029; --fill: #232934; --line: #2B313D;
+    --ink: #F1F2F5; --ink-2: #CDD2DB; --muted: #A1A8B6;
+    --brand: #F5BE55; --brand-ink: #1C1503; --brand-soft: #2E2512; --accent: #F5BE55; --accent-ink: #1C1503; --accent-soft: #2E2512;
+    --hero: #1C2333; --hero-fill: #2C3548; --hero-bar: #F5BE55;
     --good: #5FD39A; --good-soft: #11301F; --warn: #FFB37A; --warn-soft: #2E2115; --danger: #FF8A7A; --danger-soft: #3A1A16;
-    --shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-    --viz-muted: #3D4452; --viz-grid: #262B35;
+    --shadow: 0 8px 24px rgba(0, 0, 0, 0.4); --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --viz-emph: #3987E5; --viz-muted: #3D4452; --viz-grid: #262B35; --viz-link: #343B49;
     --viz-seq-1: #104281; --viz-seq-2: #184F95; --viz-seq-3: #256ABF; --viz-seq-4: #3987E5; --viz-seq-5: #6DA7EC;
     --viz-seq-ink-1: #FFFFFF; --viz-seq-ink-2: #FFFFFF; --viz-seq-ink-3: #FFFFFF; --viz-seq-ink-4: #FFFFFF; --viz-seq-ink-5: #0B0D12;
     --viz-cat-1: #3987E5; --viz-cat-2: #D95926; --viz-cat-3: #199E70; --viz-cat-4: #C98500;
@@ -48,12 +62,13 @@
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0B0D12; --surface: #171A21; --surface-2: #1C2029; --fill: #232833; --line: #2A2F3A;
-  --ink: #F2F3F5; --ink-2: #D0D4DC; --muted: #A3A9B6; --accent: #8C9BFF; --accent-ink: #0B0D12; --accent-soft: #1F2540;
-  --hero: #1C2130; --hero-fill: #2A3040; --hero-bar: #8C9BFF;
+  --bg: #0D1016; --surface: #161A22; --surface-2: #1B2029; --fill: #232934; --line: #2B313D;
+  --ink: #F1F2F5; --ink-2: #CDD2DB; --muted: #A1A8B6;
+  --brand: #F5BE55; --brand-ink: #1C1503; --brand-soft: #2E2512; --accent: #F5BE55; --accent-ink: #1C1503; --accent-soft: #2E2512;
+  --hero: #1C2333; --hero-fill: #2C3548; --hero-bar: #F5BE55;
   --good: #5FD39A; --good-soft: #11301F; --warn: #FFB37A; --warn-soft: #2E2115; --danger: #FF8A7A; --danger-soft: #3A1A16;
-  --shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  --viz-muted: #3D4452; --viz-grid: #262B35;
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.4); --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --viz-emph: #3987E5; --viz-muted: #3D4452; --viz-grid: #262B35; --viz-link: #343B49;
   --viz-seq-1: #104281; --viz-seq-2: #184F95; --viz-seq-3: #256ABF; --viz-seq-4: #3987E5; --viz-seq-5: #6DA7EC;
   --viz-seq-ink-1: #FFFFFF; --viz-seq-ink-2: #FFFFFF; --viz-seq-ink-3: #FFFFFF; --viz-seq-ink-4: #FFFFFF; --viz-seq-ink-5: #0B0D12;
   --viz-cat-1: #3987E5; --viz-cat-2: #D95926; --viz-cat-3: #199E70; --viz-cat-4: #C98500;

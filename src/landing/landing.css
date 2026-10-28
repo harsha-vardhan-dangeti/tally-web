@@ -1,6 +1,6 @@
 @import "../tokens.css";
 
-/* Website for Tally. Same tokens and system type as the app, so the site and the product read as one thing.
+/* Website for Tally. Same tokens and typefaces as the app, so the site and the product read as one thing.
    Layout: a 1120px column; the hero pairs the promise with a working demo of the app's own dark summary card. */
 
 * { box-sizing: border-box; }
@@ -8,11 +8,11 @@ html { scroll-behavior: smooth; }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 body.site {
   margin: 0; background: var(--bg); color: var(--ink);
-  font: 400 17px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, system-ui, sans-serif;
+  font: 400 17px/1.6 var(--font-body);
   -webkit-font-smoothing: antialiased;
 }
 .site h1, .site h2, .site h3 {
-  margin: 0; font-family: -apple-system, "SF Pro Display", "Segoe UI Variable Display", "Segoe UI", Roboto, system-ui, sans-serif;
+  margin: 0; font-family: var(--font-display);
   text-wrap: balance;
 }
 .site p { margin: 0; }
@@ -28,7 +28,7 @@ kbd { font: 600 0.8em ui-monospace, Menlo, monospace; border: 1px solid var(--li
 /* ---------- header ---------- */
 .site-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 20px; }
 .logo { display: inline-flex; align-items: center; gap: 10px; font-weight: 700; font-size: 20px; color: var(--ink) !important; text-decoration: none; }
-.logo .mark { width: 34px; height: 34px; border-radius: 10px; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; }
+.logo .mark { width: 34px; height: 34px; border-radius: 10px; background: var(--brand); color: var(--brand-ink); display: grid; place-items: center; }
 .head-nav { display: flex; align-items: center; gap: 20px; font-size: 15px; font-weight: 500; }
 .head-nav a:not(.btn-site) { color: var(--ink-2); text-decoration: none; }
 .head-nav a:not(.btn-site):hover { color: var(--accent); }
@@ -39,7 +39,7 @@ kbd { font: 600 0.8em ui-monospace, Menlo, monospace; border: 1px solid var(--li
   border: 1px solid var(--line); background: var(--surface); color: var(--ink) !important; font: inherit; font-weight: 600;
   text-decoration: none; cursor: pointer; white-space: nowrap;
 }
-.btn-site.primary { background: var(--accent); color: var(--accent-ink) !important; border-color: transparent; }
+.btn-site.primary { background: var(--brand); color: var(--brand-ink) !important; border-color: transparent; }
 .btn-site.big { min-height: 54px; padding: 0 24px; font-size: 17px; border-radius: 16px; }
 .btn-site:hover { filter: brightness(1.06); }
 
@@ -47,7 +47,7 @@ kbd { font: 600 0.8em ui-monospace, Menlo, monospace; border: 1px solid var(--li
 .hero-site { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 480px); gap: 56px; align-items: center; padding-block: 48px 72px; }
 .eyebrow { font-size: 13px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
 .hero-copy { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
-.hero-copy h1 { font-size: clamp(2.6rem, 6.2vw, 4.75rem); line-height: 1.02; font-weight: 800; letter-spacing: -0.04em; }
+.hero-copy h1 { font-family: var(--font-display); font-size: clamp(2.6rem, 6.2vw, 4.75rem); line-height: 1.02; font-weight: 800; letter-spacing: -0.04em; }
 .lede { font-size: clamp(1.05rem, 1.6vw, 1.25rem); color: var(--ink-2); max-width: 34em; }
 .cta-row { display: flex; flex-wrap: wrap; gap: 12px; }
 .fine { font-size: 14px; color: var(--muted); }
@@ -62,7 +62,7 @@ kbd { font: 600 0.8em ui-monospace, Menlo, monospace; border: 1px solid var(--li
 .demo-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
 .demo-label { font-size: 13px; color: var(--hero-muted); font-weight: 500; }
 .demo-pill { font-size: 12px; font-weight: 600; background: var(--hero-fill); padding: 6px 10px; border-radius: 999px; }
-.demo-safe { display: block; font-family: -apple-system, "SF Pro Display", system-ui, sans-serif; font-weight: 800; letter-spacing: -0.03em;
+.demo-safe { display: block; font-family: var(--font-display); font-weight: 800; letter-spacing: -0.03em;
   font-size: clamp(2.6rem, 6vw, 3.5rem); line-height: 1; }
 .demo-bar { height: 8px; border-radius: 4px; background: var(--hero-fill); overflow: hidden; }
 .demo-bar > div { height: 100%; background: var(--hero-bar); border-radius: 4px; transition: width 0.4s ease; }

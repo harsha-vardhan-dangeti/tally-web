@@ -4,6 +4,7 @@ import { crossedThreshold, monthKey, snapshot } from "./budget";
 import { parseExpense, parseLines } from "./smartParser";
 import { parseReceipt } from "./receiptParser";
 import { categoryMeta, guessCategory, pickableCategories, resolveCategories, setCategoryDefs, toCategory } from "./categories";
+import { matchRule, sanitizeRules, setRules } from "./rules";
 
 describe("money", () => {
   it("formats with Indian grouping", () => {
@@ -76,6 +77,17 @@ describe("categories", () => {
     setCategoryDefs([]);
     expect(guessCategory("gym")).toBe("health");
     expect(toCategory("c-gym")).toBe("other");
+  });
+
+  it("puts the user's rules before every other guess", () => {
+    setRules([{ id: "r1", match: "swiggy", category: "groceries", rename: "Swiggy Instamart" }, { id: "r2", match: "x", category: "fun", rename: "" }]);
+    expect(guessCategory("UPI/DR/SWIGGY123/food")).toBe("groceries");
+    expect(matchRule("upi swiggy")?.rename).toBe("Swiggy Instamart");
+    expect(matchRule("myswiggy")).toBeNull(); // whole words only, from the start
+    expect(sanitizeRules([{ id: "r2", match: "x", category: "fun" }, "junk", { id: "r3", match: "  UBER ", category: "transport", rename: 5 }]))
+      .toEqual([{ id: "r3", match: "uber", category: "transport", rename: "" }]);
+    setRules([]);
+    expect(guessCategory("swiggy")).toBe("food");
   });
 
   it("checks categories that arrive from sync or a backup", () => {

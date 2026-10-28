@@ -1,6 +1,9 @@
 import { useSyncExternalStore } from "react";
 import { db, type StoreName } from "./db";
 import { categoryMeta, guessCategory, isCategory, setCategoryDefs, toCategory, type Category, type CategoryDef } from "../core/categories";
+import { matchRule, sanitizeRules, setRules, type Rule } from "../core/rules";
+import { detectRecurring, merchantKey, type RecurringCharge } from "../core/recurring";
+import type { ColumnMap } from "../core/statement";
 import { crossedThreshold, monthKey, monthRange, sameDay, snapshot, type BudgetSnapshot } from "../core/budget";
 import { formatMoney } from "../core/money";
 import { yourShare } from "../core/smartParser";
@@ -36,7 +39,11 @@ export interface Bill {
 }
 export type AccountKind = "bank" | "card" | "cash" | "investment";
 export const ACCOUNT_KIND_LABEL: Record<AccountKind, string> = { bank: "Bank", card: "Credit card", cash: "Cash", investment: "Investment" };
-export interface Account { id: string; name: string; kind: AccountKind; balance: number; order: number; updatedAt: number }
+export interface Account {
+  id: string; name: string; kind: AccountKind; balance: number; order: number; updatedAt: number;
+  /** Balance at the last update in each month ("2026-10" → paise), for net worth over time. */
+  history?: Record<string, number>;
+}
 export interface Goal { id: string; name: string; target: number; saved: number; deadline: number | null }
 /** Money moved between two of the user's accounts. Not spending: it only changes the two balances. */
 export interface Transfer {
@@ -81,7 +88,14 @@ export interface Settings {
   lastBackupAt: number | null;
   /** Changes to the built-in categories and the user's own categories (see resolveCategories). */
   categories: CategoryDef[];
+  /** "Swiggy is always Food" (see rules.ts). */
+  rules: Rule[];
+  /** Repeating charges the user said aren't subscriptions (merchant keys from recurring.ts). */
+  dismissedRecurring: string[];
+  /** Column layouts the user confirmed for a bank's statement, keyed by its header row. */
+  importLayouts: ImportLayout[];
 }
+export interface ImportLayout { signature: string; columns: ColumnMap; account: string }
 
 export interface State {
   ready: boolean;
@@ -100,7 +114,7 @@ export interface State {
 }
 
 const DEFAULT_SETTINGS: Settings = {
-  onboarded: false, monthlyBudget: 0, monthlyIncome: 0, defaultAccount: "UPI", lockCredentialId: null, lastBackupAt: null, categories: [],
+  onboarded: false, monthlyBudget: 0, monthlyIncome: 0, defaultAccount: "UPI", lockCredentialId: null, lastBackupAt: null, categories: [], rules: [], dismissedRecurring: [], importLayouts: [],
 };
 
 let state: State = {
@@ -110,7 +124,10 @@ let state: State = {
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 function set(patch: Partial<State>) {
-  if (patch.settings && patch.settings !== state.settings) setCategoryDefs(patch.settings.categories);
+  if (patch.settings && patch.settings !== state.settings) {
+    setCategoryDefs(patch.settings.categories);
+    setRules(patch.settings.rules);
+  }
   state = { ...state, ...patch };
   emit();
 }
@@ -140,10 +157,11 @@ export async function load() {
     db.all<RecurringIncome>("recurringIncomes"), db.all<Transfer>("transfers"), db.all<{ key: string; value: unknown }>("kv"),
   ]);
   const settingsRow = kv.find((r) => r.key === "settings");
-  const settings = { ...DEFAULT_SETTINGS, ...((settingsRow?.value as Partial<Settings>) ?? {}) };
+  const settings = readSettings(settingsRow?.value);
   const restorePoint = kv.find((r) => r.key === RESTORE_POINT)?.value as RestorePoint | undefined;
   // Rows can arrive from links and other devices, so an unknown category never reaches the screens.
   setCategoryDefs(settings.categories);
+  setRules(settings.rules);
   const fix = <T extends { category: Category }>(x: T): T => ({ ...x, category: toCategory(x.category) });
   set({
     ready: true,
@@ -159,6 +177,20 @@ export async function load() {
   runDueIncome();
   // Ask the browser not to evict our data under storage pressure.
   navigator.storage?.persist?.().catch(() => {});
+}
+
+/** Settings as stored (perhaps by another device or an older version), with every list made safe to use. */
+function readSettings(stored: unknown): Settings {
+  const v = { ...DEFAULT_SETTINGS, ...(stored && typeof stored === "object" ? (stored as Partial<Settings>) : {}) };
+  const list = <T,>(x: unknown, ok: (item: unknown) => boolean): T[] => (Array.isArray(x) ? (x.filter(ok) as T[]) : []);
+  return {
+    ...v,
+    categories: list<CategoryDef>(v.categories, (c) => !!c && typeof c === "object"),
+    rules: sanitizeRules(v.rules),
+    dismissedRecurring: list<string>(v.dismissedRecurring, (k) => typeof k === "string"),
+    importLayouts: list<ImportLayout>(v.importLayouts, (l) => !!l && typeof l === "object" && typeof (l as ImportLayout).signature === "string"
+      && !!(l as ImportLayout).columns && typeof (l as ImportLayout).columns === "object"),
+  };
 }
 
 async function seedChips() {
@@ -192,6 +224,18 @@ export function budgetSnapshot(s: State, now = new Date()): BudgetSnapshot {
   const spent = month.reduce((t, e) => t + share(e), 0);
   const today = month.filter((e) => sameDay(new Date(e.occurredAt), now)).reduce((t, e) => t + share(e), 0);
   return snapshot(s.settings.monthlyBudget, spent, today, now);
+}
+
+/**
+ * Repeating charges found in the expenses that aren't tracked as bills yet and that the user hasn't
+ * dismissed. Bills' own auto-logged payments are left out, so a bill never suggests itself.
+ */
+export function recurringSuggestions(s: State, now = Date.now()): RecurringCharge[] {
+  const tracked = new Set(s.bills.map((b) => merchantKey(b.name)));
+  const charges = s.expenses
+    .filter((e) => !e.pending && !e.id.startsWith("bill-"))
+    .map((e) => ({ id: e.id, name: expenseTitle(e), amount: e.amount, occurredAt: e.occurredAt, category: e.category, account: e.account }));
+  return detectRecurring(charges, { now, ignore: [...s.settings.dismissedRecurring, ...tracked] });
 }
 
 // ---------- toast ----------
@@ -364,7 +408,10 @@ export function deleteBill(id: string) {
   void remove("bills", id);
 }
 
-export function saveAccount(a: Account) {
+export function saveAccount(input: Account) {
+  // Keep this month's balance, and up to three years of month-end balances, for net worth over time.
+  const keys = Object.keys(input.history ?? {}).sort().slice(-35);
+  const a: Account = { ...input, history: { ...Object.fromEntries(keys.map((k) => [k, input.history![k]])), [monthKey(new Date())]: input.balance } };
   const exists = state.accounts.some((x) => x.id === a.id);
   set({ accounts: exists ? state.accounts.map((x) => (x.id === a.id ? a : x)) : [...state.accounts, a] });
   void persist("accounts", a);
@@ -457,6 +504,28 @@ export function saveGoal(g: Goal) {
 export function deleteGoal(id: string) {
   set({ goals: state.goals.filter((g) => g.id !== id) });
   void remove("goals", id);
+}
+
+// ---------- rules, subscriptions, import layouts ----------
+
+export function saveRule(rule: Rule) {
+  const rest = state.settings.rules.filter((r) => r.id !== rule.id && r.match !== rule.match);
+  setSettings({ rules: [rule, ...rest] });
+}
+export function deleteRule(id: string) {
+  setSettings({ rules: state.settings.rules.filter((r) => r.id !== id) });
+}
+
+/** Hides a repeating charge from the suggestions, or (undo) shows it again. */
+export function dismissRecurring(key: string, undo = false) {
+  const rest = state.settings.dismissedRecurring.filter((k) => k !== key);
+  setSettings({ dismissedRecurring: undo ? rest : [...rest, key].slice(-200) });
+}
+
+/** Remembers a statement layout, most recent first. */
+export function saveImportLayout(layout: ImportLayout) {
+  const rest = state.settings.importLayouts.filter((l) => l.signature !== layout.signature);
+  setSettings({ importLayouts: [layout, ...rest].slice(0, 12) });
 }
 
 // ---------- income ----------
@@ -604,8 +673,9 @@ export function handleUrlActions(search: string, open: (sheet: "quickAdd" | "sma
     addExpense({ amount: log, category: cat, note, account: params.get("account"), source: "shortcut" });
     showToast(`Logged ${note || "expense"} · ${formatMoney(log)}`);
   } else if (capture) {
-    const merchant = params.get("merchant") ?? "";
-    addExpense({ amount: capture, category: guessCategory(merchant), merchant, account: params.get("card") || "Card",
+    const raw = params.get("merchant") ?? "";
+    const merchant = matchRule(raw)?.rename || raw;
+    addExpense({ amount: capture, category: guessCategory(raw), merchant, account: params.get("card") || "Card",
       source: "capture", pending: true });
     showToast(`Captured ${merchant || "payment"} · ${formatMoney(capture)} · check Inbox`);
   } else if (params.has("add")) {

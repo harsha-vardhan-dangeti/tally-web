@@ -1,3 +1,5 @@
+import "@fontsource-variable/hanken-grotesk";
+import "@fontsource-variable/bricolage-grotesque";
 import "./landing.css";
 import { parseExpense, yourShare, type ParsedExpense } from "../core/smartParser";
 import { sameDay, snapshot } from "../core/budget";

@@ -6,7 +6,7 @@ import { monthKey, monthRange, sameDay, startOfDay } from "../core/budget";
 import { compactMoney, formatMoney, parsePaise } from "../core/money";
 import { Icon } from "../ui/icons";
 import { Empty, Field, Sheet, Toggle } from "../ui/components";
-import { ExpenseRowView } from "./Home";
+import { ExpenseRowView } from "./Activity";
 
 /** Spent and received per day of the month. Index 0 is the 1st. */
 function dayTotals(expenses: Expense[], incomes: Income[], month: Date) {

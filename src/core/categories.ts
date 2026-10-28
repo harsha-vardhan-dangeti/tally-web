@@ -1,3 +1,5 @@
+import { matchRule } from "./rules";
+
 /** A built-in category ("food") or one the user added ("c-…"). */
 export type Category = string;
 type BuiltIn = "food" | "transport" | "groceries" | "shopping" | "bills" | "fun" | "health" | "other";
@@ -125,8 +127,13 @@ export const isCategory = (v: unknown): v is Category => typeof v === "string" &
 /** A category from outside the app (a link, a synced row): anything unknown becomes the fallback. */
 export const toCategory = (v: unknown, fallback: Category = "other"): Category => (isCategory(v) ? v : fallback);
 
-/** Best category for free text; earlier words win. The user's own categories are checked first. */
+/**
+ * Best category for free text. The user's rules come first, then their own categories' words, then
+ * the built-in words; earlier words in the text win.
+ */
 export function guessCategory(text: string): Category {
+  const rule = matchRule(text);
+  if (rule && defs.some((d) => d.id === rule.category)) return rule.category;
   const words = text.toLowerCase().split(/[^0-9a-zé]+/).filter(Boolean);
   const order = [...defs.filter((d) => isCustomId(d.id)), ...defs.filter((d) => !isCustomId(d.id))].filter((d) => !d.hidden);
   const keywordsOf = (d: CategoryDef) => [

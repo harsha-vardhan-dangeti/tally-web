@@ -5,7 +5,7 @@ import { categoryMeta, type Category } from "./categories";
 import { formatMoney } from "./money";
 
 /**
- * Spending analytics for the Finances screen. Pure functions over expenses: every amount is
+ * Spending analytics for Reports and Home. Pure functions over expenses: every amount is
  * your share in paise, and pending or excluded expenses never count, exactly as in the budget.
  */
 

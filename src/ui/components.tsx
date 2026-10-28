@@ -158,7 +158,7 @@ export function Toggle({ checked, onChange, label, hint }: { checked: boolean; o
 
 export function Progress({ value, tone }: { value: number; tone?: "ok" | "warn" | "over" | "good" }) {
   const v = Math.max(0, Math.min(value, 1));
-  const color = tone === "over" ? "var(--danger)" : tone === "warn" ? "var(--warn)" : tone === "good" ? "var(--good)" : "var(--accent)";
+  const color = tone === "over" ? "var(--danger)" : tone === "warn" ? "var(--warn)" : tone === "good" ? "var(--good)" : "var(--ink-2)";
   return (
     <div className="progress" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(v * 100)}>
       <div style={{ width: `${v * 100}%`, background: color }} />

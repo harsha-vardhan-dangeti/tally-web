@@ -28,7 +28,10 @@ function serviceWorker(): Plugin {
       for (const f of files) if (!existsSync(join(outDir, f))) throw new Error(`Service worker would precache a missing file: ${f}`);
       const hash = createHash("sha256");
       for (const f of files) hash.update(f).update(readFileSync(join(outDir, f)));
-      const precache = [...Object.keys(PAGES), ...[...assets, ...STATIC].map((f) => `/${f}`)];
+      // Statement-import libraries and font subsets for other scripts are large and rarely needed:
+      // the service worker caches them the first time they're used instead of on install.
+      const onDemand = (f: string) => /^assets\/(xlsx|pdf)[.-]|-(cyrillic|greek|vietnamese)[a-z-]*\.woff2$|-italic[a-z-]*\.woff2$/.test(f);
+      const precache = [...Object.keys(PAGES), ...[...assets.filter((f) => !onDemand(f)), ...STATIC].map((f) => `/${f}`)];
       const source = readFileSync("sw/service-worker.js", "utf8")
         .replace("const VERSION = __VERSION__;", `const VERSION = ${JSON.stringify(hash.digest("hex").slice(0, 12))};`)
         .replace("const PRECACHE = __PRECACHE__;", `const PRECACHE = ${JSON.stringify(precache)};`);
@@ -47,6 +50,8 @@ export default defineConfig({
   build: {
     target: "es2022",
     sourcemap: false,
+    // The CSP allows fonts from this site only (font-src 'self'), so small fonts must stay files, not data: URLs.
+    assetsInlineLimit: (file: string) => (file.endsWith(".woff2") ? false : undefined),
     rollupOptions: { input: { landing: "index.html", app: "app.html", privacy: "privacy.html", notFound: "404.html" } },
   },
   preview: { headers: productionHeaders },

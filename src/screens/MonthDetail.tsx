@@ -1,16 +1,14 @@
 import { useMemo, useState } from "react";
-import {
-  ACCOUNT_KIND_LABEL, addTransfer, deleteAccount, deleteTransfer, moneyIn, saveAccount, showToast, uid, useTally, type Account, type AccountKind,
-} from "../data/store";
+import { useTally } from "../data/store";
 import { addMonths, monthRange } from "../core/budget";
 import { categoryMeta } from "../core/categories";
-import { compactMoney, formatMoney, parsePaise } from "../core/money";
+import { compactMoney, formatMoney } from "../core/money";
 import {
   categoryBreakdown, cumulative, insights, monthStats, monthlyTotals, paymentSplit, spentThroughDay, topMerchants, weekdayAverages, WEEKDAYS,
   type Insight,
 } from "../core/analytics";
 import { CategoryIcon, Icon } from "../ui/icons";
-import { Empty, Field, Sheet } from "../ui/components";
+import { Empty } from "../ui/components";
 import {
   BarList, ChartCard, ColumnChart, DataTable, LegendItem, PaceChart, ShareBar, SpendCalendar, StatTile,
 } from "../ui/charts";
@@ -18,11 +16,9 @@ import {
 const PAYMENT_COLORS = ["var(--viz-cat-1)", "var(--viz-cat-2)", "var(--viz-cat-3)", "var(--viz-cat-4)"];
 const pct = (part: number, whole: number) => Math.round((part / Math.max(whole, 1)) * 100);
 
-export function Finances() {
+/** Reports → Month: one month in depth — pace, daily spending, payment methods, categories, places. */
+export function MonthDetail() {
   const s = useTally();
-  const [editing, setEditing] = useState<Account | "new" | null>(null);
-  const [moving, setMoving] = useState(false);
-  const [allTransfers, setAllTransfers] = useState(false);
   const [offset, setOffset] = useState(0);
   const now = new Date();
   const month = addMonths(now, offset);
@@ -56,11 +52,6 @@ export function Finances() {
   const monthName = month.toLocaleDateString([], { month: "long" });
   const prevName = prevMonth.toLocaleDateString([], { month: "long" });
   const hasAny = s.expenses.some((e) => !e.pending);
-  // Income logged this month wins; otherwise the expected monthly income from Settings.
-  const [mStart, mEnd] = monthRange(month);
-  const loggedIncome = s.incomes.filter((x) => x.receivedAt >= mStart.getTime() && x.receivedAt < mEnd.getTime()).reduce((t, x) => t + x.amount, 0);
-  const monthIncome = loggedIncome || income;
-  const netWorth = s.accounts.reduce((t, x) => t + (x.kind === "card" ? -x.balance : x.balance), 0);
 
   // Spent vs last month at the same point (or the whole month, for finished months).
   const compareTo = stats.isCurrent ? a.prevSamePoint : prev.total;
@@ -74,15 +65,14 @@ export function Finances() {
   const rows = a.categories.filter((r) => r.total > 0 || r.limit);
 
   return (
-    <div className="page wide fin">
-      <header className="page-head">
-        <h1 className="display">Finances</h1>
+    <>
+      <div className="report-toolbar span-2">
         <div className="month-switch" role="group" aria-label="Month">
           <button className="icon-btn" onClick={() => setOffset((o) => o - 1)} aria-label="Previous month"><Icon name="back" size={18} /></button>
           <span className="t-strong">{month.toLocaleDateString([], { month: "long", year: "numeric" })}</span>
           <button className="icon-btn" onClick={() => setOffset((o) => Math.min(o + 1, 0))} disabled={offset === 0} aria-label="Next month"><Icon name="next" size={18} /></button>
         </div>
-      </header>
+      </div>
 
       {!hasAny ? (
         <div className="card span-2">
@@ -205,72 +195,7 @@ export function Finances() {
 
         </>
       )}
-
-      <div className="fin-col">
-        <section className="card col gap12">
-          <div className="col gap4">
-            <span className="t-muted small">Net worth</span>
-            <span className="display num" style={{ fontSize: 32 }}>{s.accounts.length ? formatMoney(netWorth) : "Add accounts below"}</span>
-          </div>
-          <div className="row gap12" style={{ borderTop: "1px solid var(--line)", paddingTop: 12 }}>
-            <Stat label={loggedIncome ? `Income in ${month.toLocaleDateString([], { month: "short" })}` : "Expected income"} value={monthIncome ? formatMoney(monthIncome) : "—"} color="var(--good)" />
-            <Stat label={`Spent in ${month.toLocaleDateString([], { month: "short" })}`} value={formatMoney(stats.total)} />
-            <Stat label="Saved" value={monthIncome ? `${pct(monthIncome - stats.total, monthIncome)}%` : "—"} />
-          </div>
-        </section>
-
-        <section className="col gap8">
-          <div className="section-title"><span>Accounts</span>
-            <span className="row gap4">
-              {s.accounts.length >= 2 && <button className="btn ghost" onClick={() => setMoving(true)}><Icon name="transfer" size={16} />Transfer</button>}
-              <button className="btn ghost" onClick={() => setEditing("new")}>+ Add</button>
-            </span>
-          </div>
-          <div className="card flush divided">
-            {s.accounts.length === 0 && <Empty title="No accounts yet" body="Add your bank, cards, cash and investments to see your net worth. Balances are entered by you." />}
-            {s.accounts.map((acct) => (
-              <button key={acct.id} className="list-row" style={{ width: "100%", border: 0, background: "none", textAlign: "left" }} onClick={() => setEditing(acct)}>
-                <span className="grow col">
-                  <span className="t-strong">{acct.name}</span>
-                  <span className="t-muted tiny">{ACCOUNT_KIND_LABEL[acct.kind]} · updated {new Date(acct.updatedAt).toLocaleDateString([], { day: "numeric", month: "short" })}</span>
-                </span>
-                <AccountBalance acct={acct} />
-              </button>
-            ))}
-          </div>
-        </section>
-
-        {s.transfers.length > 0 && (
-          <section className="col gap8">
-            <div className="section-title"><span>Transfers</span>
-              {s.transfers.length > 5 && <button className="btn ghost" onClick={() => setAllTransfers(!allTransfers)}>{allTransfers ? "Show fewer" : `Show all ${s.transfers.length}`}</button>}
-            </div>
-            <div className="card flush divided">
-              {(allTransfers ? s.transfers : s.transfers.slice(0, 5)).map((t) => {
-                const name = (id: string, fallback: string) => s.accounts.find((x) => x.id === id)?.name ?? fallback;
-                return (
-                  <div key={t.id} className="list-row">
-                    <span className="grow col" style={{ minWidth: 0 }}>
-                      <span className="t-strong ellipsis">{name(t.fromId, t.fromName)} → {name(t.toId, t.toName)}</span>
-                      <span className="t-muted tiny ellipsis">
-                        {new Date(t.occurredAt).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })}{t.note ? ` · ${t.note}` : ""}
-                      </span>
-                    </span>
-                    <span className="t-strong num">{formatMoney(t.amount)}</span>
-                    <button className="icon-btn" aria-label={`Remove transfer of ${formatMoney(t.amount)} and put both balances back`} onClick={() => deleteTransfer(t.id)}>
-                      <Icon name="trash" size={18} />
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        )}
-      </div>
-
-      <AccountEditor value={editing} onClose={() => setEditing(null)} />
-      <TransferSheet open={moving} onClose={() => setMoving(false)} />
-    </div>
+    </>
   );
 }
 
@@ -297,128 +222,4 @@ function LimitFlag({ total, limit }: { total: number; limit: number }) {
   return null;
 }
 
-function Stat({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <div className="col grow">
-      <span className="t-muted tiny">{label}</span>
-      <span className="t-strong num" style={{ color }}>{value}</span>
-    </div>
-  );
-}
 
-/** A card shows what's owed as a negative; money left over on a card shows as positive. */
-function AccountBalance({ acct }: { acct: Account }) {
-  const value = acct.kind === "card" ? -acct.balance : acct.balance;
-  return <span className="t-strong num" style={{ color: value < 0 ? "var(--warn)" : undefined }}>{formatMoney(value)}</span>;
-}
-
-const today = () => new Date().toLocaleDateString("en-CA"); // yyyy-mm-dd in local time
-
-function TransferSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const s = useTally();
-  const [fromId, setFromId] = useState("");
-  const [toId, setToId] = useState("");
-  const [amount, setAmount] = useState("");
-  const [date, setDate] = useState(today);
-  const [note, setNote] = useState("");
-  const [seen, setSeen] = useState(false);
-  if (open !== seen) {
-    setSeen(open);
-    if (open) {
-      // Most transfers leave a bank: start there, going to the first other account.
-      const from = s.accounts.find((a) => a.kind === "bank") ?? s.accounts[0];
-      setFromId(from?.id ?? "");
-      setToId(s.accounts.find((a) => a.id !== from?.id)?.id ?? "");
-      setAmount("");
-      setDate(today());
-      setNote("");
-    }
-  }
-  const from = s.accounts.find((a) => a.id === fromId);
-  const to = s.accounts.find((a) => a.id === toId);
-  const paise = parsePaise(amount) ?? 0;
-  const ready = from && to && from.id !== to.id && paise > 0 && date;
-  const shown = (a: Account) => formatMoney(a.kind === "card" ? -a.balance : a.balance);
-  const after = (a: Account, n: number) => shown(moneyIn(a, n));
-
-  const save = () => {
-    if (!ready) return;
-    const [y, m, d] = date.split("-").map(Number);
-    const at = new Date(y, m - 1, d, 12);
-    const isToday = at.toDateString() === new Date().toDateString();
-    const t = addTransfer({ fromId: from.id, toId: to.id, amount: paise, note: note.trim(), occurredAt: isToday ? Date.now() : at.getTime() });
-    if (t) showToast(`Moved ${formatMoney(paise)} from ${from.name} to ${to.name}`, () => deleteTransfer(t.id, false));
-    onClose();
-  };
-
-  return (
-    <Sheet open={open} onClose={onClose} title="Transfer between accounts">
-      <div className="row gap8">
-        <Field label="From">
-          <select value={fromId} onChange={(e) => { setFromId(e.target.value); if (e.target.value === toId) setToId(fromId); }}>
-            {s.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
-        </Field>
-        <Field label="To">
-          <select value={toId} onChange={(e) => { setToId(e.target.value); if (e.target.value === fromId) setFromId(toId); }}>
-            {s.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
-        </Field>
-      </div>
-      <div className="row gap8">
-        <Field label="Amount (₹)">
-          <input type="text" inputMode="decimal" autoFocus value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="5000" />
-        </Field>
-        <Field label="Date"><input type="date" value={date} max={today()} onChange={(e) => setDate(e.target.value)} /></Field>
-      </div>
-      <Field label="Note"><input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="optional, like “Card bill”" /></Field>
-
-      {from && to && from.id !== to.id && (
-        <div className="card col gap4 small" style={{ background: "var(--surface-2)" }} aria-live="polite">
-          <div className="row between"><span className="t-muted">{from.name}</span><span className="num">{shown(from)} → <b>{after(from, -paise)}</b></span></div>
-          <div className="row between"><span className="t-muted">{to.name}</span><span className="num">{shown(to)} → <b>{after(to, paise)}</b></span></div>
-          <span className="t-muted tiny">
-            {to.kind === "card" ? "Paying a card lowers what you owe. " : ""}A transfer isn't spending, so your budget doesn't change.
-          </span>
-        </div>
-      )}
-
-      <button className="btn primary block" disabled={!ready} onClick={save}>{paise ? `Transfer ${formatMoney(paise)}` : "Enter an amount"}</button>
-    </Sheet>
-  );
-}
-
-function AccountEditor({ value, onClose }: { value: Account | "new" | null; onClose: () => void }) {
-  const s = useTally();
-  const acct = value && value !== "new" ? value : null;
-  const [name, setName] = useState("");
-  const [kind, setKind] = useState<AccountKind>("bank");
-  const [balance, setBalance] = useState("");
-  const [seen, setSeen] = useState<typeof value>(null);
-  if (value !== seen) {
-    setSeen(value);
-    setName(acct?.name ?? "");
-    setKind(acct?.kind ?? "bank");
-    setBalance(acct ? String(acct.balance / 100) : "");
-  }
-  return (
-    <Sheet open={value !== null} onClose={onClose} title={acct ? "Edit account" : "New account"}>
-      <Field label="Name"><input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="HDFC Savings" /></Field>
-      <Field label="Type">
-        <select value={kind} onChange={(e) => setKind(e.target.value as AccountKind)}>
-          {(Object.keys(ACCOUNT_KIND_LABEL) as AccountKind[]).map((k) => <option key={k} value={k}>{ACCOUNT_KIND_LABEL[k]}</option>)}
-        </select>
-      </Field>
-      <Field label={kind === "card" ? "Amount owed (₹)" : "Balance (₹)"}>
-        <input type="text" inputMode="decimal" value={balance} onChange={(e) => setBalance(e.target.value)} placeholder="0" />
-      </Field>
-      <button className="btn primary block" disabled={!name} onClick={() => {
-        // A transfer can leave a balance below zero, so a leading minus is kept.
-        const amount = (parsePaise(balance.trim().replace(/^[-−]/, "")) ?? 0) * (/^\s*[-−]/.test(balance) ? -1 : 1);
-        saveAccount({ id: acct?.id ?? uid(), name, kind, balance: amount, order: acct?.order ?? s.accounts.length, updatedAt: Date.now() });
-        onClose();
-      }}>Save</button>
-      {acct && <button className="btn danger block" onClick={() => { deleteAccount(acct.id); onClose(); }}>Delete account</button>}
-    </Sheet>
-  );
-}

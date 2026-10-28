@@ -3,7 +3,7 @@ import { compactMoney, formatMoney } from "../core/money";
 import { Icon } from "./icons";
 
 /**
- * Charts for the Finances screen. One method throughout: thin marks (≤24px columns, 2px lines),
+ * Charts for Reports, Accounts and Home. One method throughout: thin marks (≤24px columns, 2px lines),
  * hairline grid, one emphasis colour against grey, values on hover and keyboard focus, and a
  * "View as table" twin under every chart so no value depends on hovering or on colour.
  */
@@ -394,3 +394,244 @@ export function ShareBar({ parts }: { parts: { key: string; label: string; value
     </div>
   );
 }
+
+// ---------- income vs spending ----------
+
+export interface PairColumn { key: string; label: string; title: string; income: number; spending: number }
+
+/**
+ * Income and spending side by side for each month: two validated categorical hues, a legend, and
+ * values on hover, focus and in the table. One axis, both in rupees.
+ */
+export function PairedColumns({ columns, height = 200, ariaLabel }: { columns: PairColumn[]; height?: number; ariaLabel: string }) {
+  const [ref, width] = useWidth<HTMLDivElement>();
+  const [hover, setHover] = useState<number | null>(null);
+  const m = { top: 14, right: 8, bottom: 24, left: 44 };
+  const plotW = Math.max(width - m.left - m.right, 10), plotH = height - m.top - m.bottom;
+  const { top, step } = niceScale(Math.max(...columns.flatMap((c) => [c.income, c.spending]), 1), 3);
+  const band = plotW / Math.max(columns.length, 1);
+  const barW = Math.max(3, Math.min(16, (band * 0.7 - 2) / 2));
+  const y = (v: number) => m.top + plotH - (v / top) * plotH;
+  const ticks = Array.from({ length: Math.round(top / step) + 1 }, (_, i) => i * step);
+  const bar = (x0: number, v: number) => {
+    const h = Math.max((v / top) * plotH, v > 0 ? 2 : 0);
+    const r = Math.min(4, h, barW / 2), x1 = x0 + barW, y0 = m.top + plotH, y1 = y0 - h;
+    return `M${x0},${y0}V${y1 + r}Q${x0},${y1} ${x0 + r},${y1}H${x1 - r}Q${x1},${y1} ${x1},${y1 + r}V${y0}Z`;
+  };
+  const labelEvery = Math.ceil(columns.length / Math.max(Math.floor(plotW / 44), 1));
+
+  return (
+    <div className="viz-plot" ref={ref}>
+      <div className="viz-legend" style={{ marginBottom: 8 }}>
+        <span className="viz-legend-item"><span className="viz-swatch" style={{ background: "var(--viz-cat-3)" }} />Income</span>
+        <span className="viz-legend-item"><span className="viz-swatch" style={{ background: "var(--viz-cat-1)" }} />Spending</span>
+      </div>
+      {width > 0 && (
+        <svg width={width} height={height} role="img" aria-label={ariaLabel}>
+          {ticks.map((t) => (
+            <g key={t}>
+              <line x1={m.left} x2={m.left + plotW} y1={y(t)} y2={y(t)} className="viz-grid" />
+              <text x={m.left - 8} y={y(t)} className="viz-axis" textAnchor="end" dominantBaseline="middle">{compactMoney(t)}</text>
+            </g>
+          ))}
+          {columns.map((c, i) => {
+            const cx = m.left + band * i + band / 2;
+            return (
+              <g key={c.key} tabIndex={0} role="img" className="viz-col"
+                aria-label={`${c.title}: income ${formatMoney(c.income)}, spending ${formatMoney(c.spending)}`}
+                onPointerEnter={() => setHover(i)} onPointerLeave={() => setHover(null)} onFocus={() => setHover(i)} onBlur={() => setHover(null)}>
+                <rect x={m.left + band * i} y={m.top} width={band} height={plotH} fill="transparent" />
+                <path d={bar(cx - barW - 1, c.income)} fill="var(--viz-cat-3)" opacity={hover === null || hover === i ? 1 : 0.55} />
+                <path d={bar(cx + 1, c.spending)} fill="var(--viz-cat-1)" opacity={hover === null || hover === i ? 1 : 0.55} />
+                {(i % labelEvery === 0 || i === columns.length - 1) && <text x={cx} y={height - 6} className="viz-axis" textAnchor="middle">{c.label}</text>}
+              </g>
+            );
+          })}
+        </svg>
+      )}
+      <Tooltip width={width} tip={hover === null ? null : {
+        x: m.left + band * hover + band / 2, y: m.top + 20, title: columns[hover].title,
+        rows: [
+          { value: formatMoney(columns[hover].income), label: "income" },
+          { value: formatMoney(columns[hover].spending), label: "spending" },
+          { value: `${columns[hover].income >= columns[hover].spending ? "" : "−"}${formatMoney(Math.abs(columns[hover].income - columns[hover].spending))}`, label: "left over" },
+        ],
+      }} />
+    </div>
+  );
+}
+
+// ---------- a value over time (net worth) ----------
+
+export interface TrendPoint { key: string; label: string; title: string; value: number }
+
+/** One emphasised line with a light area to zero; handles values below zero. */
+export function TrendLine({ points, height = 200, ariaLabel, valueLabel }: { points: TrendPoint[]; height?: number; ariaLabel: string; valueLabel: string }) {
+  const [ref, width] = useWidth<HTMLDivElement>();
+  const [hover, setHover] = useState<number | null>(null);
+  const m = { top: 18, right: 56, bottom: 24, left: 48 };
+  const plotW = Math.max(width - m.left - m.right, 10), plotH = height - m.top - m.bottom;
+  const values = points.map((p) => p.value);
+  const lo = Math.min(0, ...values), hi = Math.max(0, ...values, 1);
+  const { top, step } = niceScale(hi - lo, 3);
+  const base = lo < 0 ? -Math.ceil(-lo / step) * step : 0;
+  const span = Math.max(top, hi - base);
+  const x = (i: number) => m.left + (points.length > 1 ? (i / (points.length - 1)) * plotW : plotW / 2);
+  const y = (v: number) => m.top + plotH - ((v - base) / span) * plotH;
+  const path = values.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
+  const ticks: number[] = [];
+  for (let t = base; t <= base + span + 1; t += step) ticks.push(t);
+  const last = points.length - 1;
+  const labelEvery = Math.ceil(points.length / Math.max(Math.floor(plotW / 48), 1));
+  const onMove = (e: React.PointerEvent<SVGRectElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setHover(Math.max(0, Math.min(last, Math.round(((e.clientX - rect.left) / rect.width) * last))));
+  };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "ArrowRight") setHover((h) => Math.min((h ?? last - 1) + 1, last));
+    else if (e.key === "ArrowLeft") setHover((h) => Math.max((h ?? last + 1) - 1, 0));
+    else return;
+    e.preventDefault();
+  };
+
+  return (
+    <div className="viz-plot" ref={ref}>
+      {width > 0 && points.length > 0 && (
+        <svg width={width} height={height} role="img" tabIndex={0} onKeyDown={onKey} onBlur={() => setHover(null)}
+          aria-label={`${ariaLabel}. Use the arrow keys to read each month.`}>
+          {ticks.map((t) => (
+            <g key={t}>
+              <line x1={m.left} x2={m.left + plotW} y1={y(t)} y2={y(t)} className={t === 0 && base < 0 ? "viz-ref" : "viz-grid"} />
+              <text x={m.left - 8} y={y(t)} className="viz-axis" textAnchor="end" dominantBaseline="middle">{t < 0 ? `−${compactMoney(-t)}` : compactMoney(t)}</text>
+            </g>
+          ))}
+          {points.map((p, i) => (i % labelEvery === 0 || i === last) && (
+            <text key={p.key} x={x(i)} y={height - 6} className={i === last ? "viz-axis strong" : "viz-axis"} textAnchor="middle">{p.label}</text>
+          ))}
+          <path d={`${path}L${x(last)},${y(Math.max(base, 0))}L${x(0)},${y(Math.max(base, 0))}Z`} className="viz-area" />
+          <path d={path} className="viz-line" />
+          <circle cx={x(last)} cy={y(values[last])} r={5} className="viz-dot" />
+          <text x={x(last) + 10} y={y(values[last])} className="viz-label" dominantBaseline="middle">
+            {values[last] < 0 ? `−${compactMoney(-values[last])}` : compactMoney(values[last])}
+          </text>
+          {hover !== null && (
+            <>
+              <line x1={x(hover)} x2={x(hover)} y1={m.top} y2={m.top + plotH} className="viz-crosshair" />
+              <circle cx={x(hover)} cy={y(values[hover])} r={4} className="viz-dot" />
+            </>
+          )}
+          <rect x={m.left} y={m.top} width={plotW} height={plotH} fill="transparent" onPointerMove={onMove} onPointerLeave={() => setHover(null)} />
+        </svg>
+      )}
+      <Tooltip width={width} tip={hover === null ? null : {
+        x: x(hover), y: m.top, title: points[hover].title,
+        rows: [{ key: "line", value: `${points[hover].value < 0 ? "−" : ""}${formatMoney(Math.abs(points[hover].value))}`, label: valueLabel }],
+      }} />
+    </div>
+  );
+}
+
+/** A tiny trend line for a summary card. Decorative: the number beside it carries the value. */
+export function Sparkline({ values, width = 120, height = 36 }: { values: number[]; width?: number; height?: number }) {
+  if (values.length < 2) return null;
+  const lo = Math.min(...values), hi = Math.max(...values);
+  const x = (i: number) => (i / (values.length - 1)) * (width - 4) + 2;
+  const y = (v: number) => (hi === lo ? height / 2 : height - 3 - ((v - lo) / (hi - lo)) * (height - 6));
+  const d = values.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden="true" className="sparkline">
+      <path d={d} fill="none" stroke="var(--viz-emph)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx={x(values.length - 1)} cy={y(values[values.length - 1])} r={3} fill="var(--viz-emph)" />
+    </svg>
+  );
+}
+
+// ---------- where the money went (flow) ----------
+
+export interface FlowNode { key: string; label: string; value: number; color: string }
+
+/**
+ * Money in on the left, through one "Money in" bar, out to where it went on the right (spending
+ * groups and what was saved). Band widths are amounts, so the eye compares them; labels carry every
+ * value, and the caller adds a table. Hover or focus a node to trace its bands.
+ */
+export function CashFlowSankey({ sources, targets, ariaLabel }: { sources: FlowNode[]; targets: FlowNode[]; ariaLabel: string }) {
+  const [ref, width] = useWidth<HTMLDivElement>();
+  const [focus, setFocus] = useState<string | null>(null);
+  const total = Math.max(sources.reduce((t, n) => t + n.value, 0), 1);
+  const narrow = width < 520;
+  const labelL = narrow ? 88 : 140, labelR = narrow ? 104 : 170, nodeW = 10, gap = 10;
+  const rows = Math.max(sources.length, targets.length);
+  const H = Math.max(200, rows * 40);
+  const k = (H - gap * (rows - 1)) / total;
+  const xL = labelL, xM = width / 2 - nodeW / 2, xR = width - labelR - nodeW;
+
+  const stack = (nodes: FlowNode[]) => {
+    const used = nodes.reduce((t, n) => t + n.value * k, 0) + gap * (nodes.length - 1);
+    let y = (H - used) / 2;
+    return nodes.map((n) => {
+      const h = Math.max(n.value * k, 2);
+      const out = { ...n, y, h };
+      y += h + gap;
+      return out;
+    });
+  };
+  // Labels are two lines (~30px): push them apart where small nodes sit close together.
+  const spread = <T extends { y: number; h: number }>(nodes: T[]) => {
+    const ys = nodes.map((n) => n.y + n.h / 2);
+    for (let i = 1; i < ys.length; i++) ys[i] = Math.max(ys[i], ys[i - 1] + 30);
+    const over = ys.length ? ys[ys.length - 1] - (H - 15) : 0;
+    if (over > 0) for (let i = ys.length - 1; i >= 0; i--) ys[i] = Math.max(15, i === ys.length - 1 ? ys[i] - over : Math.min(ys[i], ys[i + 1] - 30));
+    return nodes.map((n, i) => ({ ...n, ly: ys[i] }));
+  };
+  const left = spread(stack(sources)), right = spread(stack(targets));
+  const midTop = (H - total * k) / 2;
+  const band = (x0: number, y0: number, x1: number, y1: number, h: number) => {
+    const xm = (x0 + x1) / 2;
+    return `M${x0},${y0}C${xm},${y0} ${xm},${y1} ${x1},${y1}L${x1},${y1 + h}C${xm},${y1 + h} ${xm},${y0 + h} ${x0},${y0 + h}Z`;
+  };
+  let inAt = midTop, outAt = midTop;
+  const inBands = left.map((n) => { const b = { n, d: band(xL + nodeW, n.y, xM, inAt, n.value * k) }; inAt += n.value * k; return b; });
+  const outBands = right.map((n) => { const b = { n, d: band(xM + nodeW, outAt, xR, n.y, n.value * k) }; outAt += n.value * k; return b; });
+  const pct = (v: number) => `${Math.round((v / total) * 100)}%`;
+  const dim = (key: string) => focus !== null && focus !== key && focus !== "__mid";
+
+  const nodeProps = (n: FlowNode) => ({
+    tabIndex: 0, role: "img", "aria-label": `${n.label}: ${formatMoney(n.value)}, ${pct(n.value)}`,
+    onPointerEnter: () => setFocus(n.key), onPointerLeave: () => setFocus(null), onFocus: () => setFocus(n.key), onBlur: () => setFocus(null),
+    className: "flow-node",
+  });
+
+  return (
+    <div className="viz-plot" ref={ref}>
+      {width > 0 && (
+        <svg width={width} height={H} role="group" aria-label={ariaLabel}>
+          {inBands.map(({ n, d }) => <path key={`i${n.key}`} d={d} className="flow-band" style={{ fill: focus === n.key ? n.color : undefined, opacity: dim(n.key) ? 0.25 : undefined }} />)}
+          {outBands.map(({ n, d }) => <path key={`o${n.key}`} d={d} className="flow-band" style={{ fill: focus === n.key ? n.color : undefined, opacity: dim(n.key) ? 0.25 : undefined }} />)}
+          {left.map((n) => (
+            <g key={n.key} {...nodeProps(n)}>
+              <rect x={xL} y={n.y} width={nodeW} height={n.h} rx={3} fill={n.color} />
+              {Math.abs(n.ly - (n.y + n.h / 2)) > 4 && <path d={`M${xL - 2},${n.y + n.h / 2}L${xL - 6},${n.ly}`} className="flow-leader" />}
+              <text x={xL - 9} y={n.ly - 7} textAnchor="end" className="viz-label" dominantBaseline="middle">{trim(n.label, narrow ? 11 : 18)}</text>
+              <text x={xL - 9} y={n.ly + 8} textAnchor="end" className="viz-axis" dominantBaseline="middle">{compactMoney(n.value)} · {pct(n.value)}</text>
+            </g>
+          ))}
+          <g className="flow-node" tabIndex={0} role="img" aria-label={`Money in: ${formatMoney(total)}`}
+            onPointerEnter={() => setFocus("__mid")} onPointerLeave={() => setFocus(null)} onFocus={() => setFocus("__mid")} onBlur={() => setFocus(null)}>
+            <rect x={xM} y={midTop} width={nodeW} height={total * k} rx={3} fill="var(--ink-2)" />
+          </g>
+          {right.map((n) => (
+            <g key={n.key} {...nodeProps(n)}>
+              <rect x={xR} y={n.y} width={nodeW} height={n.h} rx={3} fill={n.color} />
+              {Math.abs(n.ly - (n.y + n.h / 2)) > 4 && <path d={`M${xR + nodeW + 2},${n.y + n.h / 2}L${xR + nodeW + 6},${n.ly}`} className="flow-leader" />}
+              <text x={xR + nodeW + 9} y={n.ly - 7} className="viz-label" dominantBaseline="middle">{trim(n.label, narrow ? 12 : 20)}</text>
+              <text x={xR + nodeW + 9} y={n.ly + 8} className="viz-axis" dominantBaseline="middle">{compactMoney(n.value)} · {pct(n.value)}</text>
+            </g>
+          ))}
+        </svg>
+      )}
+    </div>
+  );
+}
+
+const trim = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);

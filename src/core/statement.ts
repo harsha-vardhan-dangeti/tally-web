@@ -1,4 +1,5 @@
 import { guessCategory, type Category } from "./categories";
+import { matchRule } from "./rules";
 import { titleCase } from "./smartParser";
 
 /**
@@ -96,6 +97,24 @@ export function findTable(rows: string[][]): StatementTable | null {
       headers: rows[r],
       columns: { date: anyDate, description, debit, credit, amount, type: find(TYPE_HEAD), balance: find(BALANCE_HEAD) },
     };
+  }
+  return null;
+}
+
+/** Identifies a bank's statement layout by its header row, to remember the columns the user chose. */
+export const headerSignature = (headers: string[]) => headers.map(norm).filter(Boolean).join("|");
+
+/**
+ * The table using a remembered layout: the first row whose headers match one, with its columns.
+ * Lets a statement Tally can't read on its own work after the user has set its columns once.
+ */
+export function findSavedTable(rows: string[][], layouts: { signature: string; columns: ColumnMap }[]): StatementTable | null {
+  for (let r = 0; r < Math.min(rows.length, 60); r++) {
+    const sig = headerSignature(rows[r]);
+    const layout = sig && layouts.find((l) => l.signature === sig);
+    if (layout && Math.max(...Object.values(layout.columns).filter((c): c is number => c !== null)) < rows[r].length) {
+      return { headerRow: r, headers: rows[r], columns: layout.columns };
+    }
   }
   return null;
 }
@@ -209,7 +228,7 @@ export function readTransactions(rows: string[][], table: StatementTable): State
     // Two identical rows on one statement (same day, amount, text, no balance) are still two transactions.
     const n = (seen.get(key) ?? 0) + 1;
     seen.set(key, n);
-    const name = nameFromNarration(description);
+    const name = matchRule(description)?.rename || nameFromNarration(description);
     out.push({
       id: `stmt-${fingerprint(`${key}|${n}`)}`, date, description, name, amount, direction,
       category: guessCategory(`${name} ${description}`), incomeSource: direction === "credit" ? incomeSourceFor(description, name) : "",
