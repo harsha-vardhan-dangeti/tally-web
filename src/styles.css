@@ -29,7 +29,9 @@ h1, h2, h3 { margin: 0; letter-spacing: -0.01em; }
 /* ---------- shell ---------- */
 .shell { min-height: 100dvh; display: flex; }
 .sidebar { display: none; }
-.main { flex: 1; min-width: 0; padding: env(safe-area-inset-top) 0 calc(110px + env(safe-area-inset-bottom)); }
+/* Layouts below respond to the space beside the side bar (container "main"), not the window, so a wider
+   or folded side bar reflows the page instead of overflowing it. */
+.main { flex: 1; min-width: 0; padding: env(safe-area-inset-top) 0 calc(110px + env(safe-area-inset-bottom)); container: main / inline-size; }
 .page { max-width: 640px; margin: 0 auto; padding: 16px 16px 0; display: flex; flex-direction: column; gap: 16px; }
 .page-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 4px 0; }
 .page-head h1 { font-size: 30px; line-height: 1.1; }
@@ -62,6 +64,23 @@ h1, h2, h3 { margin: 0; letter-spacing: -0.01em; }
   .sidebar .nav .badge { margin-left: auto; background: var(--danger); color: #fff; border-radius: 9px; font-size: 11px; padding: 1px 7px; font-weight: 700; }
   .sidebar .add { margin-top: 12px; }
   .sidebar .foot { margin-top: auto; display: flex; flex-direction: column; gap: 6px; }
+  .sidebar { position: sticky; flex-shrink: 0; transition: width 0.18s ease; overflow: visible; }
+  .sidebar.dragging { transition: none; user-select: none; }
+  .sidebar .nav-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sidebar .btn.add, .sidebar .btn.smart { justify-content: center; }
+  .sidebar .nav.fold { color: var(--muted); font-size: 14px; }
+  .sidebar .nav.fold:hover, .sidebar .nav:hover:not([aria-current="page"]) { background: var(--fill); }
+  .sidebar-edge { position: absolute; top: 0; right: -4px; width: 8px; height: 100%; cursor: col-resize; z-index: 5; touch-action: none; }
+  .sidebar-edge::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: transparent; transition: background 0.15s; }
+  .sidebar-edge:hover::after, .sidebar.dragging .sidebar-edge::after, .sidebar-edge:focus-visible::after { background: var(--brand); }
+  .sidebar-edge:focus-visible { outline: none; }
+  /* Folded: icons only, labels kept for screen readers through aria-label and shown as tooltips. */
+  .sidebar.collapsed { padding-inline: 12px; align-items: stretch; }
+  .sidebar.collapsed .nav-label { display: none; }
+  .sidebar.collapsed .brand { justify-content: center; padding-inline: 0; }
+  .sidebar.collapsed .nav { justify-content: center; padding-inline: 0; }
+  .sidebar.collapsed .btn.add, .sidebar.collapsed .btn.smart { padding: 0; }
+  .sidebar.collapsed .nav .badge { position: absolute; top: 4px; right: 6px; margin: 0; padding: 0 5px; font-size: 10px; }
   .sidebar .hint { margin: 0; font-size: 12px; color: var(--muted); padding: 0 10px; }
   .sidebar .hint a { color: inherit; }
   .sidebar .hint a:hover { color: var(--accent); }
@@ -69,7 +88,7 @@ h1, h2, h3 { margin: 0; letter-spacing: -0.01em; }
 }
 
 /* Wide screens: Reports, Plan and Accounts tile their cards in two columns; Home is a dashboard grid. */
-@media (min-width: 1180px) {
+@container main (min-width: 940px) {
   .page.wide, .page.dash { max-width: 1160px; padding-inline: 32px; display: grid; gap: 20px 24px; align-items: start; }
   .page.wide { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
   .page.wide > .page-head, .page.wide > .span-2 { grid-column: 1 / -1; }
@@ -82,7 +101,7 @@ h1, h2, h3 { margin: 0; letter-spacing: -0.01em; }
   border-radius: 16px; background: var(--accent-soft); color: var(--accent); font-size: 14px; font-weight: 600; }
 .update-bar .btn { min-height: 40px; }
 @media (max-width: 899px) { .update-bar { margin: 12px 16px 0; } }
-@media (min-width: 1180px) { .update-bar { max-width: 1056px; } }
+@container main (min-width: 940px) { .update-bar { max-width: 1096px; } }
 
 /* ---------- cards & controls ---------- */
 .card { background: var(--surface); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow-sm); }
@@ -221,7 +240,7 @@ code.inline { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; ba
 .month-switch .t-strong { min-width: 9.5em; text-align: center; font-size: 15px; }
 .month-switch .icon-btn { width: 36px; height: 36px; }
 .month-switch .icon-btn:disabled { opacity: 0.35; cursor: default; }
-@media (min-width: 1180px) { .page.wide > .span-2 { grid-column: 1 / -1; } }
+@container main (min-width: 940px) { .page.wide > .span-2 { grid-column: 1 / -1; } }
 
 .kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 @media (max-width: 760px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
@@ -339,7 +358,7 @@ code.inline { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; ba
 .sharebar-legend li { display: flex; align-items: center; gap: 8px; }
 .sharebar-legend .share { width: 3em; text-align: right; }
 .fin-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-@media (min-width: 1180px) { .page.wide > .fin-col > .card:last-child { flex: 1; } }
+@container main (min-width: 940px) { .page.wide > .fin-col > .card:last-child { flex: 1; } }
 
 /* ---------- home: list / calendar ---------- */
 .view-switch { display: inline-flex; align-self: flex-start; gap: 2px; padding: 3px; border-radius: 12px; background: var(--fill); }
@@ -433,7 +452,8 @@ code.inline { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; ba
 .banner.info { background: var(--brand-soft); color: var(--accent); }
 
 .dash-grid { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); align-items: start; }
-@media (min-width: 700px) { .dash-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* One column or two, by the room there is: never squeezed below a readable card width. */
+.dash-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); }
 .dash-card { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .dash-card.flush { gap: 0; }
 .dash-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }

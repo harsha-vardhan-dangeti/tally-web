@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode, type PointerEvent as RPointerEvent } from "react";
+import { createPortal } from "react-dom";
 import { Icon } from "./icons";
 import { dismissToast, useToast } from "../data/store";
 import { applyUpdate, useUpdateReady } from "../data/updates";
 
-/** Bottom sheet on phones, centred dialog on desktop. Drag the handle down (or press Esc) to close. */
+/**
+ * Bottom sheet on phones, centred dialog on desktop. Drag the handle down (or press Esc) to close.
+ * Rendered into <body>, so it covers the whole window wherever in the page it's used.
+ */
 export function Sheet({ open, onClose, title, children, actions }: {
   open: boolean; onClose: () => void; title: string; children: ReactNode; actions?: ReactNode;
 }) {
@@ -34,7 +38,7 @@ export function Sheet({ open, onClose, title, children, actions }: {
   const move = (e: RPointerEvent) => { if (start.current !== null) setDrag(Math.max(0, e.clientY - start.current)); };
   const up = () => { if (drag > 110) onClose(); setDrag(0); start.current = null; };
 
-  return (
+  return createPortal(
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet" role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} ref={panel}
         style={{ transform: drag ? `translateY(${drag}px)` : undefined }} onClick={(e) => e.stopPropagation()}>
@@ -50,7 +54,8 @@ export function Sheet({ open, onClose, title, children, actions }: {
         </header>
         <div className="sheet-body">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

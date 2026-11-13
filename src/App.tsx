@@ -12,6 +12,7 @@ import { Plan } from "./screens/Plan";
 import { Inbox, Recap, Search, Settings } from "./screens/More";
 import { Welcome } from "./screens/Welcome";
 import { ShellContext } from "./ui/ProfileMenu";
+import { Sidebar } from "./ui/Sidebar";
 import { unlock } from "./screens/lock";
 import { startCloud } from "./data/cloud";
 
@@ -135,26 +136,8 @@ export function App() {
   return (
     <ShellContext.Provider value={shell}>
     <div className="shell">
-      <nav className="sidebar" aria-label="Main">
-        <div className="brand">
-          <span className="brand-mark">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><path d="M6 5v14M10 5v14M14 5v14M18 5v14M4 15L20 9" /></svg>
-          </span>
-          Tally
-        </div>
-        {tabs.map((t) => (
-          <button key={t.id} className="nav" aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}>
-            <Icon name={t.icon} />{t.label}
-            {t.id === "inbox" && pending > 0 && <span className="badge">{pending}</span>}
-          </button>
-        ))}
-        <button className="btn primary add" onClick={() => setSheet("quickAdd")}><Icon name="plus" size={18} />Add expense</button>
-        <button className="btn" onClick={() => setSheet("smartAdd")}>Smart add</button>
-        <div className="foot">
-          <p className="hint"><span className="kbd">N</span> add · <span className="kbd">S</span> smart · <span className="kbd">/</span> search</p>
-          <p className="hint"><a href="/">About Tally</a> · <a href="/privacy">Privacy</a></p>
-        </div>
-      </nav>
+      <Sidebar current={tab} onSelect={(id) => setTab(id as Tab)} onAdd={() => setSheet("quickAdd")} onSmart={() => setSheet("smartAdd")}
+        items={tabs.map((t) => ({ id: t.id, label: t.label, icon: t.icon, badge: t.id === "inbox" ? pending : undefined }))} />
 
       <main className="main">
         <UpdateBar />
