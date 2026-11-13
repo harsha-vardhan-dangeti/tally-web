@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { cloudAvailable, deleteAccount, signInWithGoogle, signOut, syncNow, useCloud } from "../data/cloud";
+import { cloudAvailable, deleteAccount, signInWithGoogle, signOut, syncNow, useCloud, type CloudState, type CloudUser } from "../data/cloud";
 import { exportJSON, showToast } from "../data/store";
 import { backupFileName, download } from "../ui/download";
 import { Icon } from "../ui/icons";
@@ -16,10 +16,10 @@ function GoogleMark() {
   );
 }
 
-export function GoogleButton({ label = "Continue with Google" }: { label?: string }) {
+export function GoogleButton({ label = "Continue with Google", block = false }: { label?: string; block?: boolean }) {
   const [busy, setBusy] = useState(false);
   return (
-    <button className="btn google-btn" disabled={busy} onClick={async () => { setBusy(true); await signInWithGoogle(); setBusy(false); }}>
+    <button className={`btn google-btn${block ? " block" : ""}`} disabled={busy} onClick={async () => { setBusy(true); await signInWithGoogle(); setBusy(false); }}>
       <GoogleMark />{busy ? "Opening Google…" : label}
     </button>
   );
@@ -31,6 +31,21 @@ const ago = (t: number) => {
   if (s < 3600) return `${Math.round(s / 60)} min ago`;
   return new Date(t).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 };
+
+/** The signed-in person's photo, or their initial when Google has no photo. */
+export function Avatar({ user, size = 40 }: { user: CloudUser; size?: number }) {
+  return user.avatar
+    ? <img src={user.avatar} alt="" width={size} height={size} className="avatar" style={{ width: size, height: size }} referrerPolicy="no-referrer" />
+    : <span className="avatar avatar-letter" style={{ width: size, height: size, fontSize: size * 0.42 }} aria-hidden="true">{(user.name || user.email).slice(0, 1).toUpperCase()}</span>;
+}
+
+/** One line on how this device's sync is going. */
+export function syncStatus(c: CloudState): { icon: string; text: string; tone: "" | "good" | "warn" | "danger" } {
+  return c.status === "syncing" ? { icon: "repeat", text: "Syncing…", tone: "" }
+    : c.status === "offline" ? { icon: "alert", text: c.pending ? `Offline. ${c.pending} change${c.pending === 1 ? "" : "s"} will upload when you're back online.` : "Offline. Changes will sync when you're back online.", tone: "warn" }
+    : c.status === "error" ? { icon: "alert", text: c.message ?? "Sync failed.", tone: "danger" }
+    : { icon: "check", text: c.lastSyncedAt ? `Synced ${ago(c.lastSyncedAt)}` : "Synced", tone: "good" };
+}
 
 /** Settings → Account: sign in to sync, see sync status, sign out. Hidden when the build has no Supabase. */
 export function AccountSection() {
@@ -53,10 +68,7 @@ export function AccountSection() {
     );
   }
 
-  const status = c.status === "syncing" ? { icon: "repeat", text: "Syncing…", tone: "" }
-    : c.status === "offline" ? { icon: "alert", text: c.pending ? `Offline. ${c.pending} change${c.pending === 1 ? "" : "s"} will upload when you're back online.` : "Offline. Changes will sync when you're back online.", tone: "warn" }
-    : c.status === "error" ? { icon: "alert", text: c.message ?? "Sync failed.", tone: "danger" }
-    : { icon: "check", text: c.lastSyncedAt ? `Synced ${ago(c.lastSyncedAt)}` : "Synced", tone: "good" };
+  const status = syncStatus(c);
 
   const doSignOut = async (discard: boolean) => {
     setBusy(true);
@@ -70,9 +82,7 @@ export function AccountSection() {
       <span className="t-strong small">Account</span>
       <div className="card account-card">
         <div className="row gap12">
-          {c.user.avatar
-            ? <img src={c.user.avatar} alt="" width={40} height={40} className="avatar" referrerPolicy="no-referrer" />
-            : <span className="avatar avatar-letter" aria-hidden="true">{(c.user.name || c.user.email).slice(0, 1).toUpperCase()}</span>}
+          <Avatar user={c.user} />
           <div className="col grow" style={{ minWidth: 0 }}>
             <span className="t-strong ellipsis">{c.user.name}</span>
             <span className="t-muted small ellipsis">{c.user.email}</span>

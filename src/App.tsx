@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { handleUrlActions, load, runDueBills, runDueIncome, useTally, type Expense } from "./data/store";
 import { Icon } from "./ui/icons";
 import { ToastHost, UpdateBar, useLongPress } from "./ui/components";
@@ -9,7 +9,9 @@ import { Accounts } from "./screens/Accounts";
 import { QuickAdd, SmartAdd } from "./screens/AddSheets";
 import { Detail } from "./screens/Detail";
 import { Plan } from "./screens/Plan";
-import { Inbox, Onboarding, Recap, Search, Settings } from "./screens/More";
+import { Inbox, Recap, Search, Settings } from "./screens/More";
+import { Welcome } from "./screens/Welcome";
+import { ShellContext } from "./ui/ProfileMenu";
 import { unlock } from "./screens/lock";
 import { startCloud } from "./data/cloud";
 
@@ -98,6 +100,7 @@ export function App() {
   }, [tab]);
 
   const openDetail = useCallback((e: Expense) => setDetailId(e.id), []);
+  const shell = useMemo(() => ({ openSettings: () => setSheet("settings") }), []);
   const close = useCallback(() => setSheet(null), []);
 
   // Keyboard shortcuts for desktop.
@@ -122,7 +125,7 @@ export function App() {
       </div>
     );
   }
-  if (!s.settings.onboarded) return <Onboarding />;
+  if (!s.settings.onboarded) return <Welcome />;
 
   const pending = s.expenses.filter((e) => e.pending).length;
   // Inbox only matters when an iPhone Shortcut has captured something to review.
@@ -130,6 +133,7 @@ export function App() {
   const phoneTabs = tabs.filter((t) => t.phone);
 
   return (
+    <ShellContext.Provider value={shell}>
     <div className="shell">
       <nav className="sidebar" aria-label="Main">
         <div className="brand">
@@ -201,6 +205,7 @@ export function App() {
         </div>
       )}
     </div>
+    </ShellContext.Provider>
   );
 }
 

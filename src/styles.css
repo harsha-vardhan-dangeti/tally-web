@@ -501,3 +501,55 @@ button.note-card:hover { background: var(--surface-2); }
 
 /* ---------- plan: found subscriptions ---------- */
 .found-row { display: flex; gap: 12px; align-items: flex-start; padding: 14px; }
+
+/* ---------- welcome (first run) ---------- */
+.welcome { min-height: 100dvh; display: grid; grid-template-columns: minmax(0, 1fr); background: var(--bg); }
+.welcome-art { background: var(--hero); color: var(--hero-ink); padding: calc(20px + env(safe-area-inset-top)) 20px 24px; display: flex; flex-direction: column; gap: 18px; }
+.welcome-brand { display: flex; align-items: center; gap: 10px; font-family: var(--font-display); font-weight: 700; font-size: 22px; letter-spacing: -0.02em; }
+.welcome-card { display: flex; flex-direction: column; gap: 10px; padding: 18px; border-radius: 20px; background: var(--hero-fill); }
+.welcome-card .label { font-size: 13px; color: var(--hero-muted); }
+.welcome-card .amount { font-size: clamp(40px, 12vw, 56px); line-height: 1.05; letter-spacing: -0.035em; }
+.welcome-card .tally-gone { stroke: color-mix(in srgb, var(--hero-ink) 18%, transparent); }
+.welcome-note { color: var(--hero-muted); }
+.welcome-points { list-style: none; margin: 0; padding: 0; display: none; flex-direction: column; gap: 12px; color: var(--hero-muted); font-size: 15px; }
+.welcome-points li { display: flex; gap: 10px; align-items: flex-start; }
+.welcome-points svg { color: var(--brand); flex-shrink: 0; margin-top: 2px; }
+.welcome-points i { color: var(--hero-ink); font-style: normal; font-weight: 600; }
+.welcome-main { display: flex; justify-content: center; padding: 28px 20px calc(28px + env(safe-area-inset-bottom)); }
+.welcome-step { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 18px; }
+.welcome-step h1 { font-size: clamp(30px, 8vw, 40px); line-height: 1.08; }
+.welcome-step > p { margin: 0; font-size: 16px; }
+.welcome-or { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 13px; }
+.welcome-or::before, .welcome-or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.welcome-amount { font-size: 30px !important; min-height: 68px !important; }
+.welcome-back { align-self: flex-start; margin-left: -8px; }
+.signed-in-chip { display: flex; align-items: center; gap: 10px; padding: 8px 12px 8px 8px; border-radius: 16px; background: var(--good-soft); color: var(--good); }
+.signed-in-chip .t-strong { color: var(--ink); }
+.btn.google-btn.block { min-height: 54px; font-size: 16px; border: 1px solid var(--line); box-shadow: var(--shadow-sm); }
+@media (min-width: 900px) {
+  .welcome { grid-template-columns: minmax(380px, 5fr) minmax(0, 6fr); }
+  .welcome-art { padding: 40px 48px; justify-content: space-between; position: sticky; top: 0; height: 100dvh; }
+  .welcome-card { max-width: 400px; padding: 24px; }
+  .welcome-points { display: flex; }
+  .welcome-main { align-items: center; padding: 48px; }
+}
+
+/* ---------- profile (top right) ---------- */
+.profile { position: relative; }
+.profile-btn { position: relative; width: 44px; height: 44px; border-radius: 50%; border: 0; padding: 2px; background: var(--surface); box-shadow: 0 0 0 1px var(--line); display: grid; place-items: center; }
+.profile-btn .avatar { width: 40px; height: 40px; }
+.profile-btn[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--brand); }
+.profile-dot { position: absolute; right: 0; bottom: 0; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--surface); background: var(--muted); }
+.profile-btn.good .profile-dot { background: var(--good); }
+.profile-btn.warn .profile-dot { background: var(--warn); }
+.profile-btn.danger .profile-dot { background: var(--danger); }
+.profile-menu { position: absolute; right: 0; top: calc(100% + 8px); z-index: 30; width: min(300px, calc(100vw - 32px)); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); padding: 16px; display: flex; flex-direction: column; gap: 12px;
+  animation: fade 0.12s ease; }
+.profile-menu .sync-status { padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.profile-actions { display: flex; flex-direction: column; margin: -4px -8px -8px; }
+.profile-actions button { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 0 10px; border: 0; border-radius: 10px; background: none;
+  font-weight: 600; text-align: left; color: var(--ink); }
+.profile-actions button:hover:not(:disabled) { background: var(--fill); }
+.profile-actions button:disabled { opacity: 0.5; }
+.profile-actions svg { color: var(--muted); }

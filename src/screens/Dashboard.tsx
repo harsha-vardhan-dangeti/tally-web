@@ -11,6 +11,7 @@ import { Icon } from "../ui/icons";
 import { Progress } from "../ui/components";
 import { Sparkline } from "../ui/charts";
 import { TallyMarks } from "../ui/tally";
+import { ProfileButton } from "../ui/ProfileMenu";
 import { ChipButton, ChipEditor, ExpenseRowView, greeting } from "./Activity";
 
 export type Destination = "activity" | "reports" | "plan" | "accounts";
@@ -66,7 +67,7 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
         </div>
         <div className="row gap8">
           <button className="icon-btn" onClick={onSearch} aria-label="Search (/)"><Icon name="search" size={20} /></button>
-          <button className="icon-btn" onClick={onSettings} aria-label="Settings"><Icon name="gear" size={20} /></button>
+          <ProfileButton />
         </div>
       </header>
 

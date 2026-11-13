@@ -11,6 +11,7 @@ import { Empty } from "../ui/components";
 import { BarList, CashFlowSankey, ChartCard, DataTable, PairedColumns, StatTile, type FlowNode } from "../ui/charts";
 import { download } from "../ui/download";
 import { MonthDetail } from "./MonthDetail";
+import { ProfileButton } from "../ui/ProfileMenu";
 
 type Tab = "flow" | "spending" | "month";
 const GROUP_PLURAL: Record<GroupBy, string> = { category: "Categories", merchant: "Places", account: "Payment methods" };
@@ -71,6 +72,7 @@ export function Reports() {
     <div className="page wide">
       <header className="page-head">
         <h1 className="display">Reports</h1>
+        <ProfileButton />
       </header>
 
       <div className="segmented span-2" role="tablist" aria-label="Report">

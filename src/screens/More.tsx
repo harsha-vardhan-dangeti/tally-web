@@ -12,11 +12,11 @@ import { Icon } from "../ui/icons";
 import { Empty, Field, Sheet, SwipeRow, Toggle } from "../ui/components";
 import { ExpenseRowView, SwipeExpense } from "./Activity";
 import { enableLock, lockSupported } from "./lock";
-import { AccountSection, GoogleButton } from "./Account";
+import { AccountSection } from "./Account";
 import { ImportSheet } from "./Import";
 import { CategoriesSheet } from "./Categories";
 import { RulesSheet } from "./Rules";
-import { cloudAvailable, useCloud } from "../data/cloud";
+import { useCloud } from "../data/cloud";
 
 // ---------------- Inbox ----------------
 
@@ -362,72 +362,3 @@ export function Settings({ open, onClose }: { open: boolean; onClose: () => void
 }
 
 // ---------------- Onboarding ----------------
-
-export function Onboarding() {
-  const [step, setStep] = useState(0);
-  const [budget, setBudget] = useState("");
-  const [income, setIncome] = useState("");
-  const b = parsePaise(budget) ?? 0;
-  const preview = b ? snapshot(b, 0, 0, new Date()) : null;
-
-  const finish = () => {
-    setSettings({ onboarded: true, monthlyBudget: b, monthlyIncome: parsePaise(income) ?? 0 });
-  };
-
-  return (
-    <div className="page" style={{ minHeight: "100dvh", maxWidth: 520, paddingBottom: 32 }}>
-      <div className="steps" aria-label={`Step ${step + 1} of 3`}>{[0, 1, 2].map((i) => <span key={i} className={i <= step ? "on" : ""} />)}</div>
-      {step === 0 && (
-        <div className="col gap16" style={{ paddingTop: 24 }}>
-          <span className="cat-icon" style={{ width: 64, height: 64, background: "var(--accent)", color: "var(--accent-ink)", borderRadius: 18 }}>
-            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M6 5v14M10 5v14M14 5v14M18 5v14M4 15L20 9" /></svg>
-          </span>
-          <h1 className="display" style={{ fontSize: 34, lineHeight: 1.1 }}>Log a spend in 3 seconds.</h1>
-          <p className="t-muted" style={{ margin: 0 }}>Tap a repeat, type a sentence, or fire a Shortcut from your Action Button. Tally turns it into one number: what's safe to spend today.</p>
-          <div className="col gap8 small">
-            <span>• Private — stays in your browser unless you turn on sync</span>
-            <span>• No sign-up, no bank login</span>
-            <span>• Works offline once loaded</span>
-          </div>
-          {cloudAvailable && (
-            <div className="col gap8" style={{ paddingTop: 8 }}>
-              <span className="t-muted small">Already use Tally on another device?</span>
-              <GoogleButton label="Sign in with Google to sync" />
-            </div>
-          )}
-        </div>
-      )}
-      {step === 1 && (
-        <div className="col gap16" style={{ paddingTop: 24 }}>
-          <h1 className="display" style={{ fontSize: 30, lineHeight: 1.15 }}>How much do you want to spend each month?</h1>
-          <p className="t-muted" style={{ margin: 0 }}>Leave out rent and investments if you'll add them as bills.</p>
-          <input type="text" inputMode="numeric" autoFocus aria-label="Monthly budget in rupees" placeholder="₹ 55,000" value={budget}
-            onChange={(e) => setBudget(e.target.value)} className="display" style={{ fontSize: 30, minHeight: 72 }} />
-          <input type="text" inputMode="numeric" aria-label="Monthly income (optional)" placeholder="Monthly income (optional)" value={income} onChange={(e) => setIncome(e.target.value)} />
-          {preview && <div className="card"><span className="t-muted small">Today you could spend</span><div className="display num" style={{ fontSize: 24 }}>{formatMoney(preview.safePerDay)}</div></div>}
-        </div>
-      )}
-      {step === 2 && (
-        <div className="col gap16" style={{ paddingTop: 24 }}>
-          <h1 className="display" style={{ fontSize: 30 }}>Put Tally one tap away</h1>
-          <div className="card col gap8 small">
-            <span className="t-strong">iPhone</span>
-            <span className="t-muted">Safari → Share → <b>Add to Home Screen</b>. Want iPhone Shortcuts (Action Button, Siri, Apple Pay) to log for you? Turn off <b>Open as Web App</b> so it shares Safari's data.</span>
-          </div>
-          <div className="card col gap8 small">
-            <span className="t-strong">Android</span>
-            <span className="t-muted">Chrome menu → <b>Install app</b>. Long-press the icon for Quick add and Smart add shortcuts.</span>
-          </div>
-          <div className="card col gap8 small">
-            <span className="t-strong">Computer</span>
-            <span className="t-muted">Press <span className="kbd">N</span> anywhere to log, <span className="kbd">/</span> to search.</span>
-          </div>
-        </div>
-      )}
-      <div className="col gap8" style={{ marginTop: "auto" }}>
-        <button className="btn primary block" onClick={() => (step < 2 ? setStep(step + 1) : finish())}>{step < 2 ? "Continue" : "Start using Tally"}</button>
-        {step === 1 && <button className="btn ghost" onClick={() => setStep(2)}>Skip for now</button>}
-      </div>
-    </div>
-  );
-}

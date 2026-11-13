@@ -9,6 +9,7 @@ import { categoryMeta, pickableCategories, type Category } from "../core/categor
 import { CategoryIcon, Icon } from "../ui/icons";
 import { Empty, Field, Sheet, SwipeRow, useLongPress } from "../ui/components";
 import { DaySheet, IncomeEditor, MonthCalendar } from "./Calendar";
+import { ProfileButton } from "../ui/ProfileMenu";
 
 export function ExpenseRowView({ e }: { e: Expense }) {
   const time = new Date(e.occurredAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -132,7 +133,10 @@ export function Activity({ onOpen, onAdd, onSearch }: { onOpen: (e: Expense) => 
       {pull > 0 && <div className="pull-hint" style={{ opacity: Math.min(pull / 80, 1) }}>{pull > 80 ? "Release to search" : "Pull to search"}</div>}
       <header className="page-head">
         <h1 className="display">Activity</h1>
-        <button className="icon-btn" onClick={onSearch} aria-label="Search (/)"><Icon name="search" size={20} /></button>
+        <div className="row gap8">
+          <button className="icon-btn" onClick={onSearch} aria-label="Search (/)"><Icon name="search" size={20} /></button>
+          <ProfileButton />
+        </div>
       </header>
 
       <div className="activity-bar card">

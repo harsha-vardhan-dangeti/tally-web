@@ -41,6 +41,7 @@ const paths: Record<string, string> = {
   phone: "M8 3h8v18H8zM11 18h2",
   dumbbell: "M3 10v4M6 7v10M18 7v10M21 10v4M6 12h12",
   transfer: "M4 8h14M14 4l4 4-4 4M20 16H6M10 12l-4 4 4 4",
+  logout: "M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10",
 };
 
 export function Icon({ name, size = 22, stroke = 2, label }: { name: string; size?: number; stroke?: number; label?: string }) {

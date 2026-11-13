@@ -7,6 +7,7 @@ import { formatMoney, parsePaise } from "../core/money";
 import { Icon } from "../ui/icons";
 import { Empty, Field, Sheet } from "../ui/components";
 import { ChartCard, DataTable, TrendLine } from "../ui/charts";
+import { ProfileButton } from "../ui/ProfileMenu";
 
 const GROUPS: { kinds: AccountKind[]; title: string }[] = [
   { kinds: ["bank", "cash"], title: "Cash and bank" },
@@ -32,11 +33,12 @@ export function Accounts() {
     <div className="page wide">
       <header className="page-head">
         <h1 className="display">Accounts</h1>
-        <div className="row gap8">
-          {s.accounts.length >= 2 && <button className="btn" onClick={() => setMoving(true)}><Icon name="transfer" size={16} />Transfer</button>}
-          <button className="btn primary" onClick={() => setEditing("new")}><Icon name="plus" size={16} />Add account</button>
-        </div>
+        <ProfileButton />
       </header>
+      <div className="row gap8 wrap span-2">
+        {s.accounts.length >= 2 && <button className="btn" onClick={() => setMoving(true)}><Icon name="transfer" size={16} />Transfer</button>}
+        <button className="btn primary" onClick={() => setEditing("new")}><Icon name="plus" size={16} />Add account</button>
+      </div>
 
       <section className="card networth span-2">
         <div className="col gap4">

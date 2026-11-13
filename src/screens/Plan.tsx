@@ -9,6 +9,7 @@ import { monthKey } from "../core/budget";
 import { formatMoney, parsePaise } from "../core/money";
 import { CategoryIcon, Icon } from "../ui/icons";
 import type { RecurringCharge } from "../core/recurring";
+import { ProfileButton } from "../ui/ProfileMenu";
 import { Empty, Field, Progress, Sheet, Toggle } from "../ui/components";
 
 export function Plan() {
@@ -38,7 +39,7 @@ export function Plan() {
     <div className="page wide">
       <header className="page-head">
         <h1 className="display">Plan</h1>
-        <span className="t-muted small">{now.toLocaleDateString([], { month: "long" })}</span>
+        <ProfileButton />
       </header>
 
       <section className="col gap8">
