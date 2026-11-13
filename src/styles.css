@@ -90,9 +90,11 @@ h1, h2, h3 { margin: 0; letter-spacing: -0.01em; }
 /* Wide screens: Reports, Plan and Accounts tile their cards in two columns; Home is a dashboard grid. */
 @container main (min-width: 940px) {
   .page.wide, .page.dash { max-width: 1160px; padding-inline: 32px; display: grid; gap: 20px 24px; align-items: start; }
+  /* Home uses big screens: up to 1480px, where its cards go three across. */
+  .page.dash { max-width: 1480px; }
   .page.wide { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; }
   .page.wide > .page-head, .page.wide > .span-2 { grid-column: 1 / -1; }
-  .page.dash { grid-template-columns: minmax(0, 400px) minmax(0, 1fr); }
+  .page.dash { grid-template-columns: minmax(340px, 400px) minmax(0, 1fr); }
   .page.dash > .page-head { grid-column: 1 / -1; }
   .dash-side { min-width: 0; }
 }
@@ -451,9 +453,16 @@ code.inline { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; ba
 .tally-left { stroke: var(--hero-ink); opacity: 0.9; }
 .banner.info { background: var(--brand-soft); color: var(--accent); }
 
-.dash-grid { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+/* Cards in a row share its height, so the grid has no ragged gaps; Recent spans the whole width. */
+.dash-grid { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); align-items: stretch; grid-auto-flow: row dense; }
+.dash-card.wide { grid-column: 1 / -1; }
+.dash-grid { container: dashgrid / inline-size; }
+/* Three across: Recent takes two columns beside the last card, so no row is left half empty. */
+@container dashgrid (min-width: 812px) { .dash-card.wide { grid-column: span 2; } }
+.recent-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); column-gap: 8px; padding: 0 8px 6px; }
+.recent-list > * { border-top: 1px solid var(--line); border-radius: 0; }
 /* One column or two, by the room there is: never squeezed below a readable card width. */
-.dash-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); }
+.dash-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); }
 .dash-card { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .dash-card.flush { gap: 0; }
 .dash-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
@@ -521,6 +530,13 @@ button.note-card:hover { background: var(--surface-2); }
 
 /* ---------- plan: found subscriptions ---------- */
 .found-row { display: flex; gap: 12px; align-items: flex-start; padding: 14px; }
+/* Plan's sections differ a lot in height: they stack in one column, or flow into two independent
+   columns when there's room, so a short section never leaves a gap beside a tall one. */
+.plan-cols { display: flex; flex-direction: column; gap: 16px; }
+@container main (min-width: 940px) {
+  .plan-cols { display: block; columns: 2; column-gap: 24px; }
+  .plan-cols > section { break-inside: avoid; margin-bottom: 24px; }
+}
 
 /* ---------- welcome (first run) ---------- */
 .welcome { min-height: 100dvh; display: grid; grid-template-columns: minmax(0, 1fr); background: var(--bg); }

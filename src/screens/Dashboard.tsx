@@ -172,7 +172,7 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
                     <span className={`due-date${soon ? " soon" : ""}`}><strong>{d.getDate()}</strong><span>{d.toLocaleDateString([], { month: "short" })}</span></span>
                     <span className="grow col" style={{ minWidth: 0 }}>
                       <span className="t-strong ellipsis">{u.name}</span>
-                      <span className="tiny t-muted">{u.found ? "Repeats · found in your spending" : categoryMeta(u.category).title}</span>
+                      <span className="tiny t-muted">{u.found ? "Found in your spending" : categoryMeta(u.category).title}</span>
                     </span>
                     <span className="num t-strong">{formatMoney(u.amount)}</span>
                   </li>
@@ -204,14 +204,14 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
           )}
         </DashCard>
 
-        <DashCard title="Recent" action="All activity" onAction={() => go("activity")} flush>
+        <DashCard title="Recent" action="All activity" onAction={() => go("activity")} flush wide>
           {recent.length === 0 ? (
             <div style={{ padding: "4px 16px 16px" }}>
               <p className="t-muted small" style={{ margin: "0 0 12px" }}>Nothing logged yet. Tap a repeat above, press + or N, or type a sentence with Smart add.</p>
               <button className="btn primary" onClick={() => onAdd()}>Log an expense</button>
             </div>
           ) : (
-            <div className="divided">
+            <div className="recent-list">
               {recent.map((e) => <button key={e.id} className="row-btn" onClick={() => onOpen(e)}><ExpenseRowView e={e} /></button>)}
             </div>
           )}
@@ -224,11 +224,11 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
   );
 }
 
-function DashCard({ title, sub, action, onAction, flush, children }: {
-  title: string; sub?: string; action?: string; onAction?: () => void; flush?: boolean; children: ReactNode;
+function DashCard({ title, sub, action, onAction, flush, wide, children }: {
+  title: string; sub?: string; action?: string; onAction?: () => void; flush?: boolean; wide?: boolean; children: ReactNode;
 }) {
   return (
-    <section className={`card dash-card${flush ? " flush" : ""}`}>
+    <section className={`card dash-card${flush ? " flush" : ""}${wide ? " wide" : ""}`}>
       <header className="dash-card-head">
         <div className="col">
           <h2>{title}</h2>

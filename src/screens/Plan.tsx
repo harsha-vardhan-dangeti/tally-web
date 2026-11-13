@@ -42,6 +42,8 @@ export function Plan() {
         <ProfileButton />
       </header>
 
+      <div className="plan-cols span-2">
+
       <section className="col gap8">
         <div className="section-title"><span>Budgets</span></div>
         <div className="card col gap16">
@@ -171,6 +173,8 @@ export function Plan() {
           })}
         </div>
       </section>
+
+      </div>
 
       <BudgetEditor category={budgetCat} onClose={() => setBudgetCat(null)} />
       <BillEditor value={bill} onClose={() => setBill(null)} />
