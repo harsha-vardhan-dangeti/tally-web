@@ -44,6 +44,8 @@ const paths: Record<string, string> = {
   logout: "M14 4h5v16h-5M10 8l-4 4 4 4M6 12h10",
   collapse: "M4 4h16v16H4zM9 4v16M16 9l-3 3 3 3",
   expand: "M4 4h16v16H4zM9 4v16M13 9l3 3-3 3",
+  chat: "M4 5h16v11H9l-5 4zM8 9h8M8 12h5",
+  globe: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18",
 };
 
 export function Icon({ name, size = 22, stroke = 2, label }: { name: string; size?: number; stroke?: number; label?: string }) {

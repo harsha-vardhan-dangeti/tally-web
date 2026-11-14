@@ -1,10 +1,11 @@
+import { t } from "../i18n";
 import { useMemo, useRef, useState } from "react";
 import {
   addExpense, counts, deleteChip, deleteExpense, expenseTitle, inMonth, makeRecurring, saveChip, share,
   showToast, uid, updateExpense, useTally, type Chip, type Expense, type Income,
 } from "../data/store";
 import { addMonths, sameDay, startOfDay } from "../core/budget";
-import { formatMoney, parsePaise } from "../core/money";
+import { formatMoney, parsePaise, currencySymbol } from "../core/money";
 import { categoryMeta, pickableCategories, type Category } from "../core/categories";
 import { CategoryIcon, Icon } from "../ui/icons";
 import { Empty, Field, Sheet, SwipeRow, useLongPress } from "../ui/components";
@@ -24,7 +25,8 @@ export function ExpenseRowView({ e }: { e: Expense }) {
       </div>
       <div className="col amt">
         <span className="num">−{formatMoney(e.amount, { showPaise: true })}</span>
-        {e.splitWays > 1 && <span className="t-muted tiny num">you {formatMoney(share(e))}</span>}
+        {e.splitWays > 1 && <span className="t-muted tiny num">{t("you {amount}", { amount: formatMoney(share(e)) })}</span>}
+        {e.fx && <span className="t-muted tiny num">{formatMoney(e.fx.amount, { currency: e.fx.currency, showPaise: true })}</span>}
       </div>
     </div>
   );
@@ -199,7 +201,7 @@ export function Activity({ onOpen, onAdd, onSearch }: { onOpen: (e: Expense) => 
 }
 
 export function greeting(h: number) {
-  return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+  return t(h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening");
 }
 
 export function ChipEditor({ chip, open, onClose }: { chip: Chip | null; open: boolean; onClose: () => void }) {
@@ -235,7 +237,7 @@ export function ChipEditor({ chip, open, onClose }: { chip: Chip | null; open: b
         </div>
       )}
       <Field label="Name"><input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Coffee" /></Field>
-      <Field label="Amount (₹)"><input type="text" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="180" /></Field>
+      <Field label={`Amount (${currencySymbol()})`}><input type="text" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="180" /></Field>
       <Field label="Category">
         <select value={category} onChange={(e) => setCategory(e.target.value as Category)}>
           {pickableCategories(category).map((c) => <option key={c} value={c}>{categoryMeta(c).title}</option>)}

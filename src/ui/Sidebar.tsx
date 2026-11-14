@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { Icon } from "./icons";
+import { t } from "../i18n";
 
 const MIN = 200, MAX = 360, DEFAULT = 240, COLLAPSED = 76;
 /** Dragging the edge narrower than this folds the side bar to icons. */
@@ -81,17 +82,17 @@ export function Sidebar({ items, current, onSelect, onAdd, onSmart }: {
         </button>
       ))}
       <button className="btn primary add" onClick={onAdd} title={collapsed ? "Add expense (N)" : undefined} aria-label={collapsed ? "Add expense" : undefined}>
-        <Icon name="plus" size={18} /><span className="nav-label">Add expense</span>
+        <Icon name="plus" size={18} /><span className="nav-label">{t("Add expense")}</span>
       </button>
       <button className="btn smart" onClick={onSmart} title={collapsed ? "Smart add (S)" : undefined} aria-label={collapsed ? "Smart add" : undefined}>
-        <Icon name="sparkle" size={18} /><span className="nav-label">Smart add</span>
+        <Icon name="sparkle" size={18} /><span className="nav-label">{t("Smart add")}</span>
       </button>
       <div className="foot">
         <p className="hint nav-label"><span className="kbd">N</span> add · <span className="kbd">S</span> smart · <span className="kbd">/</span> search</p>
-        <p className="hint nav-label"><a href="/">About Tally</a> · <a href="/privacy">Privacy</a></p>
+        <p className="hint nav-label"><a href="/">{t("About Tally")}</a> · <a href="/privacy">{t("Privacy")}</a></p>
         <button className="nav fold" onClick={() => fold(!collapsed)} aria-expanded={!collapsed}
           title={collapsed ? "Expand side bar (⌘ \\)" : "Collapse side bar (⌘ \\)"} aria-label={collapsed ? "Expand side bar" : "Collapse side bar"}>
-          <Icon name={collapsed ? "expand" : "collapse"} size={20} /><span className="nav-label">Collapse</span>
+          <Icon name={collapsed ? "expand" : "collapse"} size={20} /><span className="nav-label">{t("Collapse")}</span>
         </button>
       </div>
       <div className="sidebar-edge" role="separator" aria-orientation="vertical" tabIndex={0}

@@ -2,7 +2,7 @@
 
 Log a spend in 3 seconds and always know **what's safe to spend today**. It's a mobile-first web app (PWA), so you can add it to your iPhone Home Screen, and it also works on Android and desktop.
 
-- **Account optional:** without one, data stays in the browser (IndexedDB). Sign in with Google to sync phone and laptop through Supabase. No ads or tracking.
+- **Account optional:** without one, data stays in the browser (IndexedDB). Sign in with Google to sync phone and laptop through Supabase. No ads or third-party trackers; anonymous usage counts can be turned off in Settings.
 - **Works offline** after the first load: the service worker caches every file of a release.
 - **Updates in place:** a new deploy downloads in the background and the app shows *Update ready → Reload*. Data is untouched.
 - **Stack:** React 19, TypeScript, Vite, Supabase (auth + Postgres), one Vercel function. Plain CSS with light/dark themes.
@@ -14,6 +14,7 @@ Log a spend in 3 seconds and always know **what's safe to spend today**. It's a 
 | `/` | `index.html` + `src/landing/` | Public landing page with a live Smart add demo |
 | `/app` | `app.html` + `src/main.tsx` | The app |
 | `/privacy` | `privacy.html` | Privacy page |
+| `/pay#…` | `pay.html` + `src/pay/` | Payment request opened from a shared link (details live in the URL fragment; UPI button for rupees) |
 | 404 | `404.html` | Not-found page |
 
 `public/forward.js` sends old app links that point at `/` (`/?log=`, `/?capture=`, `#finances`, Home Screen installs) on to `/app`.
@@ -63,6 +64,11 @@ A new release installs in the background and waits. `src/data/updates.ts` shows 
 - **Reports:** cash flow for any period (where the money went, income vs spending by month, savings rate), spending grouped by category, place or payment method, filters, CSV export, and a month-in-detail view.
 - **Accounts:** net worth over time from month-end balances, accounts grouped by type, and transfers between accounts.
 - **Plan:** overall and category budgets; bills and subscriptions (due dates, price-rise flag, auto-log); repeating charges found in your spending (`src/core/recurring.ts`); savings goals.
+- **People** (`src/core/people.ts`): who owes whom, worked out from split expenses ("split with ravi, priya", and who paid) plus money lent, borrowed and paid back. "Ask to pay" shares a message with a `/pay` link that opens a UPI app with the amount filled in.
+- **Loans & EMIs** (Plan, `src/core/loans.ts`): EMI worked out from amount, rate and months; what's left from the schedule; each EMI can add itself to expenses; loans count as debts in net worth.
+- **Share your month:** a 1080×1350 recap picture (`src/ui/recapImage.ts`), with amounts hidden unless you turn them on. Offered on Home in the first week of each month.
+- **Languages and currencies:** English, Hindi, Telugu and Tamil (`src/i18n/`, English text is the key; `i18n.test.ts` fails if a string is missing), 17 home currencies, and amounts paid abroad with a remembered rate.
+- **Feedback, usage counts and crash reports:** sent to `api/collect.ts`, which validates them and writes to the `usage_events`, `client_errors` and `feedback` tables (no browser access). See "Reading feedback and usage" below.
 - **Inbox:** captured payments wait for a one-tap confirm.
 - **Recap:** month-end forecast, change vs the same point last month, biggest spend, no-spend days, logging streak.
 - **Regular income:** salary and other monthly income add themselves on their day (Plan → Regular income, or "Repeats every month" on an income entry).
@@ -154,3 +160,21 @@ Vercel → your project → **Settings → Domains** → add `tally.yourdomain.c
 - **Migrations:** apply with `supabase db push --db-url "$POSTGRES_URL_NON_POOLING"`.
 - **Google:** enable the Google provider in Supabase with an OAuth client whose redirect URI is `https://<project>.supabase.co/auth/v1/callback`. Allow the site's URLs under Authentication → URL Configuration.
 
+
+## Reading feedback and usage
+
+Run these in the Supabase dashboard's SQL editor. Browsers can't read these tables; only the dashboard and `api/collect.ts` (secret key) can.
+
+```sql
+-- Newest feedback
+select created_at, mood, message, email from feedback order by created_at desc limit 50;
+
+-- Daily active devices and what they did
+select * from usage_daily where day > current_date - 14 order by day desc, devices desc;
+
+-- Crashes by message, last 7 days
+select message, count(*), max(created_at) from client_errors
+where created_at > now() - interval '7 days' group by 1 order by 2 desc;
+```
+
+Usage and crash rows older than a year are deleted by `api/collect.ts`.

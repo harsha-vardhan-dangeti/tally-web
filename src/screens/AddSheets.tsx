@@ -6,6 +6,7 @@ import { parseLines, yourShare } from "../core/smartParser";
 import { parseReceipt } from "../core/receiptParser";
 import { CategoryIcon, Icon } from "../ui/icons";
 import { Sheet } from "../ui/components";
+import { t } from "../i18n";
 
 const toLocalInput = (d: Date) => {
   const p = (n: number) => String(n).padStart(2, "0");
@@ -76,7 +77,7 @@ export function QuickAdd({ open, onClose, onSmart, initialDate }: {
       setDigits("");
       setNote("");
     } else {
-      showToast(`Logged ${formatMoney(amount)} · ${categoryMeta(category).title}`, () => deleteExpense(e.id, false));
+      showToast(t("Logged {amount} · {category}", { amount: formatMoney(amount), category: categoryMeta(category).title }), () => deleteExpense(e.id, false));
       onClose();
     }
   };
@@ -90,12 +91,12 @@ export function QuickAdd({ open, onClose, onSmart, initialDate }: {
   };
 
   return (
-    <Sheet open={open} onClose={onClose} title="Quick add"
-      actions={<button className="btn ghost" onClick={onSmart}>Type, speak or scan</button>}>
+    <Sheet open={open} onClose={onClose} title={t("Quick add")}
+      actions={<button className="btn ghost" onClick={onSmart}>{t("Type, speak or scan")}</button>}>
       <div className="amount-display" onPointerDown={amtDown} onPointerUp={amtUp}>
-        <div className="t-muted small">{saved ? `Saved ${saved} · keep going` : "New expense"}</div>
+        <div className="t-muted small">{saved ? t("Saved {n} · keep going", { n: saved }) : t("New expense")}</div>
         <div className="big display num" aria-live="polite">{formatMoney(amount)}</div>
-        <div className="t-muted tiny">Swipe the amount sideways (or ← →) to change category</div>
+        <div className="t-muted tiny">{t("Swipe the amount sideways (or ← →) to change category")}</div>
       </div>
 
       <div className="cat-grid" role="group" aria-label="Category">
@@ -107,12 +108,12 @@ export function QuickAdd({ open, onClose, onSmart, initialDate }: {
       </div>
 
       <div className="row gap8">
-        <select aria-label="Paid from" value={account} onChange={(e) => setAccount(e.target.value)} style={{ flex: 1 }}>
+        <select aria-label={t("Paid from")} value={account} onChange={(e) => setAccount(e.target.value)} style={{ flex: 1 }}>
           {accounts.map((a) => <option key={a}>{a}</option>)}
         </select>
         <input aria-label="Date" type="date" value={date} max={toLocalInput(new Date())} onChange={(e) => setDate(e.target.value)} style={{ flex: 1 }} />
       </div>
-      <input type="text" aria-label="Merchant or note" placeholder="Merchant or note (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
+      <input type="text" aria-label={t("Merchant or note")} placeholder={t("Merchant or note (optional)")} value={note} onChange={(e) => setNote(e.target.value)} />
 
       <div className="keypad">
         {["1", "2", "3", "4", "5", "6", "7", "8", "9", "00", "0", "⌫"].map((k) => (
@@ -130,9 +131,9 @@ export function QuickAdd({ open, onClose, onSmart, initialDate }: {
             if (saveStart.current !== null && saveStart.current - e.clientY > 40) { swipedSave.current = true; save(true); }
             saveStart.current = null;
           }}>
-          {amount ? `Save ${formatMoney(amount)} · ${categoryMeta(category).title}` : "Enter an amount"}
+          {amount ? t("Save {amount} · {category}", { amount: formatMoney(amount), category: categoryMeta(category).title }) : t("Enter an amount")}
         </button>
-        <button className="btn ghost" disabled={!amount} onClick={() => save(true)}>Save and add another (or swipe up on Save)</button>
+        <button className="btn ghost" disabled={!amount} onClick={() => save(true)}>{t("Save and add another (or swipe up on Save)")}</button>
       </div>
     </Sheet>
   );
@@ -184,17 +185,17 @@ export function SmartAdd({ open, onClose }: { open: boolean; onClose: () => void
   };
 
   return (
-    <Sheet open={open} onClose={onClose} title="Smart add">
+    <Sheet open={open} onClose={onClose} title={t("Smart add")}>
       <label className="field">
-        <span>Write it how you'd say it — one expense per line</span>
+        <span>{t("Write it how you'd say it — one expense per line")}</span>
         <textarea rows={4} autoFocus value={text} onChange={(e) => setText(e.target.value)}
           placeholder={"lunch 350 at chutneys, split with arjun\nauto 120\ngroceries 850 card"} />
       </label>
-      <p className="t-muted tiny" style={{ margin: 0 }}>Tip: tap the microphone on your phone's keyboard to dictate instead of typing.</p>
+      <p className="t-muted tiny" style={{ margin: 0 }}>{t("Tip: tap the microphone on your phone's keyboard to dictate instead of typing.")}</p>
 
       <div className="row gap8">
         <button className="btn" onClick={() => fileRef.current?.click()} disabled={!!scanning}>
-          <Icon name="scan" size={18} />{scanning ?? "Scan a receipt photo"}
+          <Icon name="scan" size={18} />{scanning ?? t("Scan a receipt photo")}
         </button>
         <input ref={fileRef} type="file" accept="image/*" capture="environment" hidden
           onChange={(e) => { const f = e.target.files?.[0]; if (f) void scan(f); }} />
@@ -228,9 +229,9 @@ export function SmartAdd({ open, onClose }: { open: boolean; onClose: () => void
       {text && parsed.length === 0 && <p className="t-muted small" style={{ margin: 0 }}>Add an amount, like “auto 120”.</p>}
 
       <button className="btn primary block" disabled={!parsed.length} onClick={save}>
-        {parsed.length > 1 ? `Log ${parsed.length} expenses` : "Log expense"}
+        {parsed.length > 1 ? t("Log {n} expenses", { n: parsed.length }) : t("Log expense")}
       </button>
-      <p className="t-muted tiny" style={{ margin: 0 }}>Understood in your browser. Nothing you type is sent anywhere.</p>
+      <p className="t-muted tiny" style={{ margin: 0 }}>{t("Understood in your browser. Nothing you type is sent anywhere.")}</p>
     </Sheet>
   );
 }

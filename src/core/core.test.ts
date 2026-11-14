@@ -6,6 +6,15 @@ import { parseReceipt } from "./receiptParser";
 import { categoryMeta, guessCategory, pickableCategories, resolveCategories, setCategoryDefs, toCategory } from "./categories";
 import { matchRule, sanitizeRules, setRules } from "./rules";
 
+describe("split names", () => {
+  it("reads a comma-separated list of names", () => {
+    const p = parseExpense("dinner 1800 at toit split with ravi, priya and arjun")!;
+    expect(p.splitWith).toEqual(["Ravi", "Priya", "Arjun"]);
+    expect(p.splitWays).toBe(4);
+    expect(parseExpense("cab 600 split with ravi, yesterday")!.splitWith).toEqual(["Ravi"]);
+  });
+});
+
 describe("money", () => {
   it("formats with Indian grouping", () => {
     expect(formatMoney(0)).toBe("₹0");

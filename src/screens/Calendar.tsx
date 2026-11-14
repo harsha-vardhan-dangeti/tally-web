@@ -3,7 +3,7 @@ import {
   counts, deleteIncome, expenseTitle, runDueIncome, saveIncome, saveRecurringIncome, share, uid, useTally, type Expense, type Income,
 } from "../data/store";
 import { monthKey, monthRange, sameDay, startOfDay } from "../core/budget";
-import { compactMoney, formatMoney, parsePaise } from "../core/money";
+import { compactMoney, formatMoney, parsePaise, currencySymbol } from "../core/money";
 import { Icon } from "../ui/icons";
 import { Empty, Field, Sheet, Toggle } from "../ui/components";
 import { ExpenseRowView } from "./Activity";
@@ -208,7 +208,7 @@ export function IncomeEditor({ value, onClose }: { value: { income: Income | nul
 
   return (
     <Sheet open={value !== null} onClose={onClose} title={existing ? "Edit income" : "Add income"}>
-      <Field label="Amount (₹)">
+      <Field label={`Amount (${currencySymbol()})`}>
         <input type="text" inputMode="decimal" autoFocus value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="50000"
           className="display" style={{ fontSize: 24, minHeight: 56 }} />
       </Field>

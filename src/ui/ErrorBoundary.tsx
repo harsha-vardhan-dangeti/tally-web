@@ -1,6 +1,7 @@
 import { Component, type ReactNode } from "react";
 import { exportJSON, getState } from "../data/store";
 import { backupFileName, download } from "./download";
+import { reportError } from "../data/telemetry";
 
 /** A crash in one screen shows a recovery page instead of a blank app. Data in IndexedDB is unaffected. */
 export class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
@@ -12,6 +13,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, { error: E
 
   componentDidCatch(error: Error) {
     console.error("Tally crashed:", error);
+    reportError(error);
   }
 
   render() {

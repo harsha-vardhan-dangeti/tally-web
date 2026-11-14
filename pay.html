@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Payment request · Tally</title>
+    <meta name="description" content="Someone shared what you owe them with Tally. Pay with any UPI app." />
+    <meta name="robots" content="noindex" />
+    <meta name="theme-color" content="#F3F4F6" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0B0D12" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  </head>
+  <body class="site">
+    <header class="site-head wrap-x">
+      <a class="logo" href="/" aria-label="Tally home">
+        <span class="mark" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 5v14M10 5v14M14 5v14M18 5v14M4 15L20 9" /></svg></span>
+        Tally
+      </a>
+    </header>
+
+    <main class="pay wrap-x">
+      <section class="pay-card" id="request" hidden>
+        <span class="pay-eyebrow" id="who"></span>
+        <span class="pay-amount" id="amount"></span>
+        <span class="pay-for" id="for" hidden></span>
+        <div class="pay-actions" id="upi" hidden>
+          <a class="btn-site primary big" id="upi-pay" href="#">Pay with a UPI app</a>
+          <span class="pay-hint">Opens Google Pay, PhonePe, Paytm or your bank's app with the amount filled in.</span>
+          <div class="pay-id">
+            <span>UPI ID</span>
+            <code id="upi-id"></code>
+            <button type="button" class="btn-site" id="copy">Copy</button>
+          </div>
+        </div>
+        <p class="pay-hint" id="no-upi" hidden>Pay them back the way you usually do.</p>
+      </section>
+
+      <section class="pay-card" id="invalid" hidden>
+        <span class="pay-eyebrow">Payment request</span>
+        <h1 class="pay-title">This link is incomplete</h1>
+        <p class="pay-hint">Ask the person who sent it to share it again from Tally.</p>
+      </section>
+
+      <section class="pay-pitch">
+        <h2>Split bills without the awkward follow-up</h2>
+        <p>Tally keeps track of who owes what, sends a link like this one when it's time to settle, and shows what's safe to spend each day. Free, and no bank login.</p>
+        <a class="btn-site" href="/">See how Tally works</a>
+      </section>
+
+      <p class="pay-note">The details on this page live only in the link you opened. Tally doesn't store them on a server.</p>
+    </main>
+    <script type="module" src="/src/pay/main.ts"></script>
+  </body>
+</html>

@@ -24,7 +24,7 @@ function cut(text: string, m: RegExpExecArray): string {
 
 /** "lunch 350 at chutneys, split with arjun" → structured expense. Runs entirely in the browser. */
 export function parseExpense(line: string, now = new Date()): ParsedExpense | null {
-  let text = " " + line.toLowerCase().replace(/₹/g, " ").replace(/\t/g, " ") + " ";
+  let text = " " + line.toLowerCase().replace(/[₹$€£৳]/g, " ").replace(/\t/g, " ") + " ";
   text = text.replace(/\b(rs\.?|inr|rupees?)\s*/gi, " ");
 
   let splitWays = 1;
@@ -42,7 +42,8 @@ export function parseExpense(line: string, now = new Date()): ParsedExpense | nu
   text = cut(text, m);
 
   if (splitWays === 1) {
-    m = /split\s+(?:with|between)\s+(.+?)(?=,|\.|$|\s+at\s|\s+on\s|\s+using\s|\s+via\s|\s+yesterday|\s+today)/i.exec(text);
+    // Names can be a list ("ravi, priya and arjun"); the list ends at a full stop, the end, or the next detail.
+    m = /split\s+(?:with|between)\s+(.+?)(?=\.|$|,?\s+at\s|,?\s+on\s|,?\s+using\s|,?\s+via\s|,?\s+yesterday|,?\s+today)/i.exec(text);
     if (m) {
       splitWith = m[1]
         .split(/[,&]/)

@@ -1,3 +1,4 @@
+import { track } from "../data/telemetry";
 import { useMemo, useRef, useState } from "react";
 import {
   findSavedTable, findTable, guessBank, headerSignature, looksLikeTransfer, matchExisting, parseCsv, readTransactions,
@@ -171,6 +172,7 @@ export function ImportSheet({ open, onClose }: { open: boolean; onClose: () => v
     setBusy(true);
     if (table) saveImportLayout({ signature: headerSignature(table.headers), columns: table.columns, account: acct });
     await importTransactions(expenses, incomes);
+    track("import_done", { expenses: Math.min(expenses.length, 1000) > 100 ? "100+" : String(expenses.length) });
     setBusy(false);
     onClose();
     const parts = [expenses.length && `${expenses.length} expense${expenses.length === 1 ? "" : "s"}`, incomes.length && `${incomes.length} income`].filter(Boolean);

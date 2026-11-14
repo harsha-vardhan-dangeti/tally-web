@@ -526,7 +526,7 @@ button.note-card:hover { background: var(--surface-2); }
 .acct-icon { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; flex-shrink: 0; background: var(--fill); color: var(--ink-2); }
 .acct-icon.card { background: var(--warn-soft); color: var(--warn); }
 .acct-icon.investment { background: var(--good-soft); color: var(--good); }
-.list-row.row-btn { display: flex; }
+.list-row.row-btn { display: flex; padding: 12px 14px; }
 
 /* ---------- plan: found subscriptions ---------- */
 .found-row { display: flex; gap: 12px; align-items: flex-start; padding: 14px; }
@@ -589,3 +589,29 @@ button.note-card:hover { background: var(--surface-2); }
 .profile-actions button:hover:not(:disabled) { background: var(--fill); }
 .profile-actions button:disabled { opacity: 0.5; }
 .profile-actions svg { color: var(--muted); }
+
+/* ---------- people, loans, recap, feedback ---------- */
+.owe { color: var(--warn); }
+.tab { min-width: 0; }
+.tab > :not(svg):not(.badge) { max-width: 100%; }
+.tab { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 2px; }
+.people-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.people-total { font-size: clamp(24px, 6vw, 32px); font-weight: 700; letter-spacing: -0.03em; overflow-wrap: anywhere; }
+.person-avatar {
+  width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; display: grid; place-items: center;
+  background: var(--brand-soft); color: var(--accent); font-weight: 700; font-size: 15px;
+}
+.person-avatar.small { width: 32px; height: 32px; font-size: 13px; }
+.recap-banner { padding-right: 6px; }
+.recap-banner > button.grow { background: none; border: 0; color: inherit; font: inherit; text-align: left; min-height: 52px; padding: 0; cursor: pointer; }
+.recap-preview { border-radius: 18px; overflow: hidden; background: #161C2A; aspect-ratio: 1080 / 1350; width: 100%; max-width: 420px; align-self: center; }
+.recap-preview img { display: block; width: 100%; height: 100%; }
+.recap-placeholder { width: 100%; height: 100%; }
+.welcome-brand { width: 100%; }
+.welcome-lang { margin-left: auto; width: auto; min-height: 36px; padding: 4px 10px; font: 600 14px var(--font-body);
+  background: var(--hero-fill); color: var(--hero-ink); border: 1px solid transparent; border-radius: 10px; }
+.welcome-budget-row { display: flex; gap: 10px; align-items: flex-end; }
+.welcome-budget-row > .field:last-child { flex: 0 0 auto; width: 104px; }
+.welcome-budget-row .grow { flex: 1; min-width: 0; }
+/* A sheet scrolls rather than squashing its contents: cards with overflow hidden would shrink to nothing. */
+.sheet-body > * { flex-shrink: 0; }

@@ -4,6 +4,7 @@ import { App } from "./App";
 import { ErrorBoundary } from "./ui/ErrorBoundary";
 import { registerServiceWorker } from "./data/updates";
 import { completeSignInRedirect } from "./data/cloud";
+import { startTelemetry } from "./data/telemetry";
 import "@fontsource-variable/hanken-grotesk";
 import "@fontsource-variable/bricolage-grotesque";
 import "./styles.css";
@@ -21,3 +22,5 @@ void completeSignInRedirect().finally(() => {
 
 // Offline support and in-place updates.
 registerServiceWorker();
+// Anonymous usage counts and crash reports (Settings → Privacy turns them off).
+startTelemetry();

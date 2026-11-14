@@ -3,7 +3,7 @@ import {
   ACCOUNT_KIND_LABEL, addTransfer, deleteAccount, deleteTransfer, moneyIn, saveAccount, showToast, uid, useTally, type Account, type AccountKind,
 } from "../data/store";
 import { netWorthSeries } from "../core/reports";
-import { formatMoney, parsePaise } from "../core/money";
+import { formatMoney, parsePaise, currencySymbol } from "../core/money";
 import { Icon } from "../ui/icons";
 import { Empty, Field, Sheet } from "../ui/components";
 import { ChartCard, DataTable, TrendLine } from "../ui/charts";
@@ -22,7 +22,7 @@ export function Accounts() {
   const [moving, setMoving] = useState(false);
   const [allTransfers, setAllTransfers] = useState(false);
   const now = new Date();
-  const series = useMemo(() => netWorthSeries(s.accounts, now, 12), [s.accounts]); // eslint-disable-line react-hooks/exhaustive-deps
+  const series = useMemo(() => netWorthSeries(s.accounts, now, 12, s.loans), [s.accounts, s.loans]); // eslint-disable-line react-hooks/exhaustive-deps
   const latest = series[series.length - 1] ?? { assets: 0, debts: 0, net: 0 };
   // Only months with a recorded balance are worth charting.
   const charted = series.slice(series.findIndex((p) => p.assets !== 0 || p.debts !== 0));
@@ -192,7 +192,7 @@ function TransferSheet({ open, onClose }: { open: boolean; onClose: () => void }
         </Field>
       </div>
       <div className="row gap8">
-        <Field label="Amount (₹)">
+        <Field label={`Amount (${currencySymbol()})`}>
           <input type="text" inputMode="decimal" autoFocus value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="5000" />
         </Field>
         <Field label="Date"><input type="date" value={date} max={today()} onChange={(e) => setDate(e.target.value)} /></Field>
@@ -235,7 +235,7 @@ function AccountEditor({ value, onClose }: { value: Account | "new" | null; onCl
           {(Object.keys(ACCOUNT_KIND_LABEL) as AccountKind[]).map((k) => <option key={k} value={k}>{ACCOUNT_KIND_LABEL[k]}</option>)}
         </select>
       </Field>
-      <Field label={kind === "card" ? "Amount owed (₹)" : "Balance (₹)"}>
+      <Field label={`${kind === "card" ? "Amount owed" : "Balance"} (${currencySymbol()})`}>
         <input type="text" inputMode="decimal" value={balance} onChange={(e) => setBalance(e.target.value)} placeholder="0" />
       </Field>
       <button className="btn primary block" disabled={!name} onClick={() => {

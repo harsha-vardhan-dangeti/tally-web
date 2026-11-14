@@ -10,7 +10,7 @@ const productionHeaders: Record<string, string> = Object.fromEntries(
   vercel.headers.find((h: { source: string }) => h.source === "/(.*)").headers.map((h: { key: string; value: string }) => [h.key, h.value]),
 );
 
-const PAGES: Record<string, string> = { "/": "index.html", "/app": "app.html", "/privacy": "privacy.html" };
+const PAGES: Record<string, string> = { "/": "index.html", "/app": "app.html", "/privacy": "privacy.html", "/pay": "pay.html" };
 const STATIC = ["manifest.webmanifest", "forward.js", "icons/icon-192.png", "icons/icon-512.png"];
 
 /**
@@ -35,7 +35,7 @@ function serviceWorker(): Plugin {
       const source = readFileSync("sw/service-worker.js", "utf8")
         .replace("const VERSION = __VERSION__;", `const VERSION = ${JSON.stringify(hash.digest("hex").slice(0, 12))};`)
         .replace("const PRECACHE = __PRECACHE__;", `const PRECACHE = ${JSON.stringify(precache)};`);
-      if (source.includes("__")) throw new Error("Service worker template placeholders were not filled in");
+      if (/__VERSION__|__PRECACHE__/.test(source)) throw new Error("Service worker template placeholders were not filled in");
       writeFileSync(join(outDir, "sw.js"), source);
     },
   };
@@ -47,12 +47,14 @@ export default defineConfig({
   // (service role, Postgres URLs) have other names and are never bundled.
   envPrefix: ["VITE_", "NEXT_PUBLIC_"],
   plugins: [react(), serviceWorker()],
+  // Which build sent a crash report. Vercel sets the commit; local builds say "local".
+  define: { __RELEASE__: JSON.stringify((process.env.VERCEL_GIT_COMMIT_SHA ?? "local").slice(0, 7)) },
   build: {
     target: "es2022",
     sourcemap: false,
     // The CSP allows fonts from this site only (font-src 'self'), so small fonts must stay files, not data: URLs.
     assetsInlineLimit: (file: string) => (file.endsWith(".woff2") ? false : undefined),
-    rollupOptions: { input: { landing: "index.html", app: "app.html", privacy: "privacy.html", notFound: "404.html" } },
+    rollupOptions: { input: { landing: "index.html", app: "app.html", privacy: "privacy.html", pay: "pay.html", notFound: "404.html" } },
   },
   preview: { headers: productionHeaders },
   test: { environment: "node" },

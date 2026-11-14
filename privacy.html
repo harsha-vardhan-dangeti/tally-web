@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Privacy · Tally</title>
-    <meta name="description" content="How Tally handles your data: in your browser without an account, or synced to your account when you sign in with Google. No ads or trackers." />
+    <meta name="description" content="How Tally handles your data: in your browser without an account, or synced to your account when you sign in with Google. No ads or third-party trackers." />
     <meta name="theme-color" content="#F3F4F6" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#0B0D12" media="(prefers-color-scheme: dark)" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
@@ -21,13 +21,13 @@
 
     <main class="article wrap-x">
       <h1>Privacy</h1>
-      <p class="updated">Last updated 25 October 2026</p>
+      <p class="updated">Last updated 14 November 2026</p>
       <p>You can use Tally in two ways. Without an account, nothing you log leaves your browser. If you sign in with Google, Tally also keeps your records in its database so your devices stay in step. You choose, and you can delete everything at any time.</p>
 
       <h2>Without an account</h2>
       <ul>
-        <li>Your expenses, income, repeats, budgets, bills, accounts, goals and settings are saved in your browser's database (IndexedDB) on your device.</li>
-        <li>Nothing you log is sent to any server.</li>
+        <li>Your expenses, income, repeats, budgets, bills, loans, accounts, goals, the people you split with or lend to, and settings are saved in your browser's database (IndexedDB) on your device.</li>
+        <li>Nothing you log is sent to any server. (Tally does send anonymous usage counts unless you turn them off; see below.)</li>
         <li>Clearing this site's data in your browser deletes it, so back up from Settings now and then.</li>
       </ul>
 
@@ -38,6 +38,20 @@
         <li><b>Who can see it:</b> only your account can read or change your records; other Tally users can't. The person who runs Tally can access the database to keep it working, as with any online service.</li>
         <li><b>Signing out</b> removes Tally's data from that browser. It stays in your account.</li>
       </ul>
+
+      <h2>Anonymous usage counts and crash reports</h2>
+      <ul>
+        <li>To learn which features people use and what breaks, Tally sends short notes like "an expense was added (from Smart add)" or "a loan was added", and the error message when something crashes.</li>
+        <li>They never include amounts, names, notes, merchants, people you split with, or anything else you log. They're tied to a random ID made in your browser, not to your Google account, and include the app version, your language and, for crashes, your browser type.</li>
+        <li>They're stored in Tally's database (Supabase) and deleted after a year.</li>
+        <li>Turn them off any time in <b>Settings → Share anonymous usage and crash reports</b>. If your browser sends Global Privacy Control, they start off.</li>
+      </ul>
+
+      <h2>Feedback</h2>
+      <p>When you use <b>Send feedback</b>, Tally stores what you write, the email address you give (if any) so it can reply, the app version and your browser type. Nothing else from your account comes with it.</p>
+
+      <h2>Payment requests</h2>
+      <p>When you ask someone to pay from <b>People</b>, Tally makes a link with the amount, what it's for, your name and your UPI ID inside the part of the link after the # sign. Browsers don't send that part to any server, so Tally never sees or stores the request; anyone you send the link to can read it. Your name and UPI ID are saved in your settings so you don't have to type them again.</p>
 
       <h2>Deleting your data</h2>
       <ul>
@@ -52,7 +66,7 @@
         <li><b>Google</b> handles "Sign in with Google".</li>
         <li><b>jsDelivr</b> serves the receipt reader the first time you scan a receipt. The photo is read on your device and isn't uploaded.</li>
       </ul>
-      <p>Tally has no ads, analytics or third-party trackers, and never sells or shares your data.</p>
+      <p>Tally has no ads or third-party trackers, and never sells or shares your data. The only usage information it collects is the anonymous counts described above.</p>
 
       <h2>App lock</h2>
       <p>The Face ID / Touch ID lock uses your device's passkey sign-in to hide the app until you unlock it. It's a privacy screen: it doesn't encrypt the data stored in your browser.</p>

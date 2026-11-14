@@ -7,7 +7,9 @@ import { BackupError, parseBackup, type Backup } from "../data/backup";
 import { backupFileName, download } from "../ui/download";
 import { addMonths, snapshot, startOfDay } from "../core/budget";
 import { allCategories, categoryMeta, pickableCategories, type Category } from "../core/categories";
-import { formatMoney, parsePaise } from "../core/money";
+import { CURRENCIES, currencySymbol, formatMoney, parsePaise } from "../core/money";
+import { LANGUAGES, t, type Lang } from "../i18n";
+import { setUsageAllowed, track, usageAllowed } from "../data/telemetry";
 import { Icon } from "../ui/icons";
 import { Empty, Field, Sheet, SwipeRow, Toggle } from "../ui/components";
 import { ExpenseRowView, SwipeExpense } from "./Activity";
@@ -130,7 +132,7 @@ export function Search({ open, onClose, onOpen }: { open: boolean; onClose: () =
 
 // ---------------- Recap ----------------
 
-export function Recap({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function Recap({ open, onClose, onShare }: { open: boolean; onClose: () => void; onShare: () => void }) {
   const s = useTally();
   const now = new Date();
   const snap = budgetSnapshot(s, now);
@@ -152,7 +154,8 @@ export function Recap({ open, onClose }: { open: boolean; onClose: () => void })
   const projSnap = snapshot(snap.budget, snap.projected, 0, now);
 
   return (
-    <Sheet open={open} onClose={onClose} title={`${now.toLocaleDateString([], { month: "long" })} so far`}>
+    <Sheet open={open} onClose={onClose} title={t("{month} so far", { month: now.toLocaleDateString([], { month: "long" }) })}
+      actions={<button className="btn ghost" onClick={onShare}><Icon name="upload" size={16} />{t("Share")}</button>}>
       <div className="card col gap8" style={{ background: "var(--surface-2)" }}>
         <span className="t-muted small">Forecast for month end</span>
         <span className="display num" style={{ fontSize: 26 }}>You'll spend about {formatMoney(snap.projected)}</span>
@@ -205,7 +208,7 @@ export function Recap({ open, onClose }: { open: boolean; onClose: () => void })
 
 // ---------------- Settings ----------------
 
-export function Settings({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function Settings({ open, onClose, onFeedback }: { open: boolean; onClose: () => void; onFeedback: () => void }) {
   const s = useTally();
   const signedIn = useCloud().user !== null;
   const [budget, setBudget] = useState("");
@@ -217,6 +220,7 @@ export function Settings({ open, onClose }: { open: boolean; onClose: () => void
   const [rules, setRules] = useState(false);
   const [incoming, setIncoming] = useState<Backup | null>(null);
   const [restoring, setRestoring] = useState(false);
+  const [usage, setUsage] = useState(usageAllowed);
   const fileRef = useRef<HTMLInputElement>(null);
   if (open !== seen) {
     setSeen(open);
@@ -256,28 +260,57 @@ export function Settings({ open, onClose }: { open: boolean; onClose: () => void
 
   return (
     <>
-      <Sheet open={open} onClose={close} title="Settings">
+      <Sheet open={open} onClose={close} title={t("Settings")}>
         <div className="row gap8">
-          <Field label="Monthly budget (₹)"><input type="text" inputMode="numeric" value={budget} onChange={(e) => setBudget(e.target.value)} placeholder="55000" /></Field>
-          <Field label="Monthly income (₹)"><input type="text" inputMode="numeric" value={income} onChange={(e) => setIncome(e.target.value)} placeholder="optional" /></Field>
+          <Field label={`${t("Monthly budget")} (${currencySymbol()})`}><input type="text" inputMode="numeric" value={budget} onChange={(e) => setBudget(e.target.value)} placeholder="55000" /></Field>
+          <Field label={`${t("Monthly income")} (${currencySymbol()})`}><input type="text" inputMode="numeric" value={income} onChange={(e) => setIncome(e.target.value)} placeholder={t("optional")} /></Field>
         </div>
-        <p className="t-muted tiny" style={{ margin: 0 }}>Safe to spend today = what's left ÷ days left. Leave rent out of the budget if you track it as a bill.</p>
+        <p className="t-muted tiny" style={{ margin: 0 }}>{t("Safe to spend today = what's left ÷ days left. Leave rent out of the budget if you track it as a bill.")}</p>
+
+        <div className="row gap8">
+          <Field label={t("Language")}>
+            <select value={s.settings.language} onChange={(e) => { setSettings({ language: e.target.value as Lang }); track("language_changed", { lang: e.target.value }); }}>
+              {LANGUAGES.map((l) => <option key={l.id} value={l.id}>{l.native}{l.id !== "en" ? ` · ${l.name}` : ""}</option>)}
+            </select>
+          </Field>
+          <Field label={t("Currency")}>
+            <select value={s.settings.currency} onChange={(e) => { setSettings({ currency: e.target.value }); track("currency_changed", { currency: e.target.value }); }}>
+              {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code} · {c.name}</option>)}
+            </select>
+          </Field>
+        </div>
+        {s.settings.language !== "en" && (
+          <p className="t-muted tiny" style={{ margin: 0 }}>{t("The main screens are translated. Some detailed screens are still in English.")}</p>
+        )}
+        <p className="t-muted tiny" style={{ margin: 0 }}>{t("Changing the currency changes the symbol only. Amounts you've logged aren't converted.")}</p>
 
         <AccountSection />
 
         <div className="card flush divided" style={{ background: "var(--surface-2)", boxShadow: "none" }}>
           <button className="list-row row-btn" onClick={() => setCategories(true)}>
             <Icon name="grid" size={20} />
-            <span className="grow col"><span className="t-strong">Categories</span>
-              <span className="t-muted tiny">Add your own, rename or hide them</span></span>
+            <span className="grow col"><span className="t-strong">{t("Categories")}</span>
+              <span className="t-muted tiny">{t("Add your own, rename or hide them")}</span></span>
             <Icon name="next" size={16} />
           </button>
           <button className="list-row row-btn" onClick={() => setRules(true)}>
             <Icon name="split" size={20} />
-            <span className="grow col"><span className="t-strong">Rules</span>
+            <span className="grow col"><span className="t-strong">{t("Rules")}</span>
               <span className="t-muted tiny">{s.settings.rules.length ? `${s.settings.rules.length} rule${s.settings.rules.length === 1 ? "" : "s"} · ` : ""}“Swiggy is always Food”</span></span>
             <Icon name="next" size={16} />
           </button>
+          <button className="list-row row-btn" onClick={onFeedback}>
+            <Icon name="chat" size={20} />
+            <span className="grow col"><span className="t-strong">{t("Send feedback")}</span>
+              <span className="t-muted tiny">{t("An idea, a bug, something missing")}</span></span>
+            <Icon name="next" size={16} />
+          </button>
+        </div>
+
+        <div className="card" style={{ background: "var(--surface-2)", padding: "0 14px" }}>
+          <Toggle label={t("Share anonymous usage and crash reports")}
+            hint={t("Counts like “an expense was added” and error messages, to see what to fix. Never amounts, names, notes or merchants.")}
+            checked={usage} onChange={(v) => { setUsageAllowed(v); setUsage(v); }} />
         </div>
 
         <div className="card" style={{ background: "var(--surface-2)", padding: "0 14px" }}>
@@ -292,11 +325,11 @@ export function Settings({ open, onClose }: { open: boolean; onClose: () => void
         </div>
 
         <div className="col gap8">
-          <span className="t-strong small">Your data</span>
+          <span className="t-strong small">{t("Your data")}</span>
           <p className="t-muted small" style={{ margin: 0 }}>
             {signedIn
               ? "Stored in this browser and synced to your account. Other Tally users can't see it."
-              : "Everything is stored only in this browser on this device. No account, no server, no tracking."}
+              : "Everything you log is stored only in this browser on this device."}
             {s.settings.lastBackupAt ? ` Last backup ${new Date(s.settings.lastBackupAt).toLocaleDateString()}.` : " Back up regularly — clearing website data deletes it."}
           </p>
           <div className="row gap8 wrap">

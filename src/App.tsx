@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { handleUrlActions, load, runDueBills, runDueIncome, useTally, type Expense } from "./data/store";
+import { handleUrlActions, load, runDueBills, runDueIncome, runDueLoans, useTally, type Expense } from "./data/store";
 import { Icon } from "./ui/icons";
 import { ToastHost, UpdateBar, useLongPress } from "./ui/components";
 import { Home } from "./screens/Dashboard";
@@ -11,17 +11,21 @@ import { Detail } from "./screens/Detail";
 import { Plan } from "./screens/Plan";
 import { Inbox, Recap, Search, Settings } from "./screens/More";
 import { Welcome } from "./screens/Welcome";
+import { People } from "./screens/People";
+import { RecapShare, type RecapMonth } from "./screens/RecapShare";
+import { FeedbackSheet } from "./screens/Feedback";
+import { t } from "./i18n";
 import { ShellContext } from "./ui/ProfileMenu";
 import { Sidebar } from "./ui/Sidebar";
 import { unlock } from "./screens/lock";
 import { startCloud } from "./data/cloud";
 
-type Tab = "home" | "activity" | "reports" | "plan" | "accounts" | "inbox";
+type Tab = "home" | "activity" | "reports" | "plan" | "people" | "accounts" | "inbox";
 
 // Read once at startup, before the tab effect rewrites the URL.
 const INITIAL_SEARCH = typeof location !== "undefined" ? location.search : "";
 let urlHandled = false;
-type SheetName = "quickAdd" | "smartAdd" | "search" | "recap" | "settings" | null;
+type SheetName = "quickAdd" | "smartAdd" | "search" | "recap" | "recapShare" | "settings" | "feedback" | null;
 
 /** `phone`: shown in the phone's tab bar too. Accounts is reached from Home's net worth card there. */
 const TABS: { id: Tab; label: string; icon: string; phone: boolean }[] = [
@@ -29,6 +33,7 @@ const TABS: { id: Tab; label: string; icon: string; phone: boolean }[] = [
   { id: "activity", label: "Activity", icon: "inbox", phone: true },
   { id: "reports", label: "Reports", icon: "chart", phone: true },
   { id: "plan", label: "Plan", icon: "target", phone: true },
+  { id: "people", label: "People", icon: "split", phone: true },
   { id: "accounts", label: "Accounts", icon: "card", phone: false },
   { id: "inbox", label: "Inbox", icon: "check", phone: true },
 ];
@@ -42,6 +47,7 @@ export function App() {
   const [sheet, setSheet] = useState<SheetName>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [addDate, setAddDate] = useState<Date | null>(null);
+  const [recapMonth, setRecapMonth] = useState<RecapMonth>("this");
   const [dbBlocked, setDbBlocked] = useState(false);
   const [locked, setLocked] = useState(false);
   const [unlocked, setUnlocked] = useState(false);
@@ -54,7 +60,7 @@ export function App() {
   // Tally may stay open for days: when it comes back into view, add bills and income that fell due meanwhile.
   useEffect(() => {
     if (!s.ready) return;
-    const onVisible = () => { if (document.visibilityState === "visible") { runDueBills(); runDueIncome(); } };
+    const onVisible = () => { if (document.visibilityState === "visible") { runDueBills(); runDueIncome(); runDueLoans(); } };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [s.ready]);
@@ -101,7 +107,11 @@ export function App() {
   }, [tab]);
 
   const openDetail = useCallback((e: Expense) => setDetailId(e.id), []);
-  const shell = useMemo(() => ({ openSettings: () => setSheet("settings") }), []);
+  const shell = useMemo(() => ({
+    openSettings: () => setSheet("settings"),
+    openFeedback: () => setSheet("feedback"),
+    openRecapShare: (m: RecapMonth) => { setRecapMonth(m); setSheet("recapShare"); },
+  }), []);
   const close = useCallback(() => setSheet(null), []);
 
   // Keyboard shortcuts for desktop.
@@ -137,7 +147,7 @@ export function App() {
     <ShellContext.Provider value={shell}>
     <div className="shell">
       <Sidebar current={tab} onSelect={(id) => setTab(id as Tab)} onAdd={() => setSheet("quickAdd")} onSmart={() => setSheet("smartAdd")}
-        items={tabs.map((t) => ({ id: t.id, label: t.label, icon: t.icon, badge: t.id === "inbox" ? pending : undefined }))} />
+        items={tabs.map((x) => ({ id: x.id, label: t(x.label), icon: x.icon, badge: x.id === "inbox" ? pending : undefined }))} />
 
       <main className="main">
         <UpdateBar />
@@ -150,22 +160,23 @@ export function App() {
         )}
         {tab === "reports" && <Reports />}
         {tab === "plan" && <Plan />}
+        {tab === "people" && <People />}
         {tab === "accounts" && <Accounts />}
         {tab === "inbox" && <Inbox onOpen={openDetail} />}
       </main>
 
       <nav className="tabbar" aria-label="Main" style={{ gridTemplateColumns: `repeat(${phoneTabs.length + 1}, minmax(0, 1fr))` }}>
-        {phoneTabs.slice(0, 2).map((t) => (
-          <button key={t.id} className="tab" aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}>
-            <Icon name={t.icon} />{t.label}
+        {phoneTabs.slice(0, 2).map((x) => (
+          <button key={x.id} className="tab" aria-current={tab === x.id ? "page" : undefined} onClick={() => setTab(x.id)}>
+            <Icon name={x.icon} />{t(x.label)}
           </button>
         ))}
         <AddFab onTap={() => setSheet("quickAdd")} onLong={() => setSheet("smartAdd")} />
-        {phoneTabs.slice(2).map((t) => (
-          <button key={t.id} className="tab" aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}
-            aria-label={t.id === "inbox" && pending ? `Inbox, ${pending} to review` : undefined}>
-            <Icon name={t.icon} />{t.label}
-            {t.id === "inbox" && pending > 0 && <span className="badge">{pending}</span>}
+        {phoneTabs.slice(2).map((x) => (
+          <button key={x.id} className="tab" aria-current={tab === x.id ? "page" : undefined} onClick={() => setTab(x.id)}
+            aria-label={x.id === "inbox" && pending ? `Inbox, ${pending} to review` : undefined}>
+            <Icon name={x.icon} />{t(x.label)}
+            {x.id === "inbox" && pending > 0 && <span className="badge">{pending}</span>}
           </button>
         ))}
       </nav>
@@ -173,8 +184,10 @@ export function App() {
       <QuickAdd open={sheet === "quickAdd"} initialDate={addDate} onClose={() => { setAddDate(null); close(); }} onSmart={() => setSheet("smartAdd")} />
       <SmartAdd open={sheet === "smartAdd"} onClose={close} />
       <Search open={sheet === "search"} onClose={close} onOpen={(e) => { setSheet(null); setDetailId(e.id); }} />
-      <Recap open={sheet === "recap"} onClose={close} />
-      <Settings open={sheet === "settings"} onClose={close} />
+      <Recap open={sheet === "recap"} onClose={close} onShare={() => { setRecapMonth("this"); setSheet("recapShare"); }} />
+      <RecapShare open={sheet === "recapShare"} initial={recapMonth} onClose={close} />
+      <Settings open={sheet === "settings"} onClose={close} onFeedback={() => setSheet("feedback")} />
+      <FeedbackSheet open={sheet === "feedback"} onClose={close} />
       <Detail id={detailId} onClose={() => setDetailId(null)} />
       <ToastHost />
 

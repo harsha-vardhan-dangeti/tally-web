@@ -1,6 +1,11 @@
 import { isCustomId, resolveCategories, type Category } from "../core/categories";
 import { sanitizeRules } from "../core/rules";
-import type { Account, AccountKind, Bill, CategoryBudget, Chip, Expense, Goal, Income, RecurringIncome, Settings, Source, Transfer } from "./store";
+import { isCurrency } from "../core/money";
+import { isLang } from "../i18n";
+import type { LedgerKind } from "../core/people";
+import type {
+  Account, AccountKind, Bill, CategoryBudget, Chip, Expense, Goal, Income, LedgerEntry, Loan, RecurringIncome, Settings, Source, Transfer,
+} from "./store";
 
 /** Checks a backup file completely before anything on the device is replaced. Pure: no storage access. */
 
@@ -17,6 +22,8 @@ export interface Backup {
   incomes: Income[];
   recurringIncomes: RecurringIncome[];
   transfers: Transfer[];
+  ledger: LedgerEntry[];
+  loans: Loan[];
   settings: Partial<Settings>;
   /** Rows outside expenses that were unreadable and left out. */
   skipped: number;
@@ -26,6 +33,7 @@ export class BackupError extends Error {}
 
 const SOURCES: Source[] = ["manual", "smart", "shortcut", "capture", "receipt", "recurring", "import"];
 const KINDS: AccountKind[] = ["bank", "card", "cash", "investment"];
+const LEDGER_KINDS: LedgerKind[] = ["lent", "borrowed", "settled"];
 
 type Row = Record<string, unknown>;
 const isRow = (v: unknown): v is Row => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -50,6 +58,9 @@ function expense(r: unknown, i: number, category: (v: unknown) => Category): Exp
     source: SOURCES.includes(r.source as Source) ? (r.source as Source) : "import",
     pending: bool(r.pending), splitWays: Math.max(int(r.splitWays, 1), 1), splitWith: str(r.splitWith),
     exclude: bool(r.exclude), recurring: bool(r.recurring),
+    ...(str(r.paidBy).trim() ? { paidBy: str(r.paidBy).trim() } : {}),
+    ...(isRow(r.fx) && isCurrency(r.fx.currency) && paise(r.fx.amount) && typeof r.fx.rate === "number" && r.fx.rate > 0
+      ? { fx: { currency: r.fx.currency as string, amount: r.fx.amount as number, rate: r.fx.rate } } : {}),
   };
 }
 
@@ -136,11 +147,32 @@ export function parseBackup(text: string): Backup {
       createdAt: time(r.createdAt) ?? occurredAt };
   });
 
+  const ledger = optionalRows<LedgerEntry>(data.ledger, (r) => {
+    const rowId = id(r.id), occurredAt = time(r.occurredAt), person = str(r.person).trim();
+    if (!rowId || !person || !Number.isSafeInteger(r.amount) || r.amount === 0 || occurredAt === null
+      || !LEDGER_KINDS.includes(r.kind as LedgerKind)) return null;
+    return { id: rowId, person, amount: r.amount as number, kind: r.kind as LedgerKind, note: str(r.note), occurredAt,
+      createdAt: time(r.createdAt) ?? occurredAt };
+  });
+
+  const loans = optionalRows<Loan>(data.loans, (r) => {
+    const rowId = id(r.id), principal = paise(r.principal), emi = paise(r.emi), months = int(r.months, 0), firstDueAt = time(r.firstDueAt);
+    const ratePct = typeof r.ratePct === "number" && r.ratePct >= 0 && r.ratePct < 100 ? r.ratePct : null;
+    if (!rowId || !str(r.name) || !principal || !emi || months < 1 || months > 600 || firstDueAt === null || ratePct === null) return null;
+    return { id: rowId, name: str(r.name), lender: str(r.lender), principal, ratePct, months, emi, firstDueAt,
+      category: category(r.category), account: str(r.account), autoLog: bool(r.autoLog), lastLoggedMonth: str(r.lastLoggedMonth),
+      createdAt: time(r.createdAt) ?? firstDueAt };
+  });
+
   const settings: Partial<Settings> = {};
   if (typeof s.onboarded === "boolean") settings.onboarded = s.onboarded;
   if (Number.isSafeInteger(s.monthlyBudget) && (s.monthlyBudget as number) >= 0) settings.monthlyBudget = s.monthlyBudget as number;
   if (Number.isSafeInteger(s.monthlyIncome) && (s.monthlyIncome as number) >= 0) settings.monthlyIncome = s.monthlyIncome as number;
   if (typeof s.defaultAccount === "string" && s.defaultAccount) settings.defaultAccount = s.defaultAccount;
+  if (isCurrency(s.currency)) settings.currency = s.currency;
+  if (isLang(s.language)) settings.language = s.language;
+  if (typeof s.payName === "string") settings.payName = s.payName.slice(0, 60);
+  if (typeof s.upiId === "string") settings.upiId = s.upiId.slice(0, 100);
   if (Array.isArray(s.rules)) settings.rules = sanitizeRules(s.rules).filter((r) => known.has(r.category));
   if (Array.isArray(s.dismissedRecurring)) settings.dismissedRecurring = s.dismissedRecurring.filter((k): k is string => typeof k === "string").slice(-200);
   // Only what differs from the built-ins is kept, in the checked form.
@@ -157,8 +189,10 @@ export function parseBackup(text: string): Backup {
     incomes: uniqueBy(incomes.rows, (r) => r.id),
     recurringIncomes: uniqueBy(recurringIncomes.rows, (r) => r.id),
     transfers: uniqueBy(transfers.rows, (r) => r.id),
+    ledger: uniqueBy(ledger.rows, (r) => r.id),
+    loans: uniqueBy(loans.rows, (r) => r.id),
     settings,
     skipped: chips.skipped + budgets.skipped + bills.skipped + accounts.skipped + goals.skipped + incomes.skipped + recurringIncomes.skipped
-      + transfers.skipped,
+      + transfers.skipped + ledger.skipped + loans.skipped,
   };
 }

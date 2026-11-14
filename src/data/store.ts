@@ -5,8 +5,12 @@ import { matchRule, sanitizeRules, setRules, type Rule } from "../core/rules";
 import { detectRecurring, merchantKey, type RecurringCharge } from "../core/recurring";
 import type { ColumnMap } from "../core/statement";
 import { crossedThreshold, monthKey, monthRange, sameDay, snapshot, type BudgetSnapshot } from "../core/budget";
-import { formatMoney } from "../core/money";
+import { formatMoney, isCurrency, setCurrency } from "../core/money";
 import { yourShare } from "../core/smartParser";
+import { emiFor, loanStatus, dueDate, type LoanTerms } from "../core/loans";
+import type { LedgerKind } from "../core/people";
+import { isLang, setLanguage, type Lang } from "../i18n";
+import { track } from "./telemetry";
 import { parseBackup, type Backup } from "./backup";
 
 export type Source = "manual" | "smart" | "shortcut" | "capture" | "receipt" | "recurring" | "import";
@@ -30,6 +34,10 @@ export interface Expense {
   splitWith: string;
   exclude: boolean;
   recurring: boolean;
+  /** Split, and someone else paid: their name. Empty or missing: you paid. */
+  paidBy?: string;
+  /** Paid in another currency: what was paid and the rate used (home currency per unit). */
+  fx?: { currency: string; amount: number; rate: number };
 }
 export interface Chip { id: string; title: string; amount: number; category: Category; order: number }
 export interface CategoryBudget { category: Category; limit: number }
@@ -79,6 +87,30 @@ export interface Income {
   receivedAt: number; // epoch ms
   createdAt: number;
 }
+/** Money lent to or borrowed from someone, or paid back (see core/people.ts). */
+export interface LedgerEntry {
+  id: string;
+  person: string;
+  /** Change in what the person owes you, in paise: lent +, borrowed −, paid back moves it toward 0. */
+  amount: number;
+  kind: LedgerKind;
+  note: string;
+  occurredAt: number;
+  createdAt: number;
+}
+/** A loan repaid in EMIs (see core/loans.ts). Each month's EMI can be added to expenses on its day. */
+export interface Loan extends LoanTerms {
+  id: string;
+  name: string;
+  lender: string;
+  category: Category;
+  account: string;
+  autoLog: boolean;
+  /** "2026-11": the last month whose EMI was added to expenses. */
+  lastLoggedMonth: string;
+  createdAt: number;
+}
+
 export interface Settings {
   onboarded: boolean;
   monthlyBudget: number;
@@ -94,6 +126,14 @@ export interface Settings {
   dismissedRecurring: string[];
   /** Column layouts the user confirmed for a bank's statement, keyed by its header row. */
   importLayouts: ImportLayout[];
+  /** ISO code of the currency every amount is in. */
+  currency: string;
+  language: Lang;
+  /** For payment requests: the name and UPI ID people pay. */
+  payName: string;
+  upiId: string;
+  /** Last rate used per foreign currency (home currency per unit), to prefill the next one. */
+  fxRates: Record<string, number>;
 }
 export interface ImportLayout { signature: string; columns: ColumnMap; account: string }
 
@@ -108,6 +148,8 @@ export interface State {
   incomes: Income[];
   recurringIncomes: RecurringIncome[];
   transfers: Transfer[];
+  ledger: LedgerEntry[];
+  loans: Loan[];
   settings: Settings;
   /** When the last restore replaced this device's data; that data can be put back until the next restore. */
   restorePointAt: number | null;
@@ -115,21 +157,29 @@ export interface State {
 
 const DEFAULT_SETTINGS: Settings = {
   onboarded: false, monthlyBudget: 0, monthlyIncome: 0, defaultAccount: "UPI", lockCredentialId: null, lastBackupAt: null, categories: [], rules: [], dismissedRecurring: [], importLayouts: [],
+  currency: "INR", language: "en", payName: "", upiId: "", fxRates: {},
 };
 
 let state: State = {
-  ready: false, expenses: [], chips: [], budgets: [], bills: [], accounts: [], goals: [], incomes: [], recurringIncomes: [], transfers: [],
+  ready: false, expenses: [], chips: [], budgets: [], bills: [], accounts: [], goals: [], incomes: [], recurringIncomes: [], transfers: [], ledger: [], loans: [],
   settings: DEFAULT_SETTINGS, restorePointAt: null,
 };
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 function set(patch: Partial<State>) {
   if (patch.settings && patch.settings !== state.settings) {
-    setCategoryDefs(patch.settings.categories);
-    setRules(patch.settings.rules);
+    applySettings(patch.settings);
   }
   state = { ...state, ...patch };
   emit();
+}
+
+/** Module-level settings the formatting helpers read. */
+function applySettings(settings: Settings) {
+  setCategoryDefs(settings.categories);
+  setRules(settings.rules);
+  setCurrency(settings.currency);
+  setLanguage(settings.language);
 }
 
 /** Calls `l` after every state change; returns an unsubscribe function. */
@@ -151,17 +201,17 @@ const sortExpenses = (list: Expense[]) => [...list].sort((a, b) => b.occurredAt 
 // ---------- load ----------
 
 export async function load() {
-  const [expenses, chips, budgets, bills, accounts, goals, incomes, recurringIncomes, transfers, kv] = await Promise.all([
+  const [expenses, chips, budgets, bills, accounts, goals, incomes, recurringIncomes, transfers, ledger, loans, kv] = await Promise.all([
     db.all<Expense>("expenses"), db.all<Chip>("chips"), db.all<CategoryBudget>("budgets"), db.all<Bill>("bills"),
     db.all<Account>("accounts"), db.all<Goal>("goals"), db.all<Income>("incomes"),
-    db.all<RecurringIncome>("recurringIncomes"), db.all<Transfer>("transfers"), db.all<{ key: string; value: unknown }>("kv"),
+    db.all<RecurringIncome>("recurringIncomes"), db.all<Transfer>("transfers"), db.all<LedgerEntry>("ledger"), db.all<Loan>("loans"),
+    db.all<{ key: string; value: unknown }>("kv"),
   ]);
   const settingsRow = kv.find((r) => r.key === "settings");
   const settings = readSettings(settingsRow?.value);
   const restorePoint = kv.find((r) => r.key === RESTORE_POINT)?.value as RestorePoint | undefined;
   // Rows can arrive from links and other devices, so an unknown category never reaches the screens.
-  setCategoryDefs(settings.categories);
-  setRules(settings.rules);
+  applySettings(settings);
   const fix = <T extends { category: Category }>(x: T): T => ({ ...x, category: toCategory(x.category) });
   set({
     ready: true,
@@ -169,12 +219,13 @@ export async function load() {
     chips: chips.map(fix).sort((a, b) => a.order - b.order),
     budgets: budgets.filter((b) => isCategory(b.category)), bills: bills.map(fix),
     accounts: [...accounts].sort((a, b) => a.order - b.order), goals, incomes: sortIncomes(incomes), recurringIncomes,
-    transfers: sortTransfers(transfers), settings,
+    transfers: sortTransfers(transfers), ledger: sortLedger(ledger), loans: loans.map(fix).sort((a, b) => a.createdAt - b.createdAt), settings,
     restorePointAt: restorePoint?.savedAt ?? null,
   });
   if (chips.length === 0) await seedChips();
   runDueBills();
   runDueIncome();
+  runDueLoans();
   // Ask the browser not to evict our data under storage pressure.
   navigator.storage?.persist?.().catch(() => {});
 }
@@ -190,6 +241,13 @@ function readSettings(stored: unknown): Settings {
     dismissedRecurring: list<string>(v.dismissedRecurring, (k) => typeof k === "string"),
     importLayouts: list<ImportLayout>(v.importLayouts, (l) => !!l && typeof l === "object" && typeof (l as ImportLayout).signature === "string"
       && !!(l as ImportLayout).columns && typeof (l as ImportLayout).columns === "object"),
+    currency: isCurrency(v.currency) ? v.currency : "INR",
+    language: isLang(v.language) ? v.language : "en",
+    payName: typeof v.payName === "string" ? v.payName.slice(0, 60) : "",
+    upiId: typeof v.upiId === "string" ? v.upiId.slice(0, 100) : "",
+    fxRates: v.fxRates && typeof v.fxRates === "object"
+      ? Object.fromEntries(Object.entries(v.fxRates).filter(([k, r]) => isCurrency(k) && typeof r === "number" && r > 0 && Number.isFinite(r)))
+      : {},
   };
 }
 
@@ -289,7 +347,7 @@ async function remove(store: StoreName, key: string) {
 
 /** Every record in the app, for the first upload when a device signs in. */
 export function allRecords(): { store: StoreName; value: unknown }[] {
-  const { expenses, incomes, recurringIncomes, chips, budgets, bills, accounts, goals, transfers, settings } = state;
+  const { expenses, incomes, recurringIncomes, chips, budgets, bills, accounts, goals, transfers, ledger, loans, settings } = state;
   return [
     ...expenses.map((value) => ({ store: "expenses" as const, value })),
     ...incomes.map((value) => ({ store: "incomes" as const, value })),
@@ -300,6 +358,8 @@ export function allRecords(): { store: StoreName; value: unknown }[] {
     ...accounts.map((value) => ({ store: "accounts" as const, value })),
     ...goals.map((value) => ({ store: "goals" as const, value })),
     ...transfers.map((value) => ({ store: "transfers" as const, value })),
+    ...ledger.map((value) => ({ store: "ledger" as const, value })),
+    ...loans.map((value) => ({ store: "loans" as const, value })),
     { store: "kv" as const, value: { key: "settings", value: settings } },
   ];
 }
@@ -318,7 +378,7 @@ function reportReplaced(before: { store: StoreName; value: unknown }[]) {
 
 export interface NewExpense {
   amount: number; category: Category; merchant?: string; note?: string; account?: string | null;
-  occurredAt?: number; source: Source; pending?: boolean; splitWays?: number; splitWith?: string;
+  occurredAt?: number; source: Source; pending?: boolean; splitWays?: number; splitWith?: string; paidBy?: string;
   /** For callers that may log the same expense twice, e.g. a bill auto-logged on two devices. */
   id?: string;
 }
@@ -333,11 +393,12 @@ export function addExpense(input: NewExpense): Expense {
     category: toCategory(input.category), account: input.account || state.settings.defaultAccount,
     occurredAt: input.occurredAt ?? Date.now(), createdAt: Date.now(), source: input.source,
     pending: input.pending ?? false, splitWays: Math.max(input.splitWays ?? 1, 1), splitWith: input.splitWith ?? "",
-    exclude: false, recurring: false,
+    exclude: false, recurring: false, ...(input.paidBy ? { paidBy: input.paidBy } : {}),
   };
   set({ expenses: sortExpenses([e, ...state.expenses]) });
   void persist("expenses", e);
   checkThreshold(before);
+  track("expense_added", { source: e.source, split: e.splitWays > 1 });
   return e;
 }
 
@@ -467,6 +528,76 @@ export function deleteTransfer(id: string, withUndo = true) {
     });
   }
 }
+
+// ---------- people: money lent, borrowed and paid back ----------
+
+const sortLedger = (list: LedgerEntry[]) => [...list].sort((a, b) => b.occurredAt - a.occurredAt);
+
+export function saveLedgerEntry(entry: LedgerEntry) {
+  const isNew = !state.ledger.some((x) => x.id === entry.id);
+  set({ ledger: sortLedger([entry, ...state.ledger.filter((x) => x.id !== entry.id)]) });
+  void persist("ledger", entry);
+  if (isNew) track("ledger_added", { kind: entry.kind });
+}
+
+export function deleteLedgerEntry(id: string, withUndo = true) {
+  const victim = state.ledger.find((x) => x.id === id);
+  if (!victim) return;
+  set({ ledger: state.ledger.filter((x) => x.id !== id) });
+  void remove("ledger", id);
+  if (withUndo) showToast(`Removed · ${formatMoney(Math.abs(victim.amount))}`, () => saveLedgerEntry(victim));
+}
+
+// ---------- loans ----------
+
+export function saveLoan(loan: Loan) {
+  const isNew = !state.loans.some((x) => x.id === loan.id);
+  set({ loans: [...state.loans.filter((x) => x.id !== loan.id), loan].sort((a, b) => a.createdAt - b.createdAt) });
+  void persist("loans", loan);
+  if (isNew) track("loan_added");
+}
+
+export function deleteLoan(id: string) {
+  set({ loans: state.loans.filter((x) => x.id !== id) });
+  void remove("loans", id);
+}
+
+export const loanEmi = (l: Pick<Loan, "principal" | "ratePct" | "months" | "emi">) => l.emi || emiFor(l.principal, l.ratePct, l.months);
+
+/** The EMI that falls due this month, if the loan has one. */
+export function emiThisMonth(loan: Loan, now = new Date()): Date | null {
+  for (let k = 0; k < loan.months; k++) {
+    const d = dueDate(loan.firstDueAt, k);
+    if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()) return d;
+    if (d > now && d.getMonth() !== now.getMonth()) break;
+  }
+  return null;
+}
+
+/** Adds this month's EMI to expenses, once: the expense ID is fixed per loan and month. */
+export function logEmi(loan: Loan, now = new Date()): Expense | null {
+  const due = emiThisMonth(loan, now);
+  if (!due) return null;
+  const key = monthKey(now);
+  const e = addExpense({
+    id: `emi-${loan.id}-${key}`, amount: loan.emi, category: loan.category, merchant: `${loan.name} EMI`, account: loan.account,
+    occurredAt: due.getTime() <= now.getTime() ? due.getTime() : now.getTime(), source: "recurring",
+  });
+  saveLoan({ ...state.loans.find((l) => l.id === loan.id) ?? loan, lastLoggedMonth: key });
+  return e;
+}
+
+/** Loans set to add their EMI whose day has come this month and that aren't added yet. */
+export function runDueLoans(now = new Date()) {
+  const key = monthKey(now);
+  for (const loan of state.loans) {
+    if (!loan.autoLog || loan.lastLoggedMonth === key) continue;
+    const due = emiThisMonth(loan, now);
+    if (due && due.getTime() <= now.getTime()) logEmi(loan, now);
+  }
+}
+
+export const loanSummary = (loan: Loan, now = Date.now()) => loanStatus(loan, now);
 
 // ---------- categories ----------
 
@@ -688,12 +819,13 @@ export function handleUrlActions(search: string, open: (sheet: "quickAdd" | "sma
 // ---------- backup ----------
 
 export function exportJSON(): string {
-  const { expenses, chips, budgets, bills, accounts, goals, incomes, recurringIncomes, transfers, settings } = state;
+  const { expenses, chips, budgets, bills, accounts, goals, incomes, recurringIncomes, transfers, ledger, loans, settings } = state;
   return JSON.stringify({ app: "tally", version: 1, exportedAt: new Date().toISOString(),
-    expenses, chips, budgets, bills, accounts, goals, incomes, recurringIncomes, transfers, settings: { ...settings, lockCredentialId: null } }, null, 2);
+    expenses, chips, budgets, bills, accounts, goals, incomes, recurringIncomes, transfers, ledger, loans,
+    settings: { ...settings, lockCredentialId: null } }, null, 2);
 }
 
-const DATA_STORES: StoreName[] = ["expenses", "chips", "budgets", "bills", "accounts", "goals", "incomes", "recurringIncomes", "transfers"];
+const DATA_STORES: StoreName[] = ["expenses", "chips", "budgets", "bills", "accounts", "goals", "incomes", "recurringIncomes", "transfers", "ledger", "loans"];
 const RESTORE_POINT = "restorePoint";
 interface RestorePoint { savedAt: number; json: string }
 
@@ -712,7 +844,7 @@ export async function restoreBackup(backup: Backup): Promise<void> {
   await db.replaceAll(DATA_STORES, {
     expenses: backup.expenses, chips: backup.chips, budgets: backup.budgets, bills: backup.bills,
     accounts: backup.accounts, goals: backup.goals, incomes: backup.incomes, recurringIncomes: backup.recurringIncomes,
-    transfers: backup.transfers,
+    transfers: backup.transfers, ledger: backup.ledger, loans: backup.loans,
     kv: [{ key: "settings", value: settings }, { key: RESTORE_POINT, value: point }],
   });
   await load();
@@ -733,7 +865,7 @@ export async function undoRestore(): Promise<void> {
   await db.replaceAll(DATA_STORES, {
     expenses: backup.expenses, chips: backup.chips, budgets: backup.budgets, bills: backup.bills,
     accounts: backup.accounts, goals: backup.goals, incomes: backup.incomes, recurringIncomes: backup.recurringIncomes,
-    transfers: backup.transfers,
+    transfers: backup.transfers, ledger: backup.ledger, loans: backup.loans,
     kv: [{ key: "settings", value: { ...state.settings, ...backup.settings } }, { key: RESTORE_POINT, value: current }],
   });
   await load();
@@ -742,7 +874,8 @@ export async function undoRestore(): Promise<void> {
 
 export function exportCSV(): string {
   const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-  const rows = ["date,amount_inr,your_share_inr,category,merchant,note,account,status,split_ways,source"];
+  const cur = state.settings.currency.toLowerCase();
+  const rows = [`date,amount_${cur},your_share_${cur},category,merchant,note,account,status,split_ways,source`];
   for (const e of state.expenses) {
     rows.push([
       new Date(e.occurredAt).toISOString(), (e.amount / 100).toFixed(2), (share(e) / 100).toFixed(2), e.category,
@@ -756,7 +889,7 @@ export async function eraseAll() {
   const before = allRecords();
   await db.replaceAll(DATA_STORES, {});
   await db.delete("kv", RESTORE_POINT);
-  set({ expenses: [], chips: [], budgets: [], bills: [], accounts: [], goals: [], incomes: [], recurringIncomes: [], transfers: [], restorePointAt: null });
+  set({ expenses: [], chips: [], budgets: [], bills: [], accounts: [], goals: [], incomes: [], recurringIncomes: [], transfers: [], ledger: [], loans: [], restorePointAt: null });
   await seedChips();
   reportReplaced(before);
 }

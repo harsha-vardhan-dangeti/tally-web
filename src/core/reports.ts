@@ -1,3 +1,4 @@
+import { outstandingAt, type LoanTerms } from "./loans";
 import type { Account, Expense, Income } from "../data/store";
 import { yourShare } from "./smartParser";
 import { addMonths, monthKey, startOfDay } from "./budget";
@@ -113,8 +114,11 @@ export function balanceAt(account: Account, key: string): number | null {
 
 export interface NetWorthPoint { month: Date; assets: number; debts: number; net: number }
 
-/** Month-end net worth for the last `count` months, from the balances recorded each month. */
-export function netWorthSeries(accounts: Account[], now: Date, count: number): NetWorthPoint[] {
+/**
+ * Month-end net worth for the last `count` months, from the balances recorded each month. Loans
+ * count as debts: what was still owed at each month's end follows from their EMI schedule.
+ */
+export function netWorthSeries(accounts: Account[], now: Date, count: number, loans: LoanTerms[] = []): NetWorthPoint[] {
   return Array.from({ length: count }, (_, i) => {
     const month = addMonths(now, i - count + 1);
     const key = monthKey(month);
@@ -124,6 +128,9 @@ export function netWorthSeries(accounts: Account[], now: Date, count: number): N
       if (b === null) continue;
       if (a.kind === "card") debts += b; else assets += b;
     }
+    // This month: as of today. Earlier months: as of their last day.
+    const at = i === count - 1 ? now.getTime() : new Date(month.getFullYear(), month.getMonth() + 1, 0, 23, 59).getTime();
+    for (const l of loans) debts += outstandingAt(l, at);
     return { month, assets, debts, net: assets - debts };
   });
 }
