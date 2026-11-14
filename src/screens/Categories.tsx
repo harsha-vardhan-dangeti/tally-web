@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { deleteCategory, saveCategory, showToast, useTally } from "../data/store";
+import { deleteCategory, getState, saveCategory, setSettings, showToast, useTally } from "../data/store";
 import {
   allCategories, CATEGORY_ICONS, CATEGORY_TINTS, isCustomId, newCategoryId, type CategoryDef,
 } from "../core/categories";
@@ -23,7 +23,8 @@ export function CategoriesSheet({ open, onClose }: { open: boolean; onClose: () 
               <CategoryIcon category={c.id} size={32} />
               <span className="grow col">
                 <span className="t-strong">{c.title}</span>
-                <span className="t-muted tiny">{used(c.id)} expense{used(c.id) === 1 ? "" : "s"}{isCustomId(c.id) ? " · yours" : ""}</span>
+                <span className="t-muted tiny ellipsis">{used(c.id)} expense{used(c.id) === 1 ? "" : "s"}{isCustomId(c.id) ? " · yours" : ""}
+                  {s.settings.subcategories[c.id]?.length ? ` · ${s.settings.subcategories[c.id].join(", ")}` : ""}</span>
               </span>
               {c.hidden && <span className="tag">Hidden</span>}
               <Icon name="next" size={16} />
@@ -44,6 +45,7 @@ function CategoryEditor({ value, used, onClose }: { value: CategoryDef | "new" |
   const [tint, setTint] = useState(CATEGORY_TINTS[0].tint);
   const [keywords, setKeywords] = useState("");
   const [hidden, setHidden] = useState(false);
+  const [subs, setSubs] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [seen, setSeen] = useState<typeof value>(null);
   if (value !== seen) {
@@ -53,6 +55,7 @@ function CategoryEditor({ value, used, onClose }: { value: CategoryDef | "new" |
     setTint(def?.tint ?? CATEGORY_TINTS[6].tint);
     setKeywords(def?.keywords.join(", ") ?? "");
     setHidden(def?.hidden ?? false);
+    setSubs(def ? (getState().settings.subcategories[def.id] ?? []).join(", ") : "");
     setConfirmDelete(false);
   }
   const custom = !def || isCustomId(def.id);
@@ -60,10 +63,14 @@ function CategoryEditor({ value, used, onClose }: { value: CategoryDef | "new" |
   const clash = allCategories().some((c) => c.id !== def?.id && c.title.toLowerCase() === name.toLowerCase());
 
   const save = () => {
+    const id = def?.id ?? newCategoryId();
     saveCategory({
-      id: def?.id ?? newCategoryId(), title: name, icon, tint, hidden,
+      id, title: name, icon, tint, hidden,
       keywords: keywords.split(",").map((k) => k.trim().toLowerCase()).filter(Boolean),
     });
+    const list = [...new Set(subs.split(",").map((x) => x.trim().slice(0, 30)).filter(Boolean))].slice(0, 30);
+    const { [id]: _old, ...rest } = getState().settings.subcategories;
+    setSettings({ subcategories: list.length ? { ...rest, [id]: list } : rest });
     showToast(def ? `Saved ${name}` : `Added ${name}`);
     onClose();
   };
@@ -97,6 +104,11 @@ function CategoryEditor({ value, used, onClose }: { value: CategoryDef | "new" |
           ))}
         </div>
       </div>
+
+      <Field label="Subcategories">
+        <input type="text" value={subs} onChange={(e) => setSubs(e.target.value)} placeholder="Coffee, Groceries, Eating out" />
+      </Field>
+      <p className="t-muted tiny" style={{ margin: "-6px 0 0" }}>Separate them with commas. You pick one when you log, and Reports can group by them.</p>
 
       <Field label="Words that pick it">
         <input type="text" value={keywords} onChange={(e) => setKeywords(e.target.value)} placeholder="gym, protein, cult" />

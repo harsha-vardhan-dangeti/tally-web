@@ -14,7 +14,7 @@ import { MonthDetail } from "./MonthDetail";
 import { ProfileButton } from "../ui/ProfileMenu";
 
 type Tab = "flow" | "spending" | "month";
-const GROUP_PLURAL: Record<GroupBy, string> = { category: "Categories", merchant: "Places", account: "Payment methods" };
+const GROUP_PLURAL: Record<GroupBy, string> = { category: "Categories", sub: "Subcategories", merchant: "Places", account: "Payment methods", tag: "Tags" };
 const TABS: [Tab, string][] = [["flow", "Cash flow"], ["spending", "Spending"], ["month", "Month in detail"]];
 
 const isoDay = (d: Date) => d.toLocaleDateString("en-CA");
@@ -31,17 +31,19 @@ export function Reports() {
   const [groupBy, setGroupBy] = useState<GroupBy>("category");
   const [category, setCategory] = useState<Category | "">("");
   const [account, setAccount] = useState("");
+  const [tag, setTag] = useState("");
+  const tags = useMemo(() => [...new Set(s.expenses.flatMap((e) => e.tags ?? []))].sort(), [s.expenses]);
 
   const range = useMemo(() => periodRange(period, now, { from: fromIso(from), to: fromIso(to) }), [period, from, to]); // eslint-disable-line react-hooks/exhaustive-deps
-  const filter: ReportFilter = { categories: category ? [category] : undefined, accounts: account ? [account] : undefined };
-  const spent = useMemo(() => expensesIn(s.expenses, range, filter), [s.expenses, range, category, account]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Income doesn't have categories, so a category filter leaves it out rather than mixing scopes.
-  const received = useMemo(() => (category ? [] : incomesIn(s.incomes, range, filter)), [s.incomes, range, category, account]); // eslint-disable-line react-hooks/exhaustive-deps
+  const filter: ReportFilter = { categories: category ? [category] : undefined, accounts: account ? [account] : undefined, tag: tag || undefined };
+  const spent = useMemo(() => expensesIn(s.expenses, range, filter), [s.expenses, range, category, account, tag]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Income doesn't have categories or tags, so those filters leave it out rather than mixing scopes.
+  const received = useMemo(() => (category || tag ? [] : incomesIn(s.incomes, range, filter)), [s.incomes, range, category, account, tag]); // eslint-disable-line react-hooks/exhaustive-deps
   const groups = useMemo(() => groupSpending(spent, groupBy), [spent, groupBy]);
   const spendingTotal = groups.reduce((t, g) => t + g.total, 0);
   const totalIn = received.reduce((t, x) => t + x.amount, 0);
   const rate = savingsRate(totalIn, spendingTotal);
-  const months = useMemo(() => monthlyCashFlow(s.expenses, s.incomes, range, filter), [s.expenses, s.incomes, range, category, account]); // eslint-disable-line react-hooks/exhaustive-deps
+  const months = useMemo(() => monthlyCashFlow(s.expenses, tag ? [] : s.incomes, range, filter), [s.expenses, s.incomes, range, category, account, tag]); // eslint-disable-line react-hooks/exhaustive-deps
   const days = Math.max(1, Math.round((Math.min(range[1].getTime(), Date.now()) - range[0].getTime()) / 86_400_000));
   const accounts = useMemo(() => [...new Set([...s.expenses.map((e) => e.account), ...s.incomes.map((x) => x.account)].filter(Boolean))].sort(), [s.expenses, s.incomes]);
   const rangeText = `${range[0].toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })} – ${new Date(range[1].getTime() - 1).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })}`;
@@ -112,9 +114,17 @@ export function Reports() {
                 {accounts.map((a) => <option key={a} value={a}>{a}</option>)}
               </select>
             </label>
+            {tags.length > 0 && (
+              <label className="field"><span>Tag</span>
+                <select value={tag} onChange={(e) => setTag(e.target.value)}>
+                  <option value="">All tags</option>
+                  {tags.map((x) => <option key={x} value={x}>#{x}</option>)}
+                </select>
+              </label>
+            )}
           </div>
           <p className="t-muted small span-2" style={{ margin: "-4px 4px 0" }}>
-            {rangeText}{category ? ` · ${categoryMeta(category).title} only, so income isn't included` : ""}{account ? ` · ${account}` : ""}
+            {rangeText}{category ? ` · ${categoryMeta(category).title} only, so income isn't included` : ""}{account ? ` · ${account}` : ""}{tag ? ` · #${tag} only` : ""}
           </p>
 
           <section className="kpis span-2" aria-label="Totals for this report">

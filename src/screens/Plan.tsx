@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import {
-  counts, deleteBill, deleteBudget, deleteGoal, deleteRecurringIncome, dismissRecurring, inMonth, logBill, logRecurringIncome, monthSpent, nextDue,
-  recurringSuggestions, runDueBills, runDueIncome, saveBill, saveBudget, saveGoal, saveRecurringIncome, share, showToast, uid, useTally,
+  billOverdue, billPaid, budgetSpent, deleteBill, deleteBudget, deleteGoal, deleteRecurringIncome, dismissRecurring, logBill, logRecurringIncome, monthSpent, nextDue,
+  recurringSuggestions, runDueBills, runDueIncome, saveBill, saveBudget, saveGoal, saveRecurringIncome, showToast, uid, useTally,
   deleteLoan, emiThisMonth, logEmi, runDueLoans, saveLoan,
   type Bill, type Goal, type Loan, type RecurringIncome,
 } from "../data/store";
@@ -9,7 +9,8 @@ import { emiFor, loanStatus } from "../core/loans";
 import { currencySymbol } from "../core/money";
 import { dateLocale, t } from "../i18n";
 import { categoryMeta, pickableCategories, type Category } from "../core/categories";
-import { monthKey } from "../core/budget";
+import { monthKey, type BudgetPeriod } from "../core/budget";
+import { EVERY_LABEL, monthlyEquivalent, periodKey, WEEKDAYS, type Every } from "../core/schedule";
 import { formatMoney, parsePaise } from "../core/money";
 import { CategoryIcon, Icon } from "../ui/icons";
 import type { RecurringCharge } from "../core/recurring";
@@ -26,14 +27,9 @@ export function Plan() {
   const [loan, setLoan] = useState<Loan | "new" | null>(null);
   const owedOnLoans = s.loans.reduce((t, l) => t + loanStatus(l, now.getTime()).outstanding, 0);
 
-  const spentByCat = useMemo(() => {
-    const m = new Map<Category, number>();
-    for (const e of inMonth(s.expenses, now).filter(counts)) m.set(e.category, (m.get(e.category) ?? 0) + share(e));
-    return m;
-  }, [s.expenses]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const upcoming = [...s.bills].sort((a, b) => nextDue(a).getTime() - nextDue(b).getTime());
-  const subsMonthly = s.bills.filter((b) => b.isSubscription).reduce((t, b) => t + b.amount, 0);
+  const subsMonthly = s.bills.filter((b) => b.isSubscription).reduce((t, b) => t + monthlyEquivalent(b.amount, b.every), 0);
   const due14 = upcoming.filter((b) => nextDue(b).getTime() - now.getTime() < 14 * 86_400_000).reduce((t, b) => t + b.amount, 0);
   const overall = s.settings.monthlyBudget;
   const spent = monthSpent(s.expenses, now);
@@ -58,7 +54,8 @@ export function Plan() {
           )}
           {[...s.budgets].sort((a, b) => a.category.localeCompare(b.category)).map((b) => (
             <button key={b.category} onClick={() => setBudgetCat(b.category)} style={{ border: 0, background: "none", padding: 0, textAlign: "left" }}>
-              <BudgetLine label={categoryMeta(b.category).title} spent={spentByCat.get(b.category) ?? 0} limit={b.limit} />
+              <BudgetLine label={`${categoryMeta(b.category).title}${b.period && b.period !== "month" ? ` · ${PERIOD_WORD[b.period]}` : ""}`}
+                spent={budgetSpent(b, s, now)} limit={b.limit} />
             </button>
           ))}
           {unbudgeted.length > 0 && (
@@ -93,8 +90,8 @@ export function Plan() {
                 <span className="grow col">
                   <span className="t-strong ellipsis">{b.name}</span>
                   <span className="tiny t-muted">
-                    {b.isSubscription ? "Subscription" : "Bill"}
-                    {b.lastLoggedMonth === monthKey(now) ? " · paid this month" : b.day <= now.getDate() ? " · not in expenses yet" : b.autoLog ? " · adds on due day" : ""}
+                    {b.isSubscription ? "Subscription" : "Bill"}{b.every && b.every !== "month" ? ` · ${EVERY_LABEL[b.every].toLowerCase()}` : ""}
+                    {billPaid(b, now) ? ` · paid this ${b.every ?? "month"}` : billOverdue(b, now) ? " · not in expenses yet" : b.autoLog ? " · adds on due day" : ""}
                     {b.amount > b.prevAmount && b.prevAmount > 0 && <span style={{ color: "var(--warn)" }}> · price up from {formatMoney(b.prevAmount)}</span>}
                   </span>
                 </span>
@@ -241,7 +238,10 @@ function FoundCharge({ r }: { r: RecurringCharge }) {
     saveBill({
       id: uid(), name: r.name, amount: r.amount, prevAmount: r.previousAmount ?? r.amount, day: r.day, category: r.category, account: r.account,
       // Its payments already reach Tally (logged or imported), so the bill only reminds; it doesn't add them again.
-      isSubscription: true, autoLog: false, lastLoggedMonth: monthKey(new Date(r.lastAt)),
+      isSubscription: true, autoLog: false,
+      ...(r.cadence === "weekly" ? { every: "week" as const, weekday: new Date(r.lastAt).getDay() } : {}),
+      ...(r.cadence === "yearly" ? { every: "year" as const, month: new Date(r.lastAt).getMonth() } : {}),
+      lastLoggedMonth: periodKey({ every: r.cadence === "weekly" ? "week" : r.cadence === "yearly" ? "year" : "month", day: r.day }, new Date(r.lastAt)),
     });
     showToast(`Tracking ${r.name} in bills`);
   };
@@ -266,7 +266,7 @@ function FoundCharge({ r }: { r: RecurringCharge }) {
           {r.cadence !== "monthly" && <span className="tag">{formatMoney(r.monthlyCost)} a month</span>}
         </div>
         <div className="row gap8" style={{ marginTop: 4 }}>
-          {r.cadence === "monthly" && !r.maybeStopped && <button className="btn small-btn" onClick={track}><Icon name="plus" size={14} />Track as bill</button>}
+          {r.cadence !== "quarterly" && !r.maybeStopped && <button className="btn small-btn" onClick={track}><Icon name="plus" size={14} />Track as bill</button>}
           <button className="btn ghost small-btn" onClick={dismiss}>Not a subscription</button>
         </div>
       </div>
@@ -289,49 +289,79 @@ function BudgetLine({ label, spent, limit }: { label: string; spent: number; lim
   );
 }
 
+const PERIOD_WORD: Record<BudgetPeriod, string> = { week: "weekly", month: "monthly", year: "yearly" };
+
 function BudgetEditor({ category, onClose }: { category: Category | null; onClose: () => void }) {
   const s = useTally();
   const existing = s.budgets.find((b) => b.category === category);
   const [amount, setAmount] = useState("");
+  const [period, setPeriod] = useState<BudgetPeriod>("month");
   const [seen, setSeen] = useState<Category | null>(null);
-  if (category !== seen) { setSeen(category); setAmount(existing ? String(existing.limit / 100) : ""); }
+  if (category !== seen) { setSeen(category); setAmount(existing ? String(existing.limit / 100) : ""); setPeriod(existing?.period ?? "month"); }
   const p = parsePaise(amount);
   return (
     <Sheet open={!!category} onClose={onClose} title={category ? `${categoryMeta(category).title} budget` : ""}>
-      <Field label={`Monthly limit (${currencySymbol()})`}><input type="text" inputMode="numeric" autoFocus value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
-      <button className="btn primary block" disabled={!p} onClick={() => { saveBudget({ category: category!, limit: p! }); onClose(); }}>Save</button>
+      <div className="row gap8" role="group" aria-label="Budget for each">
+        {(["week", "month", "year"] as BudgetPeriod[]).map((x) => (
+          <button key={x} className={`chip${period === x ? " on" : ""}`} aria-pressed={period === x} onClick={() => setPeriod(x)}>
+            {x === "week" ? "Weekly" : x === "month" ? "Monthly" : "Yearly"}
+          </button>
+        ))}
+      </div>
+      <Field label={`${period === "week" ? "Weekly" : period === "year" ? "Yearly" : "Monthly"} limit (${currencySymbol()})`}>
+        <input type="text" inputMode="numeric" autoFocus value={amount} onChange={(e) => setAmount(e.target.value)} />
+      </Field>
+      <p className="t-muted tiny" style={{ margin: 0 }}>
+        {period === "week" ? "Weeks run Monday to Sunday." : period === "year" ? "Years run January to December." : "Follows your budget month (Settings → Month starts on)."}
+      </p>
+      <button className="btn primary block" disabled={!p} onClick={() => {
+        saveBudget({ category: category!, limit: p!, ...(period !== "month" ? { period } : {}) });
+        onClose();
+      }}>Save</button>
       {existing && <button className="btn danger block" onClick={() => { deleteBudget(category!); onClose(); }}>Remove budget</button>}
     </Sheet>
   );
 }
 
+const MONTHS = Array.from({ length: 12 }, (_, m) => new Date(2026, m, 1).toLocaleDateString([], { month: "long" }));
+
 function BillEditor({ value, onClose }: { value: Bill | "new" | null; onClose: () => void }) {
   const bill = value && value !== "new" ? value : null;
-  const [f, setF] = useState({ name: "", amount: "", day: 1, category: "bills" as Category, isSubscription: false, autoLog: true, logNow: true });
+  const blank = () => {
+    const d = new Date();
+    return { name: "", amount: "", every: "month" as Every, day: d.getDate() > 28 ? 1 : d.getDate(), weekday: d.getDay(), month: d.getMonth(),
+      category: "bills" as Category, isSubscription: false, autoLog: true, logNow: true };
+  };
+  const [f, setF] = useState(blank);
   const [seen, setSeen] = useState<typeof value>(null);
   if (value !== seen) {
     setSeen(value);
-    setF(bill ? { name: bill.name, amount: String(bill.amount / 100), day: bill.day, category: bill.category, isSubscription: bill.isSubscription, autoLog: bill.autoLog, logNow: false }
-      : { name: "", amount: "", day: new Date().getDate() > 28 ? 1 : new Date().getDate(), category: "bills", isSubscription: false, autoLog: true, logNow: true });
+    setF(bill ? { name: bill.name, amount: String(bill.amount / 100), every: bill.every ?? "month", day: bill.day, weekday: bill.weekday ?? 1,
+      month: bill.month ?? 0, category: bill.category, isSubscription: bill.isSubscription, autoLog: bill.autoLog, logNow: false } : blank());
   }
   const p = parsePaise(f.amount);
   const now = new Date();
-  const monthName = now.toLocaleDateString([], { month: "long" });
-  const loggedThisMonth = bill?.lastLoggedMonth === monthKey(now);
-  // A new bill whose due day has already come this month: offer to log this month's payment too.
-  const askLogNow = !bill && f.day <= now.getDate();
+  const repeat = { every: f.every, day: f.day, weekday: f.weekday, month: f.month };
+  const periodWord = f.every === "week" ? "this week's" : f.every === "year" ? "this year's" : `${now.toLocaleDateString([], { month: "long" })}'s`;
+  // A new bill whose due date has already come this period: offer to log this period's payment too.
+  const draft = { ...repeat, lastLoggedMonth: "" } as Bill;
+  const askLogNow = !bill && billOverdue(draft, now);
   const save = () => {
     if (!p) return;
+    const changedRepeat = bill && ((bill.every ?? "month") !== f.every);
     const saved: Bill = {
       id: bill?.id ?? uid(), name: f.name, amount: p, prevAmount: bill ? (p !== bill.amount ? bill.amount : bill.prevAmount) : p,
       day: f.day, category: f.category, account: bill?.account ?? "UPI", isSubscription: f.isSubscription, autoLog: f.autoLog,
-      // A new bill already due this month counts as paid unless "log now" is on; then it's logged below.
-      lastLoggedMonth: bill?.lastLoggedMonth ?? (askLogNow && !f.logNow ? monthKey(now) : ""),
+      ...(f.every !== "month" ? { every: f.every } : {}),
+      ...(f.every === "week" ? { weekday: f.weekday } : {}),
+      ...(f.every === "year" ? { month: f.month } : {}),
+      // A new (or re-scheduled) bill already due this period counts as paid unless "log now" is on; then it's logged below.
+      lastLoggedMonth: bill && !changedRepeat ? bill.lastLoggedMonth : (askLogNow && f.logNow) || !billOverdue(draft, now) ? "" : periodKey(repeat, now),
     };
     saveBill(saved);
     if (askLogNow && f.logNow) {
       logBill(saved, now);
-      showToast(`Logged ${saved.name} · ${formatMoney(saved.amount)} for ${monthName}`);
+      showToast(`Logged ${saved.name} · ${formatMoney(saved.amount)}`);
     } else {
       runDueBills(now);
     }
@@ -339,14 +369,38 @@ function BillEditor({ value, onClose }: { value: Bill | "new" | null; onClose: (
   };
   return (
     <Sheet open={value !== null} onClose={onClose} title={bill ? "Edit bill" : "New bill or subscription"}>
-      <Field label="Name"><input type="text" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Rent, Netflix, Airtel…" /></Field>
+      <Field label="Name"><input type="text" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Rent, Netflix, Amazon Prime…" /></Field>
+      <Field label={`Amount (${currencySymbol()})`}><input type="text" inputMode="decimal" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></Field>
+      <div className="row gap8" role="group" aria-label="Repeats">
+        {(["week", "month", "year"] as Every[]).map((x) => (
+          <button key={x} className={`chip${f.every === x ? " on" : ""}`} aria-pressed={f.every === x}
+            // Adding a past payment now makes sense for this month's bill, less so for one months ago.
+            onClick={() => setF({ ...f, every: x, logNow: x === "month" })}>{EVERY_LABEL[x]}</button>
+        ))}
+      </div>
       <div className="row gap8">
-        <Field label={`Amount (${currencySymbol()})`}><input type="text" inputMode="decimal" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></Field>
-        <Field label="Due day">
-          <select value={f.day} onChange={(e) => setF({ ...f, day: Number(e.target.value) })}>
-            {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d}</option>)}
-          </select>
-        </Field>
+        {f.every === "week" ? (
+          <Field label="Due on">
+            <select value={f.weekday} onChange={(e) => setF({ ...f, weekday: Number(e.target.value) })}>
+              {WEEKDAYS.map((w, i) => <option key={w} value={i}>{w}</option>)}
+            </select>
+          </Field>
+        ) : (
+          <>
+            {f.every === "year" && (
+              <Field label="Month">
+                <select value={f.month} onChange={(e) => setF({ ...f, month: Number(e.target.value) })}>
+                  {MONTHS.map((m, i) => <option key={m} value={i}>{m}</option>)}
+                </select>
+              </Field>
+            )}
+            <Field label="Due day">
+              <select value={f.day} onChange={(e) => setF({ ...f, day: Number(e.target.value) })}>
+                {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </Field>
+          </>
+        )}
       </div>
       <Field label="Category">
         <select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value as Category })}>
@@ -355,19 +409,19 @@ function BillEditor({ value, onClose }: { value: Bill | "new" | null; onClose: (
       </Field>
       <div>
         <Toggle label="Subscription" checked={f.isSubscription} onChange={(v) => setF({ ...f, isSubscription: v })} />
-        <Toggle label="Add to expenses on the due day" hint="Each month, on or after the due day, it's added to that month's spending" checked={f.autoLog} onChange={(v) => setF({ ...f, autoLog: v })} />
+        <Toggle label="Add to expenses on the due date" hint="Each time it falls due, it's added to your spending" checked={f.autoLog} onChange={(v) => setF({ ...f, autoLog: v })} />
         {askLogNow && (
-          <Toggle label={`Add ${monthName}'s payment now`} hint={`The due day has already come this month`} checked={f.logNow} onChange={(v) => setF({ ...f, logNow: v })} />
+          <Toggle label={`Add ${periodWord} payment now`} hint="The due date has already come" checked={f.logNow} onChange={(v) => setF({ ...f, logNow: v })} />
         )}
       </div>
-      {bill && (loggedThisMonth
-        ? <p className="t-muted small" style={{ margin: 0 }}><Icon name="check" size={14} /> {monthName}'s payment is in your expenses.</p>
-        : (
+      {bill && (billPaid(bill, now)
+        ? <p className="t-muted small" style={{ margin: 0 }}><Icon name="check" size={14} /> This {bill.every ?? "month"}'s payment is in your expenses.</p>
+        : billOverdue(bill, now) && (
           <button className="btn block" onClick={() => {
             logBill(bill, now);
-            showToast(`Logged ${bill.name} · ${formatMoney(bill.amount)} for ${monthName}`);
+            showToast(`Logged ${bill.name} · ${formatMoney(bill.amount)}`);
             onClose();
-          }}>Add {monthName}'s payment to expenses</button>
+          }}>Add this {bill.every ?? "month"}'s payment to expenses</button>
         ))}
       <button className="btn primary block" disabled={!f.name || !p} onClick={save}>Save</button>
       {bill && <button className="btn danger block" onClick={() => { deleteBill(bill.id); onClose(); }}>Delete</button>}

@@ -615,3 +615,8 @@ button.note-card:hover { background: var(--surface-2); }
 .welcome-budget-row .grow { flex: 1; min-width: 0; }
 /* A sheet scrolls rather than squashing its contents: cards with overflow hidden would shrink to nothing. */
 .sheet-body > * { flex-shrink: 0; }
+
+/* ---------- Money Manager parity ---------- */
+.keypad.calc { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.keypad.calc button.op { background: var(--brand-soft); color: var(--accent); font-weight: 700; }
+.calc-line { letter-spacing: 0.02em; min-height: 18px; }

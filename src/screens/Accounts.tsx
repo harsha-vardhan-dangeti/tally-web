@@ -1,7 +1,11 @@
 import { useMemo, useState } from "react";
 import {
-  ACCOUNT_KIND_LABEL, addTransfer, deleteAccount, deleteTransfer, moneyIn, saveAccount, showToast, uid, useTally, type Account, type AccountKind,
+  ACCOUNT_KIND_LABEL, accountsNow, addTransfer, cardStatus, deleteAccount, deleteScheduledTransfer, deleteTransfer, homeBalance, liveBalance, moneyIn,
+  saveAccount, saveScheduledTransfer, setSettings, showToast, uid, useTally, type Account, type AccountKind,
 } from "../data/store";
+import { monthKey } from "../core/budget";
+import { CURRENCIES } from "../core/money";
+import { Toggle } from "../ui/components";
 import { netWorthSeries } from "../core/reports";
 import { formatMoney, parsePaise, currencySymbol } from "../core/money";
 import { Icon } from "../ui/icons";
@@ -22,7 +26,7 @@ export function Accounts() {
   const [moving, setMoving] = useState(false);
   const [allTransfers, setAllTransfers] = useState(false);
   const now = new Date();
-  const series = useMemo(() => netWorthSeries(s.accounts, now, 12, s.loans), [s.accounts, s.loans]); // eslint-disable-line react-hooks/exhaustive-deps
+  const series = useMemo(() => netWorthSeries(accountsNow(s), now, 12, s.loans), [s.accounts, s.loans, s.expenses, s.incomes]); // eslint-disable-line react-hooks/exhaustive-deps
   const latest = series[series.length - 1] ?? { assets: 0, debts: 0, net: 0 };
   // Only months with a recorded balance are worth charting.
   const charted = series.slice(series.findIndex((p) => p.assets !== 0 || p.debts !== 0));
@@ -76,7 +80,7 @@ export function Accounts() {
           {GROUPS.map((g) => {
             const list = s.accounts.filter((a) => g.kinds.includes(a.kind));
             if (!list.length) return null;
-            const total = list.reduce((t, a) => t + (a.kind === "card" ? -a.balance : a.balance), 0);
+            const total = list.reduce((t, a) => t + (a.kind === "card" ? -homeBalance(a, s) : homeBalance(a, s)), 0);
             return (
               <section key={g.title} className="col gap8">
                 <div className="section-title"><span>{g.title}</span><span className="t-muted num">{signed(total)}</span></div>
@@ -86,7 +90,8 @@ export function Accounts() {
                       <span className={`acct-icon ${acct.kind}`}><Icon name={acct.kind === "card" ? "card" : acct.kind === "investment" ? "trend" : acct.kind === "cash" ? "bag" : "home"} size={18} /></span>
                       <span className="grow col">
                         <span className="t-strong">{acct.name}</span>
-                        <span className="t-muted tiny">{ACCOUNT_KIND_LABEL[acct.kind]} · updated {new Date(acct.updatedAt).toLocaleDateString([], { day: "numeric", month: "short" })}</span>
+                        <span className="t-muted tiny">{ACCOUNT_KIND_LABEL[acct.kind]} · {acct.tracked ? "follows your expenses and income" : `updated ${new Date(acct.updatedAt).toLocaleDateString([], { day: "numeric", month: "short" })}`}</span>
+                        <CardLine acct={acct} />
                       </span>
                       <AccountBalance acct={acct} />
                     </button>
@@ -95,6 +100,31 @@ export function Accounts() {
               </section>
             );
           })}
+
+          {s.settings.scheduledTransfers.length > 0 && (
+            <section className="col gap8">
+              <div className="section-title"><span>Repeating transfers</span></div>
+              <div className="card flush divided">
+                {s.settings.scheduledTransfers.map((r) => {
+                  const name = (id: string) => s.accounts.find((x) => x.id === id)?.name ?? "deleted account";
+                  return (
+                    <div key={r.id} className="list-row">
+                      <span className="acct-icon"><Icon name="repeat" size={18} /></span>
+                      <span className="grow col" style={{ minWidth: 0 }}>
+                        <span className="t-strong ellipsis">{name(r.fromId)} → {name(r.toId)}</span>
+                        <span className="t-muted tiny ellipsis">Every month on the {ordinal(r.day)}{r.note ? ` · ${r.note}` : ""}</span>
+                      </span>
+                      <span className="t-strong num">{formatMoney(r.amount)}</span>
+                      <button className="icon-btn" aria-label={`Stop repeating ${formatMoney(r.amount)} from ${name(r.fromId)}`} onClick={() => {
+                        deleteScheduledTransfer(r.id);
+                        showToast("Stopped. Transfers already made stay.", () => saveScheduledTransfer(r));
+                      }}><Icon name="close" size={18} /></button>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
 
           {s.transfers.length > 0 && (
             <section className="col gap8">
@@ -132,10 +162,35 @@ export function Accounts() {
   );
 }
 
+const ordinal = (n: number) => `${n}${n % 10 === 1 && n !== 11 ? "st" : n % 10 === 2 && n !== 12 ? "nd" : n % 10 === 3 && n !== 13 ? "rd" : "th"}`;
+const shortDate = (d: Date) => d.toLocaleDateString([], { day: "numeric", month: "short" });
+
 /** A card shows what's owed as a negative; money left over on a card shows as positive. */
 function AccountBalance({ acct }: { acct: Account }) {
-  const value = acct.kind === "card" ? -acct.balance : acct.balance;
-  return <span className="t-strong num" style={{ color: value < 0 ? "var(--warn)" : undefined }}>{formatMoney(value)}</span>;
+  const s = useTally();
+  const live = liveBalance(acct, s);
+  const value = acct.kind === "card" ? -live : live;
+  const foreign = acct.currency && acct.currency !== s.settings.currency;
+  return (
+    <span className="col" style={{ alignItems: "flex-end" }}>
+      <span className="t-strong num" style={{ color: value < 0 ? "var(--warn)" : undefined }}>{formatMoney(value, foreign ? { currency: acct.currency } : {})}</span>
+      {foreign && <span className="tiny t-muted num">{s.settings.fxRates[acct.currency!] ? `≈ ${formatMoney(acct.kind === "card" ? -homeBalance(acct, s) : homeBalance(acct, s))}` : "no rate set"}</span>}
+    </span>
+  );
+}
+
+/** A credit card's bill: what's due and when, and what's been spent since the statement. */
+function CardLine({ acct }: { acct: Account }) {
+  const s = useTally();
+  const bill = cardStatus(acct, s);
+  if (!bill) return null;
+  const soon = bill.due && bill.due.date.getTime() - Date.now() < 4 * 86_400_000;
+  return (
+    <span className="tiny" style={{ color: soon ? "var(--warn)" : "var(--muted)" }}>
+      {bill.due ? `${formatMoney(bill.due.amount)} due ${shortDate(bill.due.date)}` : `Next statement ${shortDate(bill.nextStatement)}`}
+      {bill.unbilled ? ` · ${formatMoney(bill.unbilled)} spent since the statement` : ""}
+    </span>
+  );
 }
 
 const today = () => new Date().toLocaleDateString("en-CA"); // yyyy-mm-dd in local time
@@ -147,6 +202,7 @@ function TransferSheet({ open, onClose }: { open: boolean; onClose: () => void }
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(today);
   const [note, setNote] = useState("");
+  const [repeat, setRepeat] = useState(false);
   const [seen, setSeen] = useState(false);
   if (open !== seen) {
     setSeen(open);
@@ -158,13 +214,14 @@ function TransferSheet({ open, onClose }: { open: boolean; onClose: () => void }
       setAmount("");
       setDate(today());
       setNote("");
+      setRepeat(false);
     }
   }
   const from = s.accounts.find((a) => a.id === fromId);
   const to = s.accounts.find((a) => a.id === toId);
   const paise = parsePaise(amount) ?? 0;
   const ready = from && to && from.id !== to.id && paise > 0 && date;
-  const shown = (a: Account) => formatMoney(a.kind === "card" ? -a.balance : a.balance);
+  const shown = (a: Account) => formatMoney(a.kind === "card" ? -liveBalance(a, s) : liveBalance(a, s));
   const after = (a: Account, n: number) => shown(moneyIn(a, n));
 
   const save = () => {
@@ -174,6 +231,11 @@ function TransferSheet({ open, onClose }: { open: boolean; onClose: () => void }
     const isToday = at.toDateString() === new Date().toDateString();
     const t = addTransfer({ fromId: from.id, toId: to.id, amount: paise, note: note.trim(), occurredAt: isToday ? Date.now() : at.getTime() });
     if (t) showToast(`Moved ${formatMoney(paise)} from ${from.name} to ${to.name}`, () => deleteTransfer(t.id, false));
+    if (repeat) {
+      // This month's is the one just made; the next comes on the same day next month.
+      saveScheduledTransfer({ id: uid(), fromId: from.id, toId: to.id, amount: paise, day: Math.min(d, 28), note: note.trim(),
+        lastLoggedMonth: monthKey(at) === monthKey(new Date()) ? monthKey(at) : "" });
+    }
     onClose();
   };
 
@@ -198,6 +260,9 @@ function TransferSheet({ open, onClose }: { open: boolean; onClose: () => void }
         <Field label="Date"><input type="date" value={date} max={today()} onChange={(e) => setDate(e.target.value)} /></Field>
       </div>
       <Field label="Note"><input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="optional, like “Card bill”" /></Field>
+      <div className="card" style={{ background: "var(--surface-2)", padding: "0 14px" }}>
+        <Toggle label="Repeat every month" hint={`On the ${ordinal(Math.min(Number(date.split("-")[2]) || 1, 28))}, like a SIP or rent to a flatmate`} checked={repeat} onChange={setRepeat} />
+      </div>
 
       {from && to && from.id !== to.id && (
         <div className="card col gap4 small" style={{ background: "var(--surface-2)" }} aria-live="polite">
@@ -217,33 +282,90 @@ function TransferSheet({ open, onClose }: { open: boolean; onClose: () => void }
 function AccountEditor({ value, onClose }: { value: Account | "new" | null; onClose: () => void }) {
   const s = useTally();
   const acct = value && value !== "new" ? value : null;
+  const home = s.settings.currency;
   const [name, setName] = useState("");
   const [kind, setKind] = useState<AccountKind>("bank");
   const [balance, setBalance] = useState("");
+  const [tracked, setTracked] = useState(true);
+  const [currency, setCurrency] = useState(home);
+  const [rate, setRate] = useState("");
+  const [statementDay, setStatementDay] = useState(0);
+  const [dueDay, setDueDay] = useState(0);
   const [seen, setSeen] = useState<typeof value>(null);
   if (value !== seen) {
     setSeen(value);
     setName(acct?.name ?? "");
     setKind(acct?.kind ?? "bank");
-    setBalance(acct ? String(acct.balance / 100) : "");
+    // The balance as it stands now, including transactions since it was last set.
+    setBalance(acct ? String(liveBalance(acct, s) / 100) : "");
+    setTracked(acct ? !!acct.tracked : true);
+    setCurrency(acct?.currency ?? home);
+    setRate(acct?.currency ? String(s.settings.fxRates[acct.currency] ?? "") : "");
+    setStatementDay(acct?.statementDay ?? 0);
+    setDueDay(acct?.dueDay ?? 0);
   }
+  const foreign = currency !== home;
+  const days = Array.from({ length: 31 }, (_, i) => i + 1);
   return (
     <Sheet open={value !== null} onClose={onClose} title={acct ? "Edit account" : "New account"}>
       <Field label="Name"><input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="HDFC Savings" /></Field>
-      <Field label="Type">
-        <select value={kind} onChange={(e) => setKind(e.target.value as AccountKind)}>
-          {(Object.keys(ACCOUNT_KIND_LABEL) as AccountKind[]).map((k) => <option key={k} value={k}>{ACCOUNT_KIND_LABEL[k]}</option>)}
-        </select>
-      </Field>
-      <Field label={`${kind === "card" ? "Amount owed" : "Balance"} (${currencySymbol()})`}>
+      <div className="row gap8">
+        <Field label="Type">
+          <select value={kind} onChange={(e) => setKind(e.target.value as AccountKind)}>
+            {(Object.keys(ACCOUNT_KIND_LABEL) as AccountKind[]).map((k) => <option key={k} value={k}>{ACCOUNT_KIND_LABEL[k]}</option>)}
+          </select>
+        </Field>
+        <Field label="Currency">
+          <select value={currency} onChange={(e) => { setCurrency(e.target.value); setRate(String(s.settings.fxRates[e.target.value] ?? "")); }}>
+            {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
+          </select>
+        </Field>
+      </div>
+      <Field label={`${kind === "card" ? "Amount owed" : "Balance"} (${currencySymbol(currency)})`}>
         <input type="text" inputMode="decimal" value={balance} onChange={(e) => setBalance(e.target.value)} placeholder="0" />
       </Field>
-      <button className="btn primary block" disabled={!name} onClick={() => {
+      {foreign && (
+        <Field label={`1 ${currency} in ${home}, for net worth`}>
+          <input type="text" inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} placeholder="83.2" />
+        </Field>
+      )}
+      {kind === "card" && (
+        <div className="row gap8">
+          <Field label="Statement day">
+            <select value={statementDay} onChange={(e) => setStatementDay(Number(e.target.value))}>
+              <option value={0}>Not set</option>
+              {days.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </Field>
+          <Field label="Payment due day">
+            <select value={dueDay} onChange={(e) => setDueDay(Number(e.target.value))}>
+              <option value={0}>Not set</option>
+              {days.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </Field>
+        </div>
+      )}
+      {!foreign && (
+        <div className="card" style={{ background: "var(--surface-2)", padding: "0 14px" }}>
+          <Toggle label="Update from my expenses and income" checked={tracked} onChange={setTracked}
+            hint={`Anything logged with “Paid from: ${name.trim() || "this account"}” or received into it moves this balance. Set the balance again whenever you check your bank.`} />
+        </div>
+      )}
+      <button className="btn primary block" disabled={!name.trim()} onClick={() => {
         // A transfer can leave a balance below zero, so a leading minus is kept.
         const amount = (parsePaise(balance.trim().replace(/^[-−]/, "")) ?? 0) * (/^\s*[-−]/.test(balance) ? -1 : 1);
-        saveAccount({ id: acct?.id ?? uid(), name, kind, balance: amount, order: acct?.order ?? s.accounts.length, updatedAt: Date.now() });
+        const r = Number(rate);
+        if (foreign && r > 0) setSettings({ fxRates: { ...s.settings.fxRates, [currency]: r } });
+        saveAccount({
+          id: acct?.id ?? uid(), name: name.trim(), kind, balance: amount, order: acct?.order ?? s.accounts.length, updatedAt: Date.now(),
+          ...(acct?.history ? { history: acct.history } : {}),
+          ...(tracked && !foreign ? { tracked: true } : {}),
+          ...(foreign ? { currency } : {}),
+          ...(kind === "card" && statementDay && dueDay ? { statementDay, dueDay } : {}),
+        });
         onClose();
       }}>Save</button>
+      {kind === "card" && (!statementDay || !dueDay) && <p className="t-muted tiny" style={{ margin: 0 }}>Set both days to see each bill and its due date, and to have it show in Coming up.</p>}
       {acct && <button className="btn danger block" onClick={() => { deleteAccount(acct.id); onClose(); }}>Delete account</button>}
     </Sheet>
   );

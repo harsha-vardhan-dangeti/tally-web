@@ -1,7 +1,7 @@
 import { outstandingAt, type LoanTerms } from "./loans";
 import type { Account, Expense, Income } from "../data/store";
 import { yourShare } from "./smartParser";
-import { addMonths, monthKey, startOfDay } from "./budget";
+import { addMonths, monthKey, startOfDay, weekRange } from "./budget";
 import { categoryMeta, type Category } from "./categories";
 
 /**
@@ -9,16 +9,19 @@ import { categoryMeta, type Category } from "./categories";
  * Pure. Amounts are your share in paise; pending and excluded expenses never count, as in the budget.
  */
 
-export type Period = "this-month" | "last-month" | "3m" | "6m" | "12m" | "this-year" | "custom";
+export type Period = "this-week" | "last-week" | "this-month" | "last-month" | "3m" | "6m" | "12m" | "this-year" | "last-year" | "custom";
 export const PERIOD_LABEL: Record<Period, string> = {
-  "this-month": "This month", "last-month": "Last month", "3m": "Last 3 months", "6m": "Last 6 months",
-  "12m": "Last 12 months", "this-year": "This year", custom: "Custom dates",
+  "this-week": "This week", "last-week": "Last week", "this-month": "This month", "last-month": "Last month", "3m": "Last 3 months", "6m": "Last 6 months",
+  "12m": "Last 12 months", "this-year": "This year", "last-year": "Last year", custom: "Custom dates",
 };
 
 /** [start, end) for a period. Multi-month periods end with the current month. */
 export function periodRange(period: Period, now: Date, custom?: { from: Date; to: Date }): [Date, Date] {
   const nextMonth = addMonths(now, 1);
   switch (period) {
+    case "this-week": return weekRange(now);
+    case "last-week": return weekRange(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7));
+    case "last-year": return [new Date(now.getFullYear() - 1, 0, 1), new Date(now.getFullYear(), 0, 1)];
     case "this-month": return [addMonths(now, 0), nextMonth];
     case "last-month": return [addMonths(now, -1), addMonths(now, 0)];
     case "3m": return [addMonths(now, -2), nextMonth];
@@ -37,6 +40,7 @@ export function periodRange(period: Period, now: Date, custom?: { from: Date; to
 export interface ReportFilter {
   categories?: Category[];
   accounts?: string[];
+  tag?: string;
 }
 
 const share = (e: Expense) => yourShare(e.amount, e.splitWays);
@@ -46,7 +50,8 @@ export function expensesIn(expenses: Expense[], [start, end]: [Date, Date], filt
   const a = start.getTime(), b = end.getTime();
   return expenses.filter((e) => counted(e) && e.occurredAt >= a && e.occurredAt < b
     && (!filter.categories?.length || filter.categories.includes(e.category))
-    && (!filter.accounts?.length || filter.accounts.includes(e.account)));
+    && (!filter.accounts?.length || filter.accounts.includes(e.account))
+    && (!filter.tag || (e.tags ?? []).includes(filter.tag)));
 }
 
 export function incomesIn(incomes: Income[], [start, end]: [Date, Date], filter: ReportFilter = {}): Income[] {
@@ -54,8 +59,8 @@ export function incomesIn(incomes: Income[], [start, end]: [Date, Date], filter:
   return incomes.filter((x) => x.receivedAt >= a && x.receivedAt < b && (!filter.accounts?.length || filter.accounts.includes(x.account)));
 }
 
-export type GroupBy = "category" | "merchant" | "account";
-export const GROUP_LABEL: Record<GroupBy, string> = { category: "Category", merchant: "Place", account: "Payment method" };
+export type GroupBy = "category" | "sub" | "merchant" | "account" | "tag";
+export const GROUP_LABEL: Record<GroupBy, string> = { category: "Category", sub: "Subcategory", merchant: "Place", account: "Payment method", tag: "Tag" };
 
 export interface GroupRow { key: string; label: string; total: number; count: number; share: number; category: Category }
 
@@ -63,13 +68,27 @@ const placeOf = (e: Expense) => (e.merchant || e.note || categoryMeta(e.category
 
 export function groupSpending(list: Expense[], by: GroupBy): GroupRow[] {
   const map = new Map<string, GroupRow>();
-  for (const e of list) {
-    const key = by === "category" ? e.category : by === "account" ? e.account || "Other" : placeOf(e).toLowerCase();
-    const label = by === "category" ? categoryMeta(e.category).title : by === "account" ? e.account || "Other" : placeOf(e);
+  const add = (e: Expense, key: string, label: string) => {
     const row = map.get(key) ?? { key, label, total: 0, count: 0, share: 0, category: e.category };
     row.total += share(e);
     row.count += 1;
     map.set(key, row);
+  };
+  for (const e of list) {
+    if (by === "tag") {
+      // An expense with two tags counts under both; untagged ones are grouped together.
+      const tags = e.tags?.length ? e.tags : [""];
+      for (const t of tags) add(e, `#${t}`, t ? `#${t}` : "No tag");
+      continue;
+    }
+    if (by === "sub") {
+      const title = categoryMeta(e.category).title;
+      add(e, `${e.category}:${e.sub ?? ""}`, e.sub ? `${title} · ${e.sub}` : title);
+      continue;
+    }
+    const key = by === "category" ? e.category : by === "account" ? e.account || "Other" : placeOf(e).toLowerCase();
+    const label = by === "category" ? categoryMeta(e.category).title : by === "account" ? e.account || "Other" : placeOf(e);
+    add(e, key, label);
   }
   const total = [...map.values()].reduce((t, r) => t + r.total, 0);
   return [...map.values()].map((r) => ({ ...r, share: total ? r.total / total : 0 })).sort((a, b) => b.total - a.total);

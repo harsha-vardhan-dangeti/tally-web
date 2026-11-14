@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { setSettings, useTally } from "../data/store";
 import { cloudAvailable, useCloud } from "../data/cloud";
-import { daysInMonth, snapshot } from "../core/budget";
+import { dayOfMonth, daysInMonth, snapshot } from "../core/budget";
 import { CURRENCIES, formatMoney, parsePaise } from "../core/money";
 import { LANGUAGES, t, type Lang } from "../i18n";
 import { Icon } from "../ui/icons";
@@ -48,7 +48,7 @@ export function Welcome() {
         <div className="welcome-card">
           <span className="label">{t("Safe to spend today")}</span>
           <span className="amount display num">{formatMoney(snap.leftToday)}</span>
-          <TallyMarks days={daysInMonth(now)} today={now.getDate()} />
+          <TallyMarks days={daysInMonth(now)} today={dayOfMonth(now)} />
           <span className="tiny welcome-note">
             {b ? t("{amount} a month, {n} days left", { amount: formatMoney(b), n: snap.daysLeft })
               : t("Example: {amount} a month, {n} days left", { amount: formatMoney(EXAMPLE_BUDGET), n: snap.daysLeft })}

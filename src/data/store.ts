@@ -4,7 +4,11 @@ import { categoryMeta, guessCategory, isCategory, setCategoryDefs, toCategory, t
 import { matchRule, sanitizeRules, setRules, type Rule } from "../core/rules";
 import { detectRecurring, merchantKey, type RecurringCharge } from "../core/recurring";
 import type { ColumnMap } from "../core/statement";
-import { crossedThreshold, monthKey, monthRange, sameDay, snapshot, type BudgetSnapshot } from "../core/budget";
+import {
+  crossedThreshold, monthKey, monthRange, periodBounds, sameDay, setMonthStartDay, snapshot, type BudgetPeriod, type BudgetSnapshot,
+} from "../core/budget";
+import { dueInPeriod, nextDueDate, periodKey, type Every } from "../core/schedule";
+import { cardBill, cardCycle, type CardBill } from "../core/cards";
 import { formatMoney, isCurrency, setCurrency } from "../core/money";
 import { yourShare } from "../core/smartParser";
 import { emiFor, loanStatus, dueDate, type LoanTerms } from "../core/loans";
@@ -38,12 +42,27 @@ export interface Expense {
   paidBy?: string;
   /** Paid in another currency: what was paid and the rate used (home currency per unit). */
   fx?: { currency: string; amount: number; rate: number };
+  /** A subcategory of `category` (Settings → Categories). */
+  sub?: string;
+  /** Lowercase, without "#". */
+  tags?: string[];
 }
 export interface Chip { id: string; title: string; amount: number; category: Category; order: number }
-export interface CategoryBudget { category: Category; limit: number }
+export interface CategoryBudget {
+  category: Category;
+  limit: number;
+  /** Missing: monthly. */
+  period?: BudgetPeriod;
+}
 export interface Bill {
   id: string; name: string; amount: number; prevAmount: number; day: number; category: Category;
-  account: string; isSubscription: boolean; autoLog: boolean; lastLoggedMonth: string;
+  account: string; isSubscription: boolean; autoLog: boolean;
+  /** Key of the last period whose payment was added (see core/schedule.ts): "2026-11", "2026" or "w2026-11-09". */
+  lastLoggedMonth: string;
+  /** Missing: every month on `day`. */
+  every?: Every;
+  weekday?: number;
+  month?: number;
 }
 export type AccountKind = "bank" | "card" | "cash" | "investment";
 export const ACCOUNT_KIND_LABEL: Record<AccountKind, string> = { bank: "Bank", card: "Credit card", cash: "Cash", investment: "Investment" };
@@ -51,6 +70,20 @@ export interface Account {
   id: string; name: string; kind: AccountKind; balance: number; order: number; updatedAt: number;
   /** Balance at the last update in each month ("2026-10" → paise), for net worth over time. */
   history?: Record<string, number>;
+  /**
+   * Follows its transactions: expenses paid from it and income into it (matched by name) move the
+   * balance on from `balance` as of `updatedAt`.
+   */
+  tracked?: boolean;
+  /** Balance kept in another currency; net worth converts it at the rate in settings.fxRates. */
+  currency?: string;
+  /** Credit cards: day the statement is made and day the bill is due (1–31). */
+  statementDay?: number;
+  dueDay?: number;
+}
+/** A transfer that repeats every month on `day`, like a SIP. */
+export interface ScheduledTransfer {
+  id: string; fromId: string; toId: string; amount: number; day: number; note: string; lastLoggedMonth: string;
 }
 export interface Goal { id: string; name: string; target: number; saved: number; deadline: number | null }
 /** Money moved between two of the user's accounts. Not spending: it only changes the two balances. */
@@ -134,6 +167,13 @@ export interface Settings {
   upiId: string;
   /** Last rate used per foreign currency (home currency per unit), to prefill the next one. */
   fxRates: Record<string, number>;
+  /** Day the budget month starts, 1–28. */
+  monthStartDay: number;
+  /** Category id → its subcategory names. */
+  subcategories: Record<string, string[]>;
+  scheduledTransfers: ScheduledTransfer[];
+  /** Minutes away before the app lock asks again (0: every time). */
+  lockAfter: number;
 }
 export interface ImportLayout { signature: string; columns: ColumnMap; account: string }
 
@@ -158,6 +198,7 @@ export interface State {
 const DEFAULT_SETTINGS: Settings = {
   onboarded: false, monthlyBudget: 0, monthlyIncome: 0, defaultAccount: "UPI", lockCredentialId: null, lastBackupAt: null, categories: [], rules: [], dismissedRecurring: [], importLayouts: [],
   currency: "INR", language: "en", payName: "", upiId: "", fxRates: {},
+  monthStartDay: 1, subcategories: {}, scheduledTransfers: [], lockAfter: 0,
 };
 
 let state: State = {
@@ -180,6 +221,7 @@ function applySettings(settings: Settings) {
   setRules(settings.rules);
   setCurrency(settings.currency);
   setLanguage(settings.language);
+  setMonthStartDay(settings.monthStartDay);
 }
 
 /** Calls `l` after every state change; returns an unsubscribe function. */
@@ -226,6 +268,7 @@ export async function load() {
   runDueBills();
   runDueIncome();
   runDueLoans();
+  runDueTransfers();
   // Ask the browser not to evict our data under storage pressure.
   navigator.storage?.persist?.().catch(() => {});
 }
@@ -248,7 +291,27 @@ function readSettings(stored: unknown): Settings {
     fxRates: v.fxRates && typeof v.fxRates === "object"
       ? Object.fromEntries(Object.entries(v.fxRates).filter(([k, r]) => isCurrency(k) && typeof r === "number" && r > 0 && Number.isFinite(r)))
       : {},
+    monthStartDay: Number.isInteger(v.monthStartDay) && v.monthStartDay >= 1 && v.monthStartDay <= 28 ? v.monthStartDay : 1,
+    subcategories: readSubcategories(v.subcategories),
+    scheduledTransfers: list<ScheduledTransfer>(v.scheduledTransfers, (t) => {
+      const x = t as ScheduledTransfer;
+      return !!x && typeof x.id === "string" && typeof x.fromId === "string" && typeof x.toId === "string" && x.fromId !== x.toId
+        && Number.isSafeInteger(x.amount) && x.amount > 0 && Number.isInteger(x.day) && x.day >= 1 && x.day <= 28;
+    }).map((x) => ({ ...x, note: typeof x.note === "string" ? x.note : "", lastLoggedMonth: typeof x.lastLoggedMonth === "string" ? x.lastLoggedMonth : "" })),
+    lockAfter: [0, 1, 5, 15, 60].includes(v.lockAfter) ? v.lockAfter : 0,
   };
+}
+
+/** { food: ["Coffee", "Groceries"] } with only short, unique names. */
+export function readSubcategories(v: unknown): Record<string, string[]> {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return {};
+  const out: Record<string, string[]> = {};
+  for (const [k, names] of Object.entries(v as Record<string, unknown>)) {
+    if (!Array.isArray(names)) continue;
+    const clean = [...new Set(names.filter((n): n is string => typeof n === "string").map((n) => n.trim().slice(0, 30)).filter(Boolean))].slice(0, 30);
+    if (clean.length) out[k] = clean;
+  }
+  return out;
 }
 
 async function seedChips() {
@@ -379,6 +442,7 @@ function reportReplaced(before: { store: StoreName; value: unknown }[]) {
 export interface NewExpense {
   amount: number; category: Category; merchant?: string; note?: string; account?: string | null;
   occurredAt?: number; source: Source; pending?: boolean; splitWays?: number; splitWith?: string; paidBy?: string;
+  sub?: string; tags?: string[];
   /** For callers that may log the same expense twice, e.g. a bill auto-logged on two devices. */
   id?: string;
 }
@@ -394,6 +458,7 @@ export function addExpense(input: NewExpense): Expense {
     occurredAt: input.occurredAt ?? Date.now(), createdAt: Date.now(), source: input.source,
     pending: input.pending ?? false, splitWays: Math.max(input.splitWays ?? 1, 1), splitWith: input.splitWith ?? "",
     exclude: false, recurring: false, ...(input.paidBy ? { paidBy: input.paidBy } : {}),
+    ...(input.sub ? { sub: input.sub } : {}), ...(input.tags?.length ? { tags: input.tags } : {}),
   };
   set({ expenses: sortExpenses([e, ...state.expenses]) });
   void persist("expenses", e);
@@ -491,7 +556,56 @@ const sortTransfers = (list: Transfer[]) => [...list].sort((a, b) => b.occurredA
  * owed, so money into a card pays it down and money out of it adds to the debt.
  */
 export const moneyIn = (a: Account, amount: number): Account =>
-  ({ ...a, balance: a.balance + (a.kind === "card" ? -amount : amount), updatedAt: Date.now() });
+  ({ ...a, balance: liveBalance(a) + (a.kind === "card" ? -amount : amount), updatedAt: Date.now() });
+
+const nameKey = (v: string) => v.trim().toLowerCase();
+const isAccount = (a: Account, name: string) => !!name && nameKey(name) === nameKey(a.name);
+
+/**
+ * What came into an account (income) minus what went out (expenses paid from it) after `since`.
+ * Split expenses paid by someone else never left your account.
+ */
+function netFlow(a: Account, since: number, s: Pick<State, "expenses" | "incomes"> = state): { in: number; out: number } {
+  let inflow = 0, out = 0;
+  for (const e of s.expenses) if (!e.pending && !e.paidBy && e.occurredAt > since && isAccount(a, e.account)) out += e.amount;
+  for (const x of s.incomes) if (x.receivedAt > since && isAccount(a, x.account)) inflow += x.amount;
+  return { in: inflow, out };
+}
+
+/** An account's balance now: for one that follows its transactions, everything since it was last set. */
+export function liveBalance(a: Account, s: Pick<State, "expenses" | "incomes"> = state): number {
+  if (!a.tracked || (a.currency && a.currency !== state.settings.currency)) return a.balance;
+  const f = netFlow(a, a.updatedAt, s);
+  return a.balance + (a.kind === "card" ? f.out - f.in : f.in - f.out);
+}
+
+/** In the home currency, for net worth: a foreign-currency balance at the saved rate (none: left out). */
+export function homeBalance(a: Account, s: State = state): number {
+  const live = liveBalance(a, s);
+  if (!a.currency || a.currency === s.settings.currency) return live;
+  const rate = s.settings.fxRates[a.currency];
+  return rate ? Math.round(live * rate) : 0;
+}
+
+/** Accounts as of now, in the home currency: what net worth and totals are built from. */
+export function accountsNow(s: State = state): Account[] {
+  const now = Date.now();
+  return s.accounts.map((a) => ({ ...a, balance: homeBalance(a, s), updatedAt: Math.max(a.updatedAt, now) }));
+}
+
+/** A credit card's bill: due amount and date from its statement and due days. */
+export function cardStatus(a: Account, s: State = state, now = new Date()): CardBill | null {
+  if (a.kind !== "card" || !a.statementDay || !a.dueDay) return null;
+  const owed = liveBalance(a, s);
+  let spentSince: number | null = null;
+  if (a.tracked) {
+    const since = cardCycle(a.statementDay, a.dueDay, now).lastStatement.getTime() - 1;
+    // Only charges after the balance was last set are known; before that, assume they're in the bill.
+    const f = netFlow(a, Math.max(since, a.updatedAt), s);
+    spentSince = Math.max(0, f.out - f.in);
+  }
+  return cardBill(owed, spentSince, a.statementDay, a.dueDay, now);
+}
 
 function applyTransfer(t: Transfer, undo: boolean) {
   const n = undo ? -t.amount : t.amount;
@@ -502,11 +616,13 @@ function applyTransfer(t: Transfer, undo: boolean) {
   if (to) saveAccount(moneyIn(to, n));
 }
 
-export function addTransfer(input: { fromId: string; toId: string; amount: number; note: string; occurredAt: number }): Transfer | null {
+export function addTransfer(input: { fromId: string; toId: string; amount: number; note: string; occurredAt: number; id?: string }): Transfer | null {
   const from = state.accounts.find((a) => a.id === input.fromId);
   const to = state.accounts.find((a) => a.id === input.toId);
   if (!from || !to || from.id === to.id || !(input.amount > 0)) return null;
-  const t: Transfer = { id: uid(), ...input, fromName: from.name, toName: to.name, createdAt: Date.now() };
+  if (input.id && state.transfers.some((x) => x.id === input.id)) return null;
+  const { id, ...rest } = input;
+  const t: Transfer = { id: id ?? uid(), ...rest, fromName: from.name, toName: to.name, createdAt: Date.now() };
   applyTransfer(t, false);
   set({ transfers: sortTransfers([t, ...state.transfers]) });
   void persist("transfers", t);
@@ -527,6 +643,36 @@ export function deleteTransfer(id: string, withUndo = true) {
       void persist("transfers", t);
     });
   }
+}
+
+// ---------- repeating transfers ----------
+
+export function saveScheduledTransfer(t: ScheduledTransfer) {
+  setSettings({ scheduledTransfers: [...state.settings.scheduledTransfers.filter((x) => x.id !== t.id), t] });
+}
+export function deleteScheduledTransfer(id: string) {
+  setSettings({ scheduledTransfers: state.settings.scheduledTransfers.filter((x) => x.id !== id) });
+}
+
+/** Makes this month's repeating transfers whose day has come. The transfer ID is fixed per rule and month. */
+export function runDueTransfers(now = new Date()) {
+  const key = monthKey(now);
+  for (const rule of state.settings.scheduledTransfers) {
+    if (rule.lastLoggedMonth === key || rule.day > now.getDate()) continue;
+    const due = new Date(now.getFullYear(), now.getMonth(), rule.day, 9);
+    addTransfer({ id: `st-${rule.id}-${key}`, fromId: rule.fromId, toId: rule.toId, amount: rule.amount, note: rule.note || "Repeating transfer",
+      occurredAt: due.getTime() <= now.getTime() ? due.getTime() : now.getTime() });
+    saveScheduledTransfer({ ...rule, lastLoggedMonth: key });
+  }
+}
+
+// ---------- budgets for a week, month or year ----------
+
+/** What a category budget's period has spent so far (your share, counted expenses only). */
+export function budgetSpent(b: CategoryBudget, s: State = state, now = new Date()): number {
+  const [start, end] = periodBounds(b.period ?? "month", now);
+  return s.expenses.filter((e) => counts(e) && e.category === b.category && e.occurredAt >= start.getTime() && e.occurredAt < end.getTime())
+    .reduce((t, e) => t + share(e), 0);
 }
 
 // ---------- people: money lent, borrowed and paid back ----------
@@ -742,11 +888,12 @@ export function runDueIncome(now = new Date()) {
 
 // ---------- recurring ----------
 
-export function nextDue(bill: Bill, from = new Date()): Date {
-  const today = new Date(from.getFullYear(), from.getMonth(), from.getDate());
-  const thisMonth = new Date(from.getFullYear(), from.getMonth(), bill.day);
-  return thisMonth >= today ? thisMonth : new Date(from.getFullYear(), from.getMonth() + 1, bill.day);
-}
+export const nextDue = (bill: Bill, from = new Date()): Date => nextDueDate(bill, from);
+
+/** True when this period's payment (this week, month or year) is already in expenses. */
+export const billPaid = (bill: Bill, now = new Date()) => bill.lastLoggedMonth === periodKey(bill, now);
+/** True when this period's due date has come and its payment isn't in expenses yet. */
+export const billOverdue = (bill: Bill, now = new Date()) => !billPaid(bill, now) && dueInPeriod(bill, now).getTime() <= now.getTime();
 
 export function makeRecurring(e: Expense) {
   updateExpense(e.id, { recurring: true });
@@ -760,10 +907,10 @@ export function makeRecurring(e: Expense) {
   });
 }
 
-/** Logs a bill's payment for the month as an expense, once: the expense ID is fixed per bill and month. */
+/** Logs a bill's payment for the period as an expense, once: the expense ID is fixed per bill and period. */
 export function logBill(bill: Bill, now = new Date()): Expense {
-  const key = monthKey(now);
-  const due = new Date(now.getFullYear(), now.getMonth(), bill.day, 9);
+  const key = periodKey(bill, now);
+  const due = dueInPeriod(bill, now);
   const e = addExpense({
     id: `bill-${bill.id}-${key}`,
     amount: bill.amount, category: bill.category, merchant: bill.name, account: bill.account,
@@ -774,11 +921,10 @@ export function logBill(bill: Bill, now = new Date()): Expense {
   return e;
 }
 
-/** Bills set to log automatically whose due day has come this month and that aren't logged yet. */
+/** Bills set to log automatically whose due date has come this period and that aren't logged yet. */
 export function runDueBills(now = new Date()) {
-  const key = monthKey(now);
   for (const bill of state.bills) {
-    if (bill.autoLog && bill.lastLoggedMonth !== key && bill.day <= now.getDate()) logBill(bill, now);
+    if (bill.autoLog && billOverdue(bill, now)) logBill(bill, now);
   }
 }
 
@@ -870,6 +1016,32 @@ export async function undoRestore(): Promise<void> {
   });
   await load();
   reportReplaced(before);
+}
+
+/** Everything as an Excel workbook: one sheet each for expenses, income, transfers, accounts, loans and people. */
+export async function exportXLSX(): Promise<Blob> {
+  const XLSX = await import("xlsx");
+  const { expenses, incomes, transfers, accounts, loans, ledger, settings } = state;
+  const cur = settings.currency;
+  const day = (t: number) => new Date(t).toLocaleDateString("en-CA");
+  const money = (p: number) => Math.round(p) / 100;
+  const book = XLSX.utils.book_new();
+  const sheet = (name: string, rows: Record<string, unknown>[]) =>
+    XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet(rows.length ? rows : [{ "": "Nothing here yet" }]), name);
+  sheet("Expenses", expenses.map((e) => ({
+    Date: day(e.occurredAt), [`Amount (${cur})`]: money(e.amount), [`Your share (${cur})`]: money(share(e)),
+    Category: categoryMeta(e.category).title, Subcategory: e.sub ?? "", Tags: (e.tags ?? []).map((t) => `#${t}`).join(" "),
+    Merchant: e.merchant, Note: e.note, "Paid from": e.account, "Split with": e.splitWith, "Paid by": e.paidBy ?? "",
+    "Foreign amount": e.fx ? `${money(e.fx.amount)} ${e.fx.currency}` : "", Status: e.pending ? "pending" : e.exclude ? "not in budget" : "",
+  })));
+  sheet("Income", incomes.map((x) => ({ Date: day(x.receivedAt), [`Amount (${cur})`]: money(x.amount), Source: x.source, Account: x.account, Note: x.note })));
+  sheet("Transfers", transfers.map((t) => ({ Date: day(t.occurredAt), From: t.fromName, To: t.toName, [`Amount (${cur})`]: money(t.amount), Note: t.note })));
+  sheet("Accounts", accounts.map((a) => ({ Name: a.name, Type: ACCOUNT_KIND_LABEL[a.kind], Balance: money(liveBalance(a)), Currency: a.currency ?? cur })));
+  sheet("Loans", loans.map((l) => ({ Name: l.name, Lender: l.lender, Borrowed: money(l.principal), "Rate %": l.ratePct, Months: l.months, EMI: money(l.emi),
+    "First EMI": day(l.firstDueAt) })));
+  sheet("People", ledger.map((x) => ({ Date: day(x.occurredAt), Person: x.person, Kind: x.kind, [`They owe you (${cur})`]: money(x.amount), Note: x.note })));
+  const data = XLSX.write(book, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
+  return new Blob([data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
 }
 
 export function exportCSV(): string {

@@ -11,6 +11,13 @@ export interface ParsedExpense {
   splitWays: number;
   account: string | null;
   date: Date;
+  /** "#goa #trip" → ["goa", "trip"]. */
+  tags: string[];
+}
+
+/** Tags in free text: "#goa", "#work-trip". Lowercase, without the #. */
+export function tagsIn(text: string): string[] {
+  return [...new Set([...text.matchAll(/(?:^|\s)#([\p{L}\p{N}][\p{L}\p{N}_-]{0,29})/gu)].map((m) => m[1].toLowerCase()))];
 }
 
 export const yourShare = (amount: number, ways: number) => Math.floor(amount / Math.max(ways, 1));
@@ -24,7 +31,8 @@ function cut(text: string, m: RegExpExecArray): string {
 
 /** "lunch 350 at chutneys, split with arjun" → structured expense. Runs entirely in the browser. */
 export function parseExpense(line: string, now = new Date()): ParsedExpense | null {
-  let text = " " + line.toLowerCase().replace(/[₹$€£৳]/g, " ").replace(/\t/g, " ") + " ";
+  const tags = tagsIn(line);
+  let text = " " + line.toLowerCase().replace(/(?:^|\s)#[\p{L}\p{N}][\p{L}\p{N}_-]*/gu, " ").replace(/[₹$€£৳]/g, " ").replace(/\t/g, " ") + " ";
   text = text.replace(/\b(rs\.?|inr|rupees?)\s*/gi, " ");
 
   let splitWays = 1;
@@ -100,6 +108,7 @@ export function parseExpense(line: string, now = new Date()): ParsedExpense | nu
     splitWays,
     account,
     date,
+    tags,
   };
 }
 

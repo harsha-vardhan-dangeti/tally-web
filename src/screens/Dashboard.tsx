@@ -1,8 +1,9 @@
 import { useContext, useMemo, useState, type ReactNode } from "react";
 import {
-  backupOverdueDays, budgetSnapshot, counts, inMonth, monthSpent, nextDue, recurringSuggestions, share, useTally, type Chip, type Expense,
+  accountsNow, backupOverdueDays, budgetSnapshot, budgetSpent, cardStatus, counts, inMonth, monthSpent, nextDue, recurringSuggestions, useTally,
+  type Chip, type Expense,
 } from "../data/store";
-import { addMonths, daysInMonth, monthKey, monthRange } from "../core/budget";
+import { addMonths, dayOfMonth, daysInMonth, monthKey, monthLabel, monthRange } from "../core/budget";
 import { people, peopleTotals } from "../core/people";
 import { loanStatus } from "../core/loans";
 import { dateLocale, t } from "../i18n";
@@ -42,8 +43,10 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
   const rate = savingsRate(income, snap.spent);
   const recent = s.expenses.filter((e) => !e.pending).slice(0, 5);
   const found = useMemo(() => recurringSuggestions(s, now.getTime()), [s.expenses, s.bills, s.settings.dismissedRecurring]); // eslint-disable-line react-hooks/exhaustive-deps
-  const note = useMemo(() => insights(s.expenses, now, now, s.settings.monthlyBudget, s.budgets)[0], [s.expenses, s.budgets, s.settings.monthlyBudget]); // eslint-disable-line react-hooks/exhaustive-deps
-  const series = useMemo(() => netWorthSeries(s.accounts, now, 6, s.loans), [s.accounts, s.loans]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Insights compare months, so only monthly budgets go in.
+  const note = useMemo(() => insights(s.expenses, now, now, s.settings.monthlyBudget, s.budgets.filter((b) => !b.period || b.period === "month"))[0],
+    [s.expenses, s.budgets, s.settings.monthlyBudget]); // eslint-disable-line react-hooks/exhaustive-deps
+  const series = useMemo(() => netWorthSeries(accountsNow(s), now, 6, s.loans), [s.accounts, s.loans, s.expenses, s.incomes]); // eslint-disable-line react-hooks/exhaustive-deps
   const folks = useMemo(() => people(s.expenses, s.ledger), [s.expenses, s.ledger]);
   const owing = folks.filter((p) => p.balance !== 0);
   const owe = peopleTotals(folks);
@@ -53,7 +56,7 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
   const lastKey = monthKey(lastMonth);
   const [recapSeen, setRecapSeen] = useState(() => seenRecap(lastKey));
   const lastMonthCount = useMemo(() => inMonth(s.expenses, lastMonth).filter(counts).length, [s.expenses, lastKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  const offerRecap = now.getDate() <= 7 && lastMonthCount >= 5 && !recapSeen;
+  const offerRecap = dayOfMonth(now) <= 7 && lastMonthCount >= 5 && !recapSeen;
   const markRecapSeen = () => { try { localStorage.setItem(RECAP_SEEN, lastKey); } catch { /* storage blocked */ } setRecapSeen(true); };
   const netWorth = series[series.length - 1]?.net ?? 0;
 
@@ -66,11 +69,15 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
       const next = loanStatus(l, now.getTime()).nextDue;
       return next ? [{ key: `loan-${l.id}`, name: `${l.name} EMI`, amount: l.emi, at: next.getTime(), category: l.category, found: false }] : [];
     }),
+    ...s.accounts.flatMap((a) => {
+      const bill = cardStatus(a, s, now);
+      return bill?.due ? [{ key: `card-${a.id}`, name: `${a.name} bill`, amount: bill.due.amount, at: bill.due.date.getTime(), category: "bills", found: false }] : [];
+    }),
   ].filter((u) => u.at <= horizon).sort((a, b) => a.at - b.at);
   const upcomingTotal = upcoming.reduce((t, u) => t + u.amount, 0);
 
   const budgets = [...s.budgets].map((b) => {
-    const spent = month.filter((e) => counts(e) && e.category === b.category).reduce((t, e) => t + share(e), 0);
+    const spent = budgetSpent(b, s, now);
     return { ...b, spent, f: b.limit ? spent / b.limit : 0 };
   }).sort((a, b) => b.f - a.f).slice(0, 3);
 
@@ -103,7 +110,7 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
           </div>
           {snap.hasBudget && <span className="pill num">{t("{spent} of {budget}", { spent: formatMoney(snap.spent), budget: formatMoney(snap.budget) })}</span>}
         </div>
-        <TallyMarks days={days} today={now.getDate()} />
+        <TallyMarks days={days} today={dayOfMonth(now)} />
         {snap.hasBudget ? (
           <div className="stats">
             <div className="col"><span>{snap.left >= 0 ? t("Left this month") : t("Over budget")}</span><span className="num">{formatMoney(Math.abs(snap.left))}</span></div>
@@ -129,7 +136,7 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
             <div className="banner info recap-banner">
               <Icon name="sparkle" size={20} />
               <button className="grow" onClick={() => { markRecapSeen(); shell.openRecapShare("last"); }}>
-                {t("Your {month} recap is ready. Share it?", { month: lastMonth.toLocaleDateString(dateLocale(), { month: "long" }) })}
+                {t("Your {month} recap is ready. Share it?", { month: monthLabel(lastMonth, dateLocale()) })}
               </button>
               <button className="icon-btn" aria-label={t("Dismiss")} onClick={markRecapSeen}><Icon name="close" size={16} /></button>
             </div>
@@ -215,7 +222,7 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
 
         <DashCard title={t("Budgets")} action={t("Plan")} onAction={() => go("plan")}>
           {snap.hasBudget && <BudgetMini label={t("This month")} spent={monthSpent(s.expenses, now)} limit={snap.budget} />}
-          {budgets.map((b) => <BudgetMini key={b.category} label={categoryMeta(b.category).title} spent={b.spent} limit={b.limit} />)}
+          {budgets.map((b) => <BudgetMini key={b.category} label={`${categoryMeta(b.category).title}${b.period === "week" ? " · this week" : b.period === "year" ? " · this year" : ""}`} spent={b.spent} limit={b.limit} />)}
           {!snap.hasBudget && budgets.length === 0 && (
             <p className="t-muted small" style={{ margin: 0 }}>{t("Set a monthly budget, and limits for the categories you overspend on.")}</p>
           )}

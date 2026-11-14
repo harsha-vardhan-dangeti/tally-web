@@ -76,8 +76,67 @@ export function formatMoney(paise: number, opts: { showPaise?: boolean; signed?:
 const SYMBOLS = /[₹$€£৳]/g;
 const CODES = new RegExp(`\\b(${[...CURRENCIES.map((c) => c.code), "rs", "rm", "dhs?"].join("|")})\\b\\.?`, "gi");
 
-/** Parses "350", "1,250.50", "₹ 99", "$12", "AED 40", "1.5k" into minor units; null if invalid or not positive. */
+/**
+ * Works out a sum typed into an amount field: "250+120", "1800/4", "3 x 120", "(450+60)*2".
+ * Returns null for anything that isn't plain arithmetic. A tiny parser, not eval.
+ */
+export function evaluate(expr: string): number | null {
+  const src = expr.replace(/[×xX]/g, "*").replace(/÷/g, "/").replace(/[−–]/g, "-").replace(/\s+/g, "");
+  if (!/^[\d.+\-*/()]+$/.test(src) || !/\d/.test(src)) return null;
+  let i = 0;
+  const peek = () => src[i];
+  function number(): number | null {
+    if (peek() === "(") {
+      i++;
+      const v = sum();
+      if (v === null || peek() !== ")") return null;
+      i++;
+      return v;
+    }
+    if (peek() === "-") { i++; const v = number(); return v === null ? null : -v; }
+    const m = /^\d*\.?\d+|^\d+\./.exec(src.slice(i));
+    if (!m) return null;
+    i += m[0].length;
+    return parseFloat(m[0]);
+  }
+  function product(): number | null {
+    let v = number();
+    while (v !== null && (peek() === "*" || peek() === "/")) {
+      const op = src[i++];
+      const r = number();
+      if (r === null || (op === "/" && r === 0)) return null;
+      v = op === "*" ? v * r : v / r;
+    }
+    return v;
+  }
+  function sum(): number | null {
+    let v = product();
+    while (v !== null && (peek() === "+" || peek() === "-")) {
+      const op = src[i++];
+      const r = product();
+      if (r === null) return null;
+      v = op === "+" ? v + r : v - r;
+    }
+    return v;
+  }
+  const v = sum();
+  return v !== null && i === src.length && Number.isFinite(v) ? v : null;
+}
+
+/** True when the text is a sum rather than a single number, so the field can show the result. */
+export const isSum = (input: string) => /\d\s*[-+*/×xX÷−]\s*[\d(]/.test(input.replace(/,/g, ""));
+
+/**
+ * Parses "350", "1,250.50", "₹ 99", "$12", "AED 40", "1.5k" — and sums like "250+120" — into
+ * minor units; null if invalid or not positive.
+ */
 export function parsePaise(input: string): number | null {
+  if (isSum(input)) {
+    const v = evaluate(input.toLowerCase().replace(SYMBOLS, "").replace(CODES, "").replace(/,/g, ""));
+    if (v === null) return null;
+    const p = Math.round(v * 100);
+    return p > 0 ? p : null;
+  }
   let cleaned = input
     .toLowerCase()
     .replace(SYMBOLS, "")

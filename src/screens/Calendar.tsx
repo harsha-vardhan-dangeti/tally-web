@@ -2,29 +2,29 @@ import { useMemo, useState } from "react";
 import {
   counts, deleteIncome, expenseTitle, runDueIncome, saveIncome, saveRecurringIncome, share, uid, useTally, type Expense, type Income,
 } from "../data/store";
-import { monthKey, monthRange, sameDay, startOfDay } from "../core/budget";
+import { dayOfMonth, daysInMonth, monthKey, monthLabel, monthRange, sameDay, startOfDay } from "../core/budget";
 import { compactMoney, formatMoney, parsePaise, currencySymbol } from "../core/money";
 import { Icon } from "../ui/icons";
 import { Empty, Field, Sheet, Toggle } from "../ui/components";
 import { ExpenseRowView } from "./Activity";
 
-/** Spent and received per day of the month. Index 0 is the 1st. */
+/** Spent and received per day of the budget month. Index 0 is its first day. */
 function dayTotals(expenses: Expense[], incomes: Income[], month: Date) {
   const [start, end] = monthRange(month);
-  const days = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+  const days = daysInMonth(month);
   const spent = Array.from({ length: days }, () => 0);
   const received = Array.from({ length: days }, () => 0);
   const entries = Array.from({ length: days }, () => 0);
   const inMonth = (t: number) => t >= start.getTime() && t < end.getTime();
   for (const e of expenses) {
     if (e.pending || !inMonth(e.occurredAt)) continue;
-    const i = new Date(e.occurredAt).getDate() - 1;
+    const i = dayOfMonth(new Date(e.occurredAt)) - 1;
     entries[i]++;
     if (counts(e)) spent[i] += share(e);
   }
   for (const x of incomes) {
     if (!inMonth(x.receivedAt)) continue;
-    const i = new Date(x.receivedAt).getDate() - 1;
+    const i = dayOfMonth(new Date(x.receivedAt)) - 1;
     entries[i]++;
     received[i] += x.amount;
   }
@@ -46,14 +46,15 @@ export function MonthCalendar({ month, onPrev, onNext, onPickDay }: {
   const totalSpent = t.spent.reduce((a, b) => a + b, 0);
   const totalIn = t.received.reduce((a, b) => a + b, 0);
   const net = totalIn - totalSpent;
-  const lead = (new Date(month.getFullYear(), month.getMonth(), 1).getDay() + 6) % 7;
+  const first = monthRange(month)[0];
+  const lead = (first.getDay() + 6) % 7;
   const today = startOfDay(now).getTime();
 
   return (
-    <section className="card month-cal" aria-label={`${month.toLocaleDateString([], { month: "long", year: "numeric" })} calendar`}>
+    <section className="card month-cal" aria-label={`${monthLabel(month, undefined, true)} calendar`}>
       <header className="month-cal-head">
         <button className="icon-btn" onClick={onPrev} aria-label="Previous month"><Icon name="back" size={18} /></button>
-        <h2>{month.toLocaleDateString([], { month: "long", year: "numeric" })}</h2>
+        <h2>{monthLabel(month, undefined, true)}</h2>
         <button className="icon-btn" onClick={onNext} disabled={!onNext} aria-label="Next month"><Icon name="next" size={18} /></button>
       </header>
       <dl className="month-cal-sum">
@@ -68,7 +69,7 @@ export function MonthCalendar({ month, onPrev, onNext, onPickDay }: {
         ))}
         {Array.from({ length: lead }, (_, i) => <span key={`b${i}`} aria-hidden="true" />)}
         {t.spent.map((spent, i) => {
-          const day = new Date(month.getFullYear(), month.getMonth(), i + 1);
+          const day = new Date(first.getFullYear(), first.getMonth(), first.getDate() + i);
           const future = day.getTime() > today;
           const isToday = day.getTime() === today;
           const received = t.received[i];
@@ -76,7 +77,7 @@ export function MonthCalendar({ month, onPrev, onNext, onPickDay }: {
           return (
             <button key={i} className={`month-day${isToday ? " today" : ""}${future ? " future" : ""}${t.entries[i] ? " has" : ""}`}
               disabled={future} onClick={() => onPickDay(day)} aria-label={future ? `${fullDate(day)}: still to come` : label}>
-              <span className="month-day-n">{i + 1}</span>
+              <span className="month-day-n">{day.getDate()}</span>
               {spent > 0 && <span className="month-day-out num">−{compactMoney(spent)}</span>}
               {received > 0 && <span className="month-day-in num">+{compactMoney(received)}</span>}
             </button>

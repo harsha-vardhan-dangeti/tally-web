@@ -69,6 +69,14 @@ A new release installs in the background and waits. `src/data/updates.ts` shows 
 - **Share your month:** a 1080×1350 recap picture (`src/ui/recapImage.ts`), with amounts hidden unless you turn them on. Offered on Home in the first week of each month.
 - **Languages and currencies:** English, Hindi, Telugu and Tamil (`src/i18n/`, English text is the key; `i18n.test.ts` fails if a string is missing), 17 home currencies, and amounts paid abroad with a remembered rate.
 - **Feedback, usage counts and crash reports:** sent to `api/collect.ts`, which validates them and writes to the `usage_events`, `client_errors` and `feedback` tables (no browser access). See "Reading feedback and usage" below.
+- **Month start day** (Settings → Month starts on): budget months can run from payday, e.g. 25 Oct – 24 Nov. `monthRange`, `addMonths`, `daysInMonth` and `dayOfMonth` in `src/core/budget.ts` follow it everywhere.
+- **Subcategories and tags:** subcategories per category (Settings → Categories), picked in Quick add or the expense; `#tags` in Smart add or on the expense, searchable (`#goa`) and filterable in Reports. Reports can group by subcategory or tag, and has weekly and yearly periods.
+- **Calculator:** amount fields take sums (`250+120`, `1800/4`), and Quick add's keypad has + − × ÷ (`evaluate` in `src/core/money.ts`, no eval).
+- **Budgets per week, month or year** for each category.
+- **Accounts that follow transactions:** an account can update from expenses paid from it and income into it (matched by name), from the balance you last set (`liveBalance` in `src/data/store.ts`). Credit cards take a statement day and due day and show the bill and due date (`src/core/cards.ts`), which also appears in Coming up. Accounts can hold another currency, converted for net worth.
+- **Repeats:** bills every week, month or year (`src/core/schedule.ts`) and transfers that repeat monthly, like a SIP.
+- **Excel export** (Settings → Export Excel): expenses, income, transfers, accounts, loans and people as one workbook.
+- **App lock delay:** ask again on leaving, or after 1, 5, 15 or 60 minutes away.
 - **Inbox:** captured payments wait for a one-tap confirm.
 - **Recap:** month-end forecast, change vs the same point last month, biggest spend, no-spend days, logging streak.
 - **Regular income:** salary and other monthly income add themselves on their day (Plan → Regular income, or "Repeats every month" on an income entry).

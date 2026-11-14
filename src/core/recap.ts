@@ -1,4 +1,4 @@
-import { daysInMonth, monthRange } from "./budget";
+import { dayOfMonth, daysInMonth, monthRange } from "./budget";
 import { yourShare } from "./smartParser";
 
 /** The numbers on a month's shareable recap card. Pure: give it the month's expenses. */
@@ -21,7 +21,7 @@ export interface RecapData {
 export function recapData(expenses: RecapExpense[], month: Date, budget: number, now = new Date()): RecapData {
   const [start, end] = monthRange(month);
   const complete = now.getTime() >= end.getTime();
-  const days = complete ? daysInMonth(month) : Math.max(now.getDate(), 1);
+  const days = complete ? daysInMonth(month) : Math.max(dayOfMonth(now), 1);
   const list = expenses.filter((e) => !e.pending && !e.exclude && e.occurredAt >= start.getTime() && e.occurredAt < end.getTime());
   const spent = list.reduce((t, e) => t + yourShare(e.amount, e.splitWays), 0);
   const byCat = new Map<string, number>();
@@ -34,7 +34,7 @@ export function recapData(expenses: RecapExpense[], month: Date, budget: number,
     if (other) { other.amount += rest; other.share = other.amount / spent; }
     else top.push({ id: "other", amount: rest, share: rest / spent });
   }
-  const spendDays = new Set(list.map((e) => new Date(e.occurredAt).getDate()));
+  const spendDays = new Set(list.map((e) => dayOfMonth(new Date(e.occurredAt))));
   const noSpendDays = Array.from({ length: days }, (_, i) => i + 1).filter((d) => !spendDays.has(d)).length;
   return { month, days, complete, spent, budget, count: list.length, noSpendDays, top };
 }

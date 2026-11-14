@@ -1,11 +1,11 @@
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  budgetSnapshot, counts, deleteExpense, eraseAll, exportCSV, exportJSON, expenseTitle, getState, inMonth, restoreBackup,
+  budgetSnapshot, counts, deleteExpense, eraseAll, exportCSV, exportJSON, exportXLSX, expenseTitle, getState, inMonth, restoreBackup,
   setSettings, share, showToast, SOURCE_LABEL, undoRestore, updateExpense, useTally, type Expense,
 } from "../data/store";
 import { BackupError, parseBackup, type Backup } from "../data/backup";
-import { backupFileName, download } from "../ui/download";
-import { addMonths, snapshot, startOfDay } from "../core/budget";
+import { backupFileName, download, downloadBlob } from "../ui/download";
+import { addMonths, dayOfMonth, monthLabel, snapshot, startOfDay } from "../core/budget";
 import { allCategories, categoryMeta, pickableCategories, type Category } from "../core/categories";
 import { CURRENCIES, currencySymbol, formatMoney, parsePaise } from "../core/money";
 import { LANGUAGES, t, type Lang } from "../i18n";
@@ -109,13 +109,16 @@ export function Search({ open, onClose, onOpen }: { open: boolean; onClose: () =
   const results = useMemo(() => {
     const query = q.trim().toLowerCase();
     return s.expenses.filter((e) => !e.pending && (!cat || e.category === cat) &&
-      (!query || [e.merchant, e.note, e.account, categoryMeta(e.category).title, (e.amount / 100).toString()].some((f) => f.toLowerCase().includes(query))));
+      (!query || (query.startsWith("#")
+        ? (e.tags ?? []).some((x) => `#${x}`.startsWith(query))
+        : [e.merchant, e.note, e.account, categoryMeta(e.category).title, e.sub ?? "", ...(e.tags ?? []), (e.amount / 100).toString()]
+          .some((f) => f.toLowerCase().includes(query)))));
   }, [q, cat, s.expenses]);
   const total = results.reduce((t, e) => t + share(e), 0);
 
   return (
     <Sheet open={open} onClose={onClose} title="Search">
-      <input type="search" autoFocus placeholder="Merchant, note, amount…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search expenses" />
+      <input type="search" autoFocus placeholder="Merchant, note, amount or #tag…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search expenses" />
       <div className="chips" style={{ margin: "0 -20px", padding: "2px 20px" }}>
         {pickableCategories().map((c) => (
           <button key={c} className={`chip${cat === c ? " on" : ""}`} aria-pressed={cat === c} onClick={() => setCat(cat === c ? null : c)}>{categoryMeta(c).title}</button>
@@ -138,13 +141,13 @@ export function Recap({ open, onClose, onShare }: { open: boolean; onClose: () =
   const snap = budgetSnapshot(s, now);
   const thisMonth = inMonth(s.expenses, now).filter(counts);
   const last = addMonths(now, -1);
-  const lastSoFar = inMonth(s.expenses, last).filter((e) => counts(e) && new Date(e.occurredAt).getDate() <= now.getDate());
+  const lastSoFar = inMonth(s.expenses, last).filter((e) => counts(e) && dayOfMonth(new Date(e.occurredAt)) <= dayOfMonth(now));
   const sum = (l: Expense[], c: Category) => l.filter((e) => e.category === c).reduce((t, e) => t + share(e), 0);
   const changes = allCategories().map(({ id: c }) => ({ c, now: sum(thisMonth, c), before: sum(lastSoFar, c) }))
     .filter((x) => x.now || x.before).sort((a, b) => Math.abs(b.now - b.before) - Math.abs(a.now - a.before)).slice(0, 5);
   const biggest = [...thisMonth].sort((a, b) => share(b) - share(a))[0];
-  const spendDays = new Set(thisMonth.map((e) => new Date(e.occurredAt).getDate()));
-  const noSpend = Array.from({ length: now.getDate() - 1 }, (_, i) => i + 1).filter((d) => !spendDays.has(d)).length;
+  const spendDays = new Set(thisMonth.map((e) => dayOfMonth(new Date(e.occurredAt))));
+  const noSpend = Array.from({ length: dayOfMonth(now) - 1 }, (_, i) => i + 1).filter((d) => !spendDays.has(d)).length;
   const logged = new Set(s.expenses.filter((e) => !e.pending).map((e) => startOfDay(new Date(e.occurredAt)).getTime()));
   let streak = 0;
   let d = startOfDay(now);
@@ -154,7 +157,7 @@ export function Recap({ open, onClose, onShare }: { open: boolean; onClose: () =
   const projSnap = snapshot(snap.budget, snap.projected, 0, now);
 
   return (
-    <Sheet open={open} onClose={onClose} title={t("{month} so far", { month: now.toLocaleDateString([], { month: "long" }) })}
+    <Sheet open={open} onClose={onClose} title={t("{month} so far", { month: monthLabel(now) })}
       actions={<button className="btn ghost" onClick={onShare}><Icon name="upload" size={16} />{t("Share")}</button>}>
       <div className="card col gap8" style={{ background: "var(--surface-2)" }}>
         <span className="t-muted small">Forecast for month end</span>
@@ -284,6 +287,13 @@ export function Settings({ open, onClose, onFeedback }: { open: boolean; onClose
         )}
         <p className="t-muted tiny" style={{ margin: 0 }}>{t("Changing the currency changes the symbol only. Amounts you've logged aren't converted.")}</p>
 
+        <Field label={t("Month starts on")}>
+          <select value={s.settings.monthStartDay} onChange={(e) => setSettings({ monthStartDay: Number(e.target.value) })}>
+            {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{d === 1 ? t("The 1st (calendar month)") : t("Day {n}", { n: d })}</option>)}
+          </select>
+        </Field>
+        <p className="t-muted tiny" style={{ margin: 0 }}>{t("Pick the day your salary arrives, and your budget, safe to spend and reports run from that day to the day before it next month.")}</p>
+
         <AccountSection />
 
         <div className="card flush divided" style={{ background: "var(--surface-2)", boxShadow: "none" }}>
@@ -322,6 +332,18 @@ export function Settings({ open, onClose, onFeedback }: { open: boolean; onClose
               if (id) { setSettings({ lockCredentialId: id }); showToast("App lock on"); }
               else showToast("Couldn't turn on the lock in this browser");
             }} />
+          {s.settings.lockCredentialId && (
+            <label className="toggle-row">
+              <span className="t-strong">{t("Ask again after")}</span>
+              <select value={s.settings.lockAfter} onChange={(e) => setSettings({ lockAfter: Number(e.target.value) })} style={{ width: "auto" }}>
+                <option value={0}>{t("Leaving the app")}</option>
+                <option value={1}>{t("1 minute away")}</option>
+                <option value={5}>{t("5 minutes away")}</option>
+                <option value={15}>{t("15 minutes away")}</option>
+                <option value={60}>{t("1 hour away")}</option>
+              </select>
+            </label>
+          )}
         </div>
 
         <div className="col gap8">
@@ -338,6 +360,10 @@ export function Settings({ open, onClose, onFeedback }: { open: boolean; onClose
             </button>
             <button className="btn" onClick={() => fileRef.current?.click()}><Icon name="upload" size={18} />Restore</button>
             <button className="btn" onClick={() => download(`tally-${stamp}.csv`, exportCSV(), "text/csv")}>Export CSV</button>
+            <button className="btn" onClick={async () => {
+              try { downloadBlob(`tally-${stamp}.xlsx`, await exportXLSX()); }
+              catch { showToast(t("Couldn't make the Excel file. Check your connection and try again.")); }
+            }}><Icon name="download" size={18} />{t("Export Excel")}</button>
             <button className="btn" onClick={() => setImporting(true)}><Icon name="upload" size={18} />Import bank statement</button>
             <input ref={fileRef} type="file" accept="application/json,.json" hidden onChange={async (e) => {
               const f = e.target.files?.[0];

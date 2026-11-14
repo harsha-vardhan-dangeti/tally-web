@@ -66,11 +66,25 @@ export function Detail({ id, onClose }: { id: string | null; onClose: () => void
         </div>
       )}
 
-      <Field label="Category">
-        <select value={e.category} onChange={(ev) => set({ category: ev.target.value as Category })}>
-          {pickableCategories(e.category).map((c) => <option key={c} value={c}>{categoryMeta(c).title}</option>)}
-        </select>
-      </Field>
+      <div className="row gap8">
+        <Field label="Category">
+          <select value={e.category} onChange={(ev) => {
+            const category = ev.target.value as Category;
+            // A subcategory belongs to its category; moving the expense drops one that doesn't exist there.
+            set({ category, sub: e.sub && (s.settings.subcategories[category] ?? []).includes(e.sub) ? e.sub : undefined });
+          }}>
+            {pickableCategories(e.category).map((c) => <option key={c} value={c}>{categoryMeta(c).title}</option>)}
+          </select>
+        </Field>
+        {((s.settings.subcategories[e.category] ?? []).length > 0 || e.sub) && (
+          <Field label="Subcategory">
+            <select value={e.sub ?? ""} onChange={(ev) => set({ sub: ev.target.value || undefined })}>
+              <option value="">None</option>
+              {[...new Set([...(s.settings.subcategories[e.category] ?? []), ...(e.sub ? [e.sub] : [])])].map((x) => <option key={x} value={x}>{x}</option>)}
+            </select>
+          </Field>
+        )}
+      </div>
       {e.merchant.trim().length >= 2 && openedWith !== null && e.category !== openedWith
         && !s.settings.rules.some((r) => r.match === e.merchant.trim().toLowerCase() && r.category === e.category) && (
         <button className="btn ghost small-btn" style={{ alignSelf: "flex-start", marginTop: -6 }} onClick={() => {
@@ -86,6 +100,7 @@ export function Detail({ id, onClose }: { id: string | null; onClose: () => void
         </Field>
       </div>
       <Field label="Note"><textarea rows={2} value={e.note} onChange={(ev) => set({ note: ev.target.value })} /></Field>
+      <TagsField tags={e.tags ?? []} onChange={(tags) => set({ tags: tags.length ? tags : undefined })} />
 
       <div className="card divided" style={{ background: "var(--surface-2)", padding: "0 14px" }}>
         <Toggle label="Split this expense" hint="Only your share counts toward budgets" checked={e.splitWays > 1}
@@ -181,6 +196,36 @@ function ForeignAmount({ e, onRemove }: { e: Expense; onRemove: () => void }) {
         {e.fx ? t("{paid} at {rate} = {home}", { paid: formatMoney(e.fx.amount, { currency: e.fx.currency, showPaise: true }), rate: e.fx.rate, home: formatMoney(e.amount, { showPaise: true }) })
           : t("Use the rate on your card statement. Tally remembers it for next time.")}
       </span>
+    </div>
+  );
+}
+
+/** Tags typed as "goa, work trip" or "#goa #work"; shown back as chips. */
+function TagsField({ tags, onChange }: { tags: string[]; onChange: (tags: string[]) => void }) {
+  const s = useTally();
+  const [text, setText] = useState("");
+  const known = [...new Set(s.expenses.flatMap((x) => x.tags ?? []))].filter((t) => !tags.includes(t)).slice(0, 8);
+  const add = (raw: string) => {
+    const next = raw.split(/[,#\s]+/).map((x) => x.trim().toLowerCase().slice(0, 30)).filter(Boolean);
+    if (next.length) onChange([...new Set([...tags, ...next])]);
+    setText("");
+  };
+  return (
+    <div className="col gap8">
+      <label className="field">
+        <span>Tags</span>
+        <input type="text" value={text} placeholder={tags.length ? "Add another" : "goa, work trip…"} enterKeyHint="done"
+          onChange={(ev) => setText(ev.target.value)} onBlur={() => add(text)}
+          onKeyDown={(ev) => { if (ev.key === "Enter" || ev.key === ",") { ev.preventDefault(); add(text); } }} />
+      </label>
+      {(tags.length > 0 || known.length > 0) && (
+        <div className="row gap4 wrap">
+          {tags.map((t) => (
+            <button key={t} className="chip on" onClick={() => onChange(tags.filter((x) => x !== t))} aria-label={`Remove tag ${t}`}>#{t} ×</button>
+          ))}
+          {known.map((t) => <button key={t} className="chip dashed" onClick={() => onChange([...tags, t])}>+ #{t}</button>)}
+        </div>
+      )}
     </div>
   );
 }

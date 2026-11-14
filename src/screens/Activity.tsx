@@ -4,7 +4,7 @@ import {
   addExpense, counts, deleteChip, deleteExpense, expenseTitle, inMonth, makeRecurring, saveChip, share,
   showToast, uid, updateExpense, useTally, type Chip, type Expense, type Income,
 } from "../data/store";
-import { addMonths, sameDay, startOfDay } from "../core/budget";
+import { addMonths, monthLabel, sameDay, startOfDay } from "../core/budget";
 import { formatMoney, parsePaise, currencySymbol } from "../core/money";
 import { categoryMeta, pickableCategories, type Category } from "../core/categories";
 import { CategoryIcon, Icon } from "../ui/icons";
@@ -20,7 +20,8 @@ export function ExpenseRowView({ e }: { e: Expense }) {
       <div className="grow col gap4">
         <span className="t-strong ellipsis">{expenseTitle(e)}</span>
         <span className="t-muted tiny ellipsis">
-          {categoryMeta(e.category).title} · {e.account} · {time}{e.exclude ? " · not in budget" : ""}
+          {categoryMeta(e.category).title}{e.sub ? ` · ${e.sub}` : ""} · {e.account} · {time}{e.exclude ? " · not in budget" : ""}
+          {e.tags?.length ? ` · ${e.tags.map((x) => `#${x}`).join(" ")}` : ""}
         </span>
       </div>
       <div className="col amt">
@@ -144,7 +145,7 @@ export function Activity({ onOpen, onAdd, onSearch }: { onOpen: (e: Expense) => 
       <div className="activity-bar card">
         <div className="month-switch">
           <button className="icon-btn" onClick={() => setOffset((o) => o - 1)} aria-label="Previous month"><Icon name="back" size={18} /></button>
-          <span className="t-strong">{monthDate.toLocaleDateString([], { month: "long", year: "numeric" })}</span>
+          <span className="t-strong">{monthLabel(monthDate, undefined, true)}</span>
           <button className="icon-btn" onClick={() => setOffset((o) => o + 1)} disabled={isCurrent} aria-label="Next month"><Icon name="next" size={18} /></button>
         </div>
         <dl className="activity-sum">

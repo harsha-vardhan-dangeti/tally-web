@@ -3,6 +3,7 @@ import { sanitizeRules } from "../core/rules";
 import { isCurrency } from "../core/money";
 import { isLang } from "../i18n";
 import type { LedgerKind } from "../core/people";
+import { readSubcategories } from "./store";
 import type {
   Account, AccountKind, Bill, CategoryBudget, Chip, Expense, Goal, Income, LedgerEntry, Loan, RecurringIncome, Settings, Source, Transfer,
 } from "./store";
@@ -61,6 +62,9 @@ function expense(r: unknown, i: number, category: (v: unknown) => Category): Exp
     ...(str(r.paidBy).trim() ? { paidBy: str(r.paidBy).trim() } : {}),
     ...(isRow(r.fx) && isCurrency(r.fx.currency) && paise(r.fx.amount) && typeof r.fx.rate === "number" && r.fx.rate > 0
       ? { fx: { currency: r.fx.currency as string, amount: r.fx.amount as number, rate: r.fx.rate } } : {}),
+    ...(str(r.sub).trim() ? { sub: str(r.sub).trim().slice(0, 30) } : {}),
+    ...(Array.isArray(r.tags) && r.tags.some((t) => typeof t === "string")
+      ? { tags: [...new Set(r.tags.filter((t): t is string => typeof t === "string").map((t) => t.toLowerCase().slice(0, 30)))] } : {}),
   };
 }
 
@@ -101,7 +105,8 @@ export function parseBackup(text: string): Backup {
   });
   const budgets = optionalRows<CategoryBudget>(data.budgets, (r) => {
     const limit = paise(r.limit);
-    return typeof r.category === "string" && known.has(r.category) && limit ? { category: r.category, limit } : null;
+    if (typeof r.category !== "string" || !known.has(r.category) || !limit) return null;
+    return { category: r.category, limit, ...(r.period === "week" || r.period === "year" ? { period: r.period } : {}) };
   });
   const bills = optionalRows<Bill>(data.bills, (r) => {
     const rowId = id(r.id), amount = paise(r.amount), day = int(r.day, 0);
@@ -109,6 +114,9 @@ export function parseBackup(text: string): Backup {
     return {
       id: rowId, name: str(r.name), amount, prevAmount: paise(r.prevAmount) ?? amount, day, category: category(r.category),
       account: str(r.account), isSubscription: bool(r.isSubscription), autoLog: bool(r.autoLog), lastLoggedMonth: str(r.lastLoggedMonth),
+      ...(r.every === "week" || r.every === "year" ? { every: r.every } : {}),
+      ...(Number.isInteger(r.weekday) && (r.weekday as number) >= 0 && (r.weekday as number) <= 6 ? { weekday: r.weekday as number } : {}),
+      ...(Number.isInteger(r.month) && (r.month as number) >= 0 && (r.month as number) <= 11 ? { month: r.month as number } : {}),
     };
   });
   const accounts = optionalRows<Account>(data.accounts, (r) => {
@@ -117,8 +125,13 @@ export function parseBackup(text: string): Backup {
     const history = isRow(r.history)
       ? Object.fromEntries(Object.entries(r.history).filter(([k, v]) => /^\d{4}-\d{2}$/.test(k) && Number.isSafeInteger(v)) as [string, number][])
       : undefined;
+    const dayOk = (v: unknown) => Number.isInteger(v) && (v as number) >= 1 && (v as number) <= 31;
     return { id: rowId, name: str(r.name), kind: r.kind as AccountKind, balance: r.balance as number, order: int(r.order, 0), updatedAt: time(r.updatedAt) ?? Date.now(),
-      ...(history ? { history } : {}) };
+      ...(history ? { history } : {}),
+      ...(r.tracked === true ? { tracked: true } : {}),
+      ...(isCurrency(r.currency) ? { currency: r.currency } : {}),
+      ...(dayOk(r.statementDay) ? { statementDay: r.statementDay as number } : {}),
+      ...(dayOk(r.dueDay) ? { dueDay: r.dueDay as number } : {}) };
   });
   const goals = optionalRows<Goal>(data.goals, (r) => {
     const rowId = id(r.id), target = paise(r.target);
@@ -173,6 +186,9 @@ export function parseBackup(text: string): Backup {
   if (isLang(s.language)) settings.language = s.language;
   if (typeof s.payName === "string") settings.payName = s.payName.slice(0, 60);
   if (typeof s.upiId === "string") settings.upiId = s.upiId.slice(0, 100);
+  if (Number.isInteger(s.monthStartDay) && (s.monthStartDay as number) >= 1 && (s.monthStartDay as number) <= 28) settings.monthStartDay = s.monthStartDay as number;
+  if (isRow(s.subcategories)) settings.subcategories = readSubcategories(s.subcategories);
+  if (typeof s.lockAfter === "number" && [0, 1, 5, 15, 60].includes(s.lockAfter)) settings.lockAfter = s.lockAfter;
   if (Array.isArray(s.rules)) settings.rules = sanitizeRules(s.rules).filter((r) => known.has(r.category));
   if (Array.isArray(s.dismissedRecurring)) settings.dismissedRecurring = s.dismissedRecurring.filter((k): k is string => typeof k === "string").slice(-200);
   // Only what differs from the built-ins is kept, in the checked form.

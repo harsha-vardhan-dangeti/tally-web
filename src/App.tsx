@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { handleUrlActions, load, runDueBills, runDueIncome, runDueLoans, useTally, type Expense } from "./data/store";
+import { getState, handleUrlActions, load, runDueBills, runDueIncome, runDueLoans, runDueTransfers, useTally, type Expense } from "./data/store";
 import { Icon } from "./ui/icons";
 import { ToastHost, UpdateBar, useLongPress } from "./ui/components";
 import { Home } from "./screens/Dashboard";
@@ -60,7 +60,7 @@ export function App() {
   // Tally may stay open for days: when it comes back into view, add bills and income that fell due meanwhile.
   useEffect(() => {
     if (!s.ready) return;
-    const onVisible = () => { if (document.visibilityState === "visible") { runDueBills(); runDueIncome(); runDueLoans(); } };
+    const onVisible = () => { if (document.visibilityState === "visible") { runDueBills(); runDueIncome(); runDueLoans(); runDueTransfers(); } };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [s.ready]);
@@ -85,11 +85,16 @@ export function App() {
     try { localStorage.setItem("tally:onboarded", "1"); } catch { /* storage blocked */ }
   }, [s.settings.onboarded]);
 
-  // Lock on start and when returning to the app.
+  // Lock on start, and when coming back after the chosen time away (Settings → Ask again after).
   useEffect(() => {
     if (!s.ready || !s.settings.lockCredentialId) return;
     setLocked(true);
-    const onVis = () => { if (document.visibilityState === "hidden") setLocked(true); };
+    let hiddenAt = 0;
+    const onVis = () => {
+      const wait = getState().settings.lockAfter * 60_000;
+      if (document.visibilityState === "hidden") { hiddenAt = Date.now(); if (!wait) setLocked(true); }
+      else if (hiddenAt && Date.now() - hiddenAt >= wait) setLocked(true);
+    };
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [s.ready, s.settings.lockCredentialId]);

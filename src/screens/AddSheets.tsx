@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from "react";
 import { addExpense, deleteExpense, setSettings, showToast, useTally } from "../data/store";
 import { categoryMeta, pickableCategories, type Category } from "../core/categories";
-import { formatMoney } from "../core/money";
+import { evaluate, formatMoney } from "../core/money";
 import { parseLines, yourShare } from "../core/smartParser";
 import { parseReceipt } from "../core/receiptParser";
 import { CategoryIcon, Icon } from "../ui/icons";
@@ -20,6 +20,8 @@ export function QuickAdd({ open, onClose, onSmart, initialDate }: {
   const s = useTally();
   const [digits, setDigits] = useState("");
   const [category, setCategory] = useState<Category>("food");
+  const [sub, setSub] = useState("");
+  const subs = s.settings.subcategories[category] ?? [];
   const [account, setAccount] = useState(s.settings.defaultAccount);
   const [date, setDate] = useState(toLocalInput(new Date()));
   const [note, setNote] = useState("");
@@ -29,10 +31,14 @@ export function QuickAdd({ open, onClose, onSmart, initialDate }: {
   const swipedSave = useRef(false);
 
   useEffect(() => {
-    if (open) { setDigits(""); setNote(""); setSaved(0); setDate(toLocalInput(initialDate ?? new Date())); setAccount(s.settings.defaultAccount); }
+    if (open) { setDigits(""); setNote(""); setSaved(0); setSub(""); setDate(toLocalInput(initialDate ?? new Date())); setAccount(s.settings.defaultAccount); }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const amount = (parseInt(digits || "0", 10) || 0) * 100;
+  // The keypad is a calculator: "250+120" saves ₹370.
+  const OPS = "+−×÷";
+  const isSumText = /[+−×÷]/.test(digits.replace(/[+−×÷]$/, ""));
+  const result = evaluate(digits.replace(/[+−×÷]$/, "") || "0");
+  const amount = result !== null && result > 0 ? Math.round(result * 100) : 0;
   const accounts = useMemo(() => {
     const names = ["UPI", "Cash", "Credit card", ...s.accounts.map((a) => a.name)];
     return [...new Set(names)];
@@ -40,7 +46,15 @@ export function QuickAdd({ open, onClose, onSmart, initialDate }: {
 
   const tap = (k: string) => {
     if (k === "⌫") return setDigits((d) => d.slice(0, -1));
-    setDigits((d) => (d.length + k.length > 7 || (!d && k.startsWith("0")) ? d : d + k));
+    if (OPS.includes(k)) {
+      // An operator after a number; tapping another one swaps it.
+      return setDigits((d) => (!d ? d : OPS.includes(d.slice(-1)) ? d.slice(0, -1) + k : d.length < 30 ? d + k : d));
+    }
+    setDigits((d) => {
+      const current = d.split(/[+−×÷]/).pop() ?? "";
+      if (current.length + k.length > 7 || (!current && k.startsWith("0"))) return d;
+      return d + k;
+    });
   };
 
   // Physical keyboard on desktop: digits, Backspace, Enter.
@@ -50,6 +64,10 @@ export function QuickAdd({ open, onClose, onSmart, initialDate }: {
       const target = e.target as HTMLElement;
       if (target.tagName === "INPUT" || target.tagName === "SELECT" || target.tagName === "TEXTAREA") return;
       if (/^\d$/.test(e.key)) tap(e.key);
+      else if (e.key === "+") tap("+");
+      else if (e.key === "-") tap("−");
+      else if (e.key === "*" || e.key === "x") tap("×");
+      else if (e.key === "/") { e.preventDefault(); tap("÷"); }
       else if (e.key === "Backspace") tap("⌫");
       else if (e.key === "Enter") save(false);
       else if (e.key === "ArrowRight" || e.key === "ArrowLeft") cycle(e.key === "ArrowRight" ? 1 : -1);
@@ -62,6 +80,7 @@ export function QuickAdd({ open, onClose, onSmart, initialDate }: {
     const list = pickableCategories(category);
     const i = list.indexOf(category);
     setCategory(list[(i + dir + list.length) % list.length]);
+    setSub("");
   };
 
   const save = (keepOpen: boolean) => {
@@ -69,13 +88,14 @@ export function QuickAdd({ open, onClose, onSmart, initialDate }: {
     const [y, m, d] = date.split("-").map(Number);
     const when = new Date();
     const occurredAt = toLocalInput(when) === date ? when.getTime() : new Date(y, m - 1, d, 12).getTime();
-    const e = addExpense({ amount, category, merchant: note.trim(), account, occurredAt, source: "manual" });
+    const e = addExpense({ amount, category, sub: sub || undefined, merchant: note.trim(), account, occurredAt, source: "manual" });
     navigator.vibrate?.(12);
     setSettings({ defaultAccount: account });
     if (keepOpen) {
       setSaved((n) => n + 1);
       setDigits("");
       setNote("");
+      setSub("");
     } else {
       showToast(t("Logged {amount} · {category}", { amount: formatMoney(amount), category: categoryMeta(category).title }), () => deleteExpense(e.id, false));
       onClose();
@@ -95,17 +115,26 @@ export function QuickAdd({ open, onClose, onSmart, initialDate }: {
       actions={<button className="btn ghost" onClick={onSmart}>{t("Type, speak or scan")}</button>}>
       <div className="amount-display" onPointerDown={amtDown} onPointerUp={amtUp}>
         <div className="t-muted small">{saved ? t("Saved {n} · keep going", { n: saved }) : t("New expense")}</div>
+        {isSumText && <div className="t-muted small num calc-line">{digits.replace(/([+−×÷])/g, " $1 ")}</div>}
         <div className="big display num" aria-live="polite">{formatMoney(amount)}</div>
         <div className="t-muted tiny">{t("Swipe the amount sideways (or ← →) to change category")}</div>
       </div>
 
       <div className="cat-grid" role="group" aria-label="Category">
         {pickableCategories(category).map((c) => (
-          <button key={c} className="cat-btn" aria-pressed={c === category} onClick={() => setCategory(c)}>
+          <button key={c} className="cat-btn" aria-pressed={c === category} onClick={() => { setCategory(c); setSub(""); }}>
             <Icon name={categoryMeta(c).icon} size={20} />{categoryMeta(c).title}
           </button>
         ))}
       </div>
+
+      {subs.length > 0 && (
+        <div className="chips" role="group" aria-label="Subcategory" style={{ margin: "-4px 0 0" }}>
+          {subs.map((x) => (
+            <button key={x} className={`chip${sub === x ? " on" : ""}`} aria-pressed={sub === x} onClick={() => setSub(sub === x ? "" : x)}>{x}</button>
+          ))}
+        </div>
+      )}
 
       <div className="row gap8">
         <select aria-label={t("Paid from")} value={account} onChange={(e) => setAccount(e.target.value)} style={{ flex: 1 }}>
@@ -115,9 +144,10 @@ export function QuickAdd({ open, onClose, onSmart, initialDate }: {
       </div>
       <input type="text" aria-label={t("Merchant or note")} placeholder={t("Merchant or note (optional)")} value={note} onChange={(e) => setNote(e.target.value)} />
 
-      <div className="keypad">
-        {["1", "2", "3", "4", "5", "6", "7", "8", "9", "00", "0", "⌫"].map((k) => (
-          <button key={k} onClick={() => tap(k)} aria-label={k === "⌫" ? "Delete digit" : k}>
+      <div className="keypad calc">
+        {["1", "2", "3", "÷", "4", "5", "6", "×", "7", "8", "9", "−", "00", "0", "⌫", "+"].map((k) => (
+          <button key={k} onClick={() => tap(k)} className={OPS.includes(k) ? "op" : undefined}
+            aria-label={k === "⌫" ? "Delete" : k === "+" ? "Plus" : k === "−" ? "Minus" : k === "×" ? "Times" : k === "÷" ? "Divided by" : k}>
             {k === "⌫" ? <Icon name="backspace" /> : k}
           </button>
         ))}
@@ -148,6 +178,9 @@ export function SmartAdd({ open, onClose }: { open: boolean; onClose: () => void
   useEffect(() => { if (open) { setText(""); setError(null); } }, [open]);
 
   const parsed = useMemo(() => parseLines(text), [text]);
+  // A subcategory named in the text ("coffee 180" with Food → Coffee) is picked for the expense.
+  const subFor = (category: string, words: string) =>
+    (s.settings.subcategories[category] ?? []).find((x) => new RegExp(`\\b${x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(words));
 
   const save = () => {
     const ids: string[] = [];
@@ -155,6 +188,7 @@ export function SmartAdd({ open, onClose }: { open: boolean; onClose: () => void
       ids.push(addExpense({
         amount: p.amount, category: p.category, merchant: p.merchant ?? "", note: p.note, account: p.account,
         occurredAt: p.date.getTime(), source: "smart", splitWays: p.splitWays, splitWith: p.splitWith.join(", "),
+        tags: p.tags, sub: subFor(p.category, `${p.note} ${p.merchant ?? ""}`),
       }).id);
     }
     const total = parsed.reduce((t, p) => t + yourShare(p.amount, p.splitWays), 0);
@@ -216,6 +250,8 @@ export function SmartAdd({ open, onClose }: { open: boolean; onClose: () => void
                 {p.merchant && p.note && <span className="tag">{p.note}</span>}
                 <span className="tag">{sameDayLabel(p.date)}</span>
                 <span className="tag">{p.account ?? s.settings.defaultAccount}</span>
+                {subFor(p.category, `${p.note} ${p.merchant ?? ""}`) && <span className="tag">{subFor(p.category, `${p.note} ${p.merchant ?? ""}`)}</span>}
+                {p.tags.map((x) => <span key={x} className="tag">#{x}</span>)}
                 {p.splitWays > 1 && (
                   <span className="tag accent">
                     Split {p.splitWith.length ? "with " + p.splitWith.join(", ") : p.splitWays + " ways"} · you {formatMoney(yourShare(p.amount, p.splitWays))}

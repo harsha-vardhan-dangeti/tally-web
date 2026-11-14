@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useTally } from "../data/store";
-import { addMonths, monthRange } from "../core/budget";
+import { addMonths, monthLabel, monthRange } from "../core/budget";
 import { categoryMeta } from "../core/categories";
 import { compactMoney, formatMoney } from "../core/money";
 import {
@@ -30,13 +30,13 @@ export function MonthDetail() {
     const [start, end] = monthRange(month);
     const stats = monthStats(s.expenses, month, now);
     const prev = monthStats(s.expenses, prevMonth, now);
-    const lastDay = new Date(month.getFullYear(), month.getMonth(), stats.days);
+    const lastDay = new Date(stats.month.getFullYear(), stats.month.getMonth(), stats.month.getDate() + stats.days - 1);
     // Payment colours follow the account across months: slots go by all-time spend, not this month's rank.
     const order = paymentSplit(s.expenses, new Date(0), new Date(8.64e15), 99).map((p) => p.account);
     return {
       stats, prev,
       prevSamePoint: spentThroughDay(s.expenses, prevMonth, stats.elapsed),
-      categories: categoryBreakdown(s.expenses, month, s.budgets),
+      categories: categoryBreakdown(s.expenses, month, s.budgets.filter((b) => !b.period || b.period === "month")),
       months: monthlyTotals(s.expenses, month, 6),
       weekdays: weekdayAverages(s.expenses, stats.isCurrent ? now : lastDay),
       merchants: topMerchants(s.expenses, start, end, 5),
@@ -49,8 +49,8 @@ export function MonthDetail() {
   }, [s.expenses, s.budgets, offset, budget]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { stats, prev } = a;
-  const monthName = month.toLocaleDateString([], { month: "long" });
-  const prevName = prevMonth.toLocaleDateString([], { month: "long" });
+  const monthName = monthLabel(month);
+  const prevName = monthLabel(prevMonth);
   const hasAny = s.expenses.some((e) => !e.pending);
 
   // Spent vs last month at the same point (or the whole month, for finished months).
@@ -69,7 +69,7 @@ export function MonthDetail() {
       <div className="report-toolbar span-2">
         <div className="month-switch" role="group" aria-label="Month">
           <button className="icon-btn" onClick={() => setOffset((o) => o - 1)} aria-label="Previous month"><Icon name="back" size={18} /></button>
-          <span className="t-strong">{month.toLocaleDateString([], { month: "long", year: "numeric" })}</span>
+          <span className="t-strong">{monthLabel(month, undefined, true)}</span>
           <button className="icon-btn" onClick={() => setOffset((o) => Math.min(o + 1, 0))} disabled={offset === 0} aria-label="Next month"><Icon name="next" size={18} /></button>
         </div>
       </div>
@@ -129,7 +129,7 @@ export function MonthDetail() {
               subtitle={perDayBudget ? `Darker days cost more. Your budget allows ${formatMoney(perDayBudget)} a day.` : "Darker days cost more."}
               table={<DataTable head={["Day", "Spent", "Expenses"]}
                 rows={stats.daily.slice(0, stats.elapsed).map((v, i) => [
-                  new Date(month.getFullYear(), month.getMonth(), i + 1).toLocaleDateString([], { weekday: "short", day: "numeric" }),
+                  new Date(a.stats.month.getFullYear(), a.stats.month.getMonth(), a.stats.month.getDate() + i).toLocaleDateString([], { weekday: "short", day: "numeric" }),
                   v ? formatMoney(v) : "—", stats.dailyCount[i]])} />}>
               <SpendCalendar month={month} daily={stats.daily} counts={stats.dailyCount} elapsed={stats.elapsed} budget={budget} />
               <p className="viz-foot">

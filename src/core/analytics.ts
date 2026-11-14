@@ -1,6 +1,6 @@
 import type { CategoryBudget, Expense } from "../data/store";
 import { yourShare } from "./smartParser";
-import { addMonths, daysInMonth, monthRange, sameDay, startOfDay } from "./budget";
+import { addMonths, dayOfMonth, daysInMonth, monthRange, sameDay, startOfDay } from "./budget";
 import { categoryMeta, type Category } from "./categories";
 import { formatMoney } from "./money";
 
@@ -44,11 +44,11 @@ export function monthStats(expenses: Expense[], month: Date, now: Date): MonthSt
   const list = spendIn(expenses, start, end);
   const days = daysInMonth(month);
   const isCurrent = sameDay(start, monthRange(now)[0]);
-  const elapsed = isCurrent ? now.getDate() : days;
+  const elapsed = isCurrent ? dayOfMonth(now) : days;
   const daily = Array.from({ length: days }, () => 0);
   const dailyCount = Array.from({ length: days }, () => 0);
   for (const e of list) {
-    const i = new Date(e.occurredAt).getDate() - 1;
+    const i = dayOfMonth(new Date(e.occurredAt)) - 1;
     daily[i] += amount(e);
     dailyCount[i]++;
   }
@@ -72,7 +72,7 @@ export function cumulative(daily: number[]): number[] {
 export function spentThroughDay(expenses: Expense[], month: Date, day: number): number {
   const [start] = monthRange(month);
   const last = Math.min(day, daysInMonth(month));
-  return sum(spendIn(expenses, start, new Date(start.getFullYear(), start.getMonth(), last + 1)));
+  return sum(spendIn(expenses, start, new Date(start.getFullYear(), start.getMonth(), start.getDate() + last)));
 }
 
 export function monthlyTotals(expenses: Expense[], endMonth: Date, count: number): { month: Date; total: number }[] {
@@ -185,7 +185,7 @@ export function insights(expenses: Expense[], month: Date, now: Date, budget: nu
   const stats = monthStats(expenses, month, now);
   const out: Insight[] = [];
   const monthName = stats.month.toLocaleDateString([], { month: "long" });
-  const lastDay = new Date(stats.month.getFullYear(), stats.month.getMonth(), stats.days)
+  const lastDay = new Date(stats.month.getFullYear(), stats.month.getMonth(), stats.month.getDate() + stats.days - 1)
     .toLocaleDateString([], { day: "numeric", month: "short" });
 
   // 1. Where the month is heading against the budget.
@@ -234,7 +234,7 @@ export function insights(expenses: Expense[], month: Date, now: Date, budget: nu
 
   // 4. Weekend-heavy spending, or no-spend days worth celebrating.
   const weekendTotal = stats.daily.reduce((t, v, i) => {
-    const wd = weekdayIndex(new Date(stats.month.getFullYear(), stats.month.getMonth(), i + 1));
+    const wd = weekdayIndex(new Date(stats.month.getFullYear(), stats.month.getMonth(), stats.month.getDate() + i));
     return wd >= 5 ? t + v : t;
   }, 0);
   const weekendShare = stats.total ? weekendTotal / stats.total : 0;

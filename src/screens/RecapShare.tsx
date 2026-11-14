@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { showToast, useTally } from "../data/store";
 import { track } from "../data/telemetry";
-import { addMonths } from "../core/budget";
+import { addMonths, monthLabel } from "../core/budget";
 import { recapData } from "../core/recap";
 import { dateLocale, t } from "../i18n";
 import { Sheet, Toggle } from "../ui/components";
@@ -46,7 +46,7 @@ export function RecapShare({ open, initial, onClose }: { open: boolean; initial:
     if (result === "copied") showToast(t("Saved the picture to your downloads"));
     if (result !== "cancelled" && result !== "failed") track("recap_shared", { amounts: showAmounts, month: which, via: result });
   };
-  const label = (m: Date) => m.toLocaleDateString(dateLocale(), { month: "long" });
+  const label = (m: Date) => monthLabel(m, dateLocale());
 
   return (
     <Sheet open={open} onClose={onClose} title={t("Share your month")}>

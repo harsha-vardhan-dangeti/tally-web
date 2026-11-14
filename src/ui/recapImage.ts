@@ -2,6 +2,7 @@ import type { RecapData } from "../core/recap";
 import { categoryMeta } from "../core/categories";
 import { formatMoney } from "../core/money";
 import { dateLocale, t } from "../i18n";
+import { monthLabel } from "../core/budget";
 
 /**
  * Draws a month's recap as a 1080×1350 PNG (a portrait post for Instagram or a WhatsApp status).
@@ -65,7 +66,7 @@ export async function drawRecap(r: RecapData, showAmounts: boolean, host: string
   ctx.fillText("Tally", PAD + 84, PAD + 46);
 
   // Title
-  const monthName = r.month.toLocaleDateString(dateLocale(), { month: "long" });
+  const monthName = monthLabel(r.month, dateLocale());
   const title = r.complete ? t("My {month}", { month: monthName }) : t("{month} so far", { month: monthName });
   ctx.fillStyle = C.ink;
   fit(ctx, title, 800, 120, DISPLAY, W - PAD * 2);
