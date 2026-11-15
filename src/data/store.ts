@@ -47,6 +47,9 @@ export interface Expense {
   sub?: string;
   /** Lowercase, without "#". */
   tags?: string[];
+  /** A card purchase converted to EMI: the loan that now carries it. It no longer adds to the card's
+   *  balance or the budget; each month's EMI does instead. */
+  emiLoan?: string;
 }
 export interface Chip { id: string; title: string; amount: number; category: Category; order: number }
 export interface CategoryBudget {
@@ -148,6 +151,8 @@ export interface Loan extends LoanTerms {
   /** "2026-11": the last month whose EMI was added to expenses. */
   lastLoggedMonth: string;
   createdAt: number;
+  /** A credit card purchase converted to EMI: the expense it came from. */
+  fromExpense?: string;
 }
 
 export interface Settings {
@@ -586,7 +591,8 @@ const isAccount = (a: Account, name: string) => !!name && nameKey(name) === name
  */
 function netFlow(a: Account, since: number, s: Pick<State, "expenses" | "incomes"> = state): { in: number; out: number } {
   let inflow = 0, out = 0;
-  for (const e of s.expenses) if (!e.pending && !e.paidBy && e.occurredAt > since && isAccount(a, e.account)) out += e.amount;
+  // A purchase converted to EMI left the card's balance for the EMI plan; its EMIs are charged instead.
+  for (const e of s.expenses) if (!e.pending && !e.paidBy && !e.emiLoan && e.occurredAt > since && isAccount(a, e.account)) out += e.amount;
   for (const x of s.incomes) if (x.receivedAt > since && isAccount(a, x.account)) inflow += x.amount;
   return { in: inflow, out };
 }
@@ -614,7 +620,40 @@ export function accountsNow(s: State = state): Account[] {
 
 /** How much of a card's limit is used, from its balance now. */
 export function cardLimitUsage(a: Account, s: State = state): CardUsage | null {
-  return a.kind === "card" ? cardUsage(liveBalance(a, s), a.limit) : null;
+  return a.kind === "card" ? cardUsage(liveBalance(a, s), a.limit, cardEmiOutstanding(a, s)) : null;
+}
+
+/** EMI plans paid from this card (its EMIs are charged to it). */
+export const cardEmis = (a: Account, s: Pick<State, "loans"> = state) => s.loans.filter((l) => isAccount(a, l.account));
+
+/** Principal still to be billed across a card's EMI plans: it keeps that much of the limit blocked. */
+export function cardEmiOutstanding(a: Account, s: Pick<State, "loans"> = state, now = Date.now()): number {
+  return cardEmis(a, s).reduce((t, l) => t + loanStatus(l, now).outstanding, 0);
+}
+
+export interface EmiPlan { months: number; ratePct: number; fee: number; firstDueAt: number }
+
+/**
+ * Converts a card purchase to EMI, as banks do: the purchase moves off the card's balance (and out
+ * of the budget) into an EMI plan charged to the card each month. A processing fee is charged now.
+ */
+export function convertToEmi(e: Expense, plan: EmiPlan): Loan | null {
+  const card = state.accounts.find((a) => a.kind === "card" && isAccount(a, e.account));
+  if (!card || e.emiLoan || plan.months < 1) return null;
+  const loan: Loan = {
+    id: uid(), name: expenseTitle(e), lender: card.name, principal: e.amount, ratePct: plan.ratePct, months: plan.months,
+    emi: emiFor(e.amount, plan.ratePct, plan.months), firstDueAt: plan.firstDueAt, category: e.category, account: card.name,
+    autoLog: true, lastLoggedMonth: "", createdAt: Date.now(), fromExpense: e.id,
+  };
+  // If the card's balance was set after this purchase, it includes it: take it out, as the bank does.
+  if (card.tracked && e.occurredAt <= card.updatedAt) saveAccount({ ...card, balance: card.balance - e.amount, updatedAt: card.updatedAt });
+  updateExpense(e.id, { emiLoan: loan.id, exclude: true });
+  saveLoan(loan);
+  if (plan.fee > 0) {
+    addExpense({ amount: plan.fee, category: "other", merchant: `EMI processing fee · ${loan.name}`, account: card.name, source: "manual" });
+  }
+  runDueLoans();
+  return loan;
 }
 
 /** Credit left on the card called `name`, if it's one of the user's cards with a limit. */
@@ -831,8 +870,16 @@ export function saveLoan(loan: Loan) {
 }
 
 export function deleteLoan(id: string) {
+  const loan = state.loans.find((x) => x.id === id);
   set({ loans: state.loans.filter((x) => x.id !== id) });
   void remove("loans", id);
+  // Undoing a card EMI puts the purchase back on the card and in the budget.
+  const e = loan?.fromExpense ? state.expenses.find((x) => x.id === loan.fromExpense && x.emiLoan === id) : undefined;
+  if (e) {
+    updateExpense(e.id, { emiLoan: undefined, exclude: false });
+    const card = state.accounts.find((a) => a.kind === "card" && isAccount(a, e.account));
+    if (card?.tracked && e.occurredAt <= card.updatedAt) saveAccount({ ...card, balance: card.balance + e.amount, updatedAt: card.updatedAt });
+  }
 }
 
 export const loanEmi = (l: Pick<Loan, "principal" | "ratePct" | "months" | "emi">) => l.emi || emiFor(l.principal, l.ratePct, l.months);
@@ -1168,7 +1215,7 @@ export async function exportXLSX(): Promise<Blob> {
     "Credit limit": a.limit ? money(a.limit) : "", Available: a.limit ? money(a.limit - liveBalance(a)) : "",
   })));
   sheet("Loans", loans.map((l) => ({ Name: l.name, Lender: l.lender, Borrowed: money(l.principal), "Rate %": l.ratePct, Months: l.months, EMI: money(l.emi),
-    "First EMI": day(l.firstDueAt) })));
+    "First EMI": day(l.firstDueAt), "Paid from": l.account, Outstanding: money(loanStatus(l, Date.now()).outstanding) })));
   sheet("People", ledger.map((x) => ({ Date: day(x.occurredAt), Person: x.person, Kind: x.kind, [`They owe you (${cur})`]: money(x.amount), Note: x.note })));
   const data = XLSX.write(book, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
   return new Blob([data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });

@@ -195,6 +195,7 @@ function CardLine({ acct }: { acct: Account }) {
           <span className="tiny" style={{ color: usage.tone === "over" ? "var(--danger)" : usage.tone === "near" ? "var(--warn)" : "var(--muted)" }}>
             {usage.available >= 0 ? `${formatMoney(usage.available)} available` : `${formatMoney(-usage.available)} over the limit`}
             {` · ${Math.round(usage.share * 100)}% of ${formatMoney(usage.limit)} used`}
+            {usage.onEmi ? ` · ${formatMoney(usage.onEmi)} of it on EMI` : ""}
           </span>
         </span>
       )}

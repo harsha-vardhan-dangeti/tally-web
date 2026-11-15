@@ -27,6 +27,7 @@ export function Plan() {
   const [regular, setRegular] = useState<RecurringIncome | "new" | null>(null);
   const [loan, setLoan] = useState<Loan | "new" | null>(null);
   const owedOnLoans = s.loans.reduce((t, l) => t + loanStatus(l, now.getTime()).outstanding, 0);
+  const isCardEmi = (name: string) => accountNamed(s, name)?.kind === "card";
 
 
   const upcoming = [...s.bills].sort((a, b) => nextDue(a).getTime() - nextDue(b).getTime());
@@ -131,7 +132,7 @@ export function Plan() {
                 <span className="row gap12">
                   <span className="cat-icon" style={{ width: 40, height: 40, background: "var(--fill)" }}><Icon name="card" size={20} /></span>
                   <span className="grow col" style={{ minWidth: 0 }}>
-                    <span className="t-strong ellipsis">{l.name}</span>
+                    <span className="t-strong ellipsis">{l.name}{isCardEmi(l.account) && <span className="tag" style={{ marginLeft: 6 }}>Card EMI</span>}</span>
                     <span className="tiny t-muted">
                       {st.nextDue
                         ? t("{paid} of {total} EMIs paid · next {date}", { paid: st.paid, total: l.months, date: st.nextDue.toLocaleDateString(dateLocale(), { day: "numeric", month: "short" }) })

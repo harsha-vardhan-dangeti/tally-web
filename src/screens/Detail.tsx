@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import { deleteExpense, expenseTitle, makeRecurring, saveRule, setSettings, share, showToast, SOURCE_LABEL, uid, updateExpense, useTally, type Expense } from "../data/store";
+import {
+  convertToEmi, deleteExpense, deleteLoan, expenseTitle, makeRecurring, saveRule, setSettings, share, showToast, SOURCE_LABEL, uid, updateExpense, useTally,
+  type Expense,
+} from "../data/store";
+import { cardCycle } from "../core/cards";
+import { emiFor, loanStatus } from "../core/loans";
 import { useCloud } from "../data/cloud";
 import { track } from "../data/telemetry";
 import { payLink, sharePerPerson, splitNames } from "../core/people";
@@ -23,6 +28,7 @@ export function Detail({ id, onClose }: { id: string | null; onClose: () => void
   const s = useTally();
   const cloud = useCloud();
   const [fxOpen, setFxOpen] = useState(false);
+  const [emiOpen, setEmiOpen] = useState(false);
   const e: Expense | undefined = s.expenses.find((x) => x.id === id);
   const [amount, setAmount] = useState("");
   // The category this sheet opened with: after changing it, offer to make the change a rule.
@@ -153,7 +159,10 @@ export function Detail({ id, onClose }: { id: string | null; onClose: () => void
         <Toggle label="Exclude from budget" hint="For reimbursable or one-off spends" checked={e.exclude} onChange={(v) => set({ exclude: v })} />
       </div>
 
+      <CardEmiBlock e={e} onConvert={() => setEmiOpen(true)} />
+
       <button className="btn danger block" onClick={() => { deleteExpense(e.id); onClose(); }}>Delete {expenseTitle(e)}</button>
+      <EmiSheet e={emiOpen ? e : null} onClose={() => setEmiOpen(false)} />
     </Sheet>
   );
 }
@@ -229,5 +238,112 @@ function TagsField({ tags, onChange }: { tags: string[]; onChange: (tags: string
         </div>
       )}
     </div>
+  );
+}
+
+/** On a card purchase: convert it to EMI, or, once converted, where the EMI plan stands. */
+function CardEmiBlock({ e, onConvert }: { e: Expense; onConvert: () => void }) {
+  const s = useTally();
+  const card = s.accounts.find((a) => a.kind === "card" && a.name.trim().toLowerCase() === e.account.trim().toLowerCase());
+  const loan = e.emiLoan ? s.loans.find((l) => l.id === e.emiLoan) : undefined;
+  if (loan) {
+    const st = loanStatus(loan, Date.now());
+    return (
+      <div className="card col gap8" style={{ background: "var(--surface-2)" }}>
+        <span className="t-strong small">On EMI with {loan.lender || loan.account}</span>
+        <span className="small">{loan.months} × {formatMoney(loan.emi)}{loan.ratePct ? ` at ${loan.ratePct}%` : " · no-cost"} · {st.paid} of {loan.months} billed</span>
+        <span className="tiny t-muted">
+          {st.outstanding ? `${formatMoney(st.outstanding)} still to be billed, blocked on the card's limit. ` : "Fully billed. "}
+          Each month's EMI counts toward your budget instead of the whole purchase. Find it in Plan → Loans & EMIs.
+        </span>
+        <button className="btn ghost small-btn" style={{ alignSelf: "flex-start" }} onClick={() => {
+          deleteLoan(loan.id);
+          showToast("EMI undone · the purchase is back on the card");
+        }}>Undo EMI</button>
+      </div>
+    );
+  }
+  if (!card || e.pending || e.paidBy) return null;
+  return (
+    <button className="btn block" onClick={onConvert}>
+      <Icon name="card" size={18} />Convert to EMI
+    </button>
+  );
+}
+
+const MONTH_CHOICES = [3, 6, 9, 12, 18, 24];
+const toDateInput = (ms: number) => new Date(ms).toLocaleDateString("en-CA");
+
+/** Turn a card purchase into monthly instalments, as the bank does when you convert it. */
+function EmiSheet({ e, onClose }: { e: Expense | null; onClose: () => void }) {
+  const s = useTally();
+  const [months, setMonths] = useState(6);
+  const [rate, setRate] = useState("0");
+  const [fee, setFee] = useState("");
+  const [first, setFirst] = useState("");
+  const [seen, setSeen] = useState<string | null>(null);
+  const card = e ? s.accounts.find((a) => a.kind === "card" && a.name.trim().toLowerCase() === e.account.trim().toLowerCase()) : undefined;
+  if ((e?.id ?? null) !== seen) {
+    setSeen(e?.id ?? null);
+    if (e) {
+      setMonths(6); setRate("0"); setFee("");
+      // The first EMI is billed on the next statement; without a statement day, a month from now.
+      const now = new Date();
+      const next = card?.statementDay && card.dueDay ? cardCycle(card.statementDay, card.dueDay, now).nextStatement
+        : new Date(now.getFullYear(), now.getMonth() + 1, Math.min(now.getDate(), 28));
+      setFirst(toDateInput(next.getTime()));
+    }
+  }
+  if (!e || !card) return <Sheet open={false} onClose={onClose} title="">{null}</Sheet>;
+  const ratePct = Number(rate);
+  const validRate = rate.trim() !== "" && Number.isFinite(ratePct) && ratePct >= 0 && ratePct < 60;
+  const emi = validRate ? emiFor(e.amount, ratePct, months) : 0;
+  const interest = Math.max(0, emi * months - e.amount);
+  const feeP = fee.trim() ? parsePaise(fee) : 0;
+  const [y, m, d] = first.split("-").map(Number);
+  const ready = validRate && emi > 0 && !!first && feeP !== null;
+
+  return (
+    <Sheet open onClose={onClose} title="Convert to EMI">
+      <div className="card col gap4" style={{ background: "var(--surface-2)" }}>
+        <span className="t-strong">{expenseTitle(e)} · {formatMoney(e.amount)}</span>
+        <span className="tiny t-muted">On {card.name}</span>
+      </div>
+      <div className="col gap8">
+        <span className="t-strong small">Months</span>
+        <div className="row gap8 wrap" role="group" aria-label="Months">
+          {MONTH_CHOICES.map((n) => (
+            <button key={n} className={`chip${months === n ? " on" : ""}`} aria-pressed={months === n} onClick={() => setMonths(n)}>{n}</button>
+          ))}
+        </div>
+      </div>
+      <div className="row gap8">
+        <Field label="Interest (% a year)">
+          <input type="text" inputMode="decimal" value={rate} onChange={(ev) => setRate(ev.target.value)} placeholder="0 for no-cost EMI" />
+        </Field>
+        <Field label={`Processing fee (${currencySymbol()})`}>
+          <input type="text" inputMode="decimal" value={fee} onChange={(ev) => setFee(ev.target.value)} placeholder="optional" />
+        </Field>
+      </div>
+      <Field label="First EMI on"><input type="date" value={first} onChange={(ev) => setFirst(ev.target.value)} /></Field>
+      {ready && (
+        <div className="card col gap4" style={{ background: "var(--surface-2)" }} aria-live="polite">
+          <span className="display num" style={{ fontSize: 24 }}>{months} × {formatMoney(emi)}</span>
+          <span className="tiny t-muted">
+            {ratePct ? `Interest ${formatMoney(interest)} in total` : "No-cost: you pay back just the price"}
+            {feeP ? ` · ${formatMoney(feeP)} fee charged now` : ""}
+          </span>
+        </div>
+      )}
+      <p className="t-muted tiny" style={{ margin: 0 }}>
+        The purchase moves off {card.name}'s balance and out of this month's budget. Each EMI is charged to {card.name} on its date and counts toward that
+        month's budget. What's still to be billed stays blocked on the card's limit.
+      </p>
+      <button className="btn primary block" disabled={!ready} onClick={() => {
+        const loan = convertToEmi(e, { months, ratePct, fee: feeP ?? 0, firstDueAt: new Date(y, m - 1, d, 12).getTime() });
+        if (loan) showToast(`${months} EMIs of ${formatMoney(loan.emi)} on ${card.name}`);
+        onClose();
+      }}>Convert to {months} EMIs</button>
+    </Sheet>
   );
 }

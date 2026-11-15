@@ -63,6 +63,7 @@ function expense(r: unknown, i: number, category: (v: unknown) => Category): Exp
     ...(isRow(r.fx) && isCurrency(r.fx.currency) && paise(r.fx.amount) && typeof r.fx.rate === "number" && r.fx.rate > 0
       ? { fx: { currency: r.fx.currency as string, amount: r.fx.amount as number, rate: r.fx.rate } } : {}),
     ...(str(r.sub).trim() ? { sub: str(r.sub).trim().slice(0, 30) } : {}),
+    ...(id(r.emiLoan) ? { emiLoan: r.emiLoan as string } : {}),
     ...(Array.isArray(r.tags) && r.tags.some((t) => typeof t === "string")
       ? { tags: [...new Set(r.tags.filter((t): t is string => typeof t === "string").map((t) => t.toLowerCase().slice(0, 30)))] } : {}),
   };
@@ -177,7 +178,7 @@ export function parseBackup(text: string): Backup {
     if (!rowId || !str(r.name) || !principal || !emi || months < 1 || months > 600 || firstDueAt === null || ratePct === null) return null;
     return { id: rowId, name: str(r.name), lender: str(r.lender), principal, ratePct, months, emi, firstDueAt,
       category: category(r.category), account: str(r.account), autoLog: bool(r.autoLog), lastLoggedMonth: str(r.lastLoggedMonth),
-      createdAt: time(r.createdAt) ?? firstDueAt };
+      createdAt: time(r.createdAt) ?? firstDueAt, ...(id(r.fromExpense) ? { fromExpense: r.fromExpense as string } : {}) };
   });
 
   const settings: Partial<Settings> = {};

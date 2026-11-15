@@ -57,6 +57,8 @@ export function cardBill(owed: number, spentSince: number | null, statementDay: 
 
 export interface CardUsage {
   used: number;
+  /** Part of `used` that's purchases on EMI, still to be billed. */
+  onEmi: number;
   limit: number;
   available: number;
   /** Share of the limit used, 0–1 (can go above 1 when over the limit). */
@@ -66,12 +68,13 @@ export interface CardUsage {
 }
 
 /** How much of a card's limit is used. Null when the card has no limit set. */
-export function cardUsage(owed: number, limit: number | undefined): CardUsage | null {
+export function cardUsage(owed: number, limit: number | undefined, onEmi = 0): CardUsage | null {
   if (!limit || limit <= 0) return null;
-  const used = Math.max(0, owed);
+  // EMI purchases keep their unpaid principal blocked on the card until it's billed.
+  const used = Math.max(0, owed) + Math.max(0, onEmi);
   const share = used / limit;
   return {
-    used, limit, available: limit - used, share,
+    used, onEmi: Math.max(0, onEmi), limit, available: limit - used, share,
     tone: share > 1 ? "over" : share >= 0.8 ? "near" : share >= 0.3 ? "high" : "ok",
   };
 }
