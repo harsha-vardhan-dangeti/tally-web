@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import {
   billOverdue, billPaid, budgetSpent, deleteBill, deleteBudget, deleteGoal, deleteRecurringIncome, dismissRecurring, logBill, logRecurringIncome, monthSpent, nextDue,
   recurringSuggestions, runDueBills, runDueIncome, saveBill, saveBudget, saveGoal, saveRecurringIncome, showToast, uid, useTally,
-  deleteLoan, emiThisMonth, logEmi, runDueLoans, saveLoan,
+  deleteLoan, emiThisMonth, logEmi, runDueLoans, saveLoan, accountChoices, accountNamed,
   type Bill, type Goal, type Loan, type RecurringIncome,
 } from "../data/store";
 import { emiFor, loanStatus } from "../core/loans";
@@ -91,6 +91,7 @@ export function Plan() {
                   <span className="t-strong ellipsis">{b.name}</span>
                   <span className="tiny t-muted">
                     {b.isSubscription ? "Subscription" : "Bill"}{b.every && b.every !== "month" ? ` · ${EVERY_LABEL[b.every].toLowerCase()}` : ""}
+                    {b.account ? ` · from ${b.account}` : ""}
                     {billPaid(b, now) ? ` · paid this ${b.every ?? "month"}` : billOverdue(b, now) ? " · not in expenses yet" : b.autoLog ? " · adds on due day" : ""}
                     {b.amount > b.prevAmount && b.prevAmount > 0 && <span style={{ color: "var(--warn)" }}> · price up from {formatMoney(b.prevAmount)}</span>}
                   </span>
@@ -131,6 +132,7 @@ export function Plan() {
                       {st.nextDue
                         ? t("{paid} of {total} EMIs paid · next {date}", { paid: st.paid, total: l.months, date: st.nextDue.toLocaleDateString(dateLocale(), { day: "numeric", month: "short" }) })
                         : t("Fully repaid")}
+                      {l.account ? ` · from ${l.account}` : ""}
                     </span>
                   </span>
                   <span className="col" style={{ alignItems: "flex-end" }}>
@@ -326,18 +328,20 @@ function BudgetEditor({ category, onClose }: { category: Category | null; onClos
 const MONTHS = Array.from({ length: 12 }, (_, m) => new Date(2026, m, 1).toLocaleDateString([], { month: "long" }));
 
 function BillEditor({ value, onClose }: { value: Bill | "new" | null; onClose: () => void }) {
+  const s = useTally();
   const bill = value && value !== "new" ? value : null;
   const blank = () => {
     const d = new Date();
     return { name: "", amount: "", every: "month" as Every, day: d.getDate() > 28 ? 1 : d.getDate(), weekday: d.getDay(), month: d.getMonth(),
-      category: "bills" as Category, isSubscription: false, autoLog: true, logNow: true };
+      category: "bills" as Category, account: s.settings.defaultAccount, isSubscription: false, autoLog: true, logNow: true };
   };
   const [f, setF] = useState(blank);
   const [seen, setSeen] = useState<typeof value>(null);
   if (value !== seen) {
     setSeen(value);
     setF(bill ? { name: bill.name, amount: String(bill.amount / 100), every: bill.every ?? "month", day: bill.day, weekday: bill.weekday ?? 1,
-      month: bill.month ?? 0, category: bill.category, isSubscription: bill.isSubscription, autoLog: bill.autoLog, logNow: false } : blank());
+      month: bill.month ?? 0, category: bill.category, account: bill.account || s.settings.defaultAccount, isSubscription: bill.isSubscription,
+      autoLog: bill.autoLog, logNow: false } : blank());
   }
   const p = parsePaise(f.amount);
   const now = new Date();
@@ -351,7 +355,7 @@ function BillEditor({ value, onClose }: { value: Bill | "new" | null; onClose: (
     const changedRepeat = bill && ((bill.every ?? "month") !== f.every);
     const saved: Bill = {
       id: bill?.id ?? uid(), name: f.name, amount: p, prevAmount: bill ? (p !== bill.amount ? bill.amount : bill.prevAmount) : p,
-      day: f.day, category: f.category, account: bill?.account ?? "UPI", isSubscription: f.isSubscription, autoLog: f.autoLog,
+      day: f.day, category: f.category, account: f.account, isSubscription: f.isSubscription, autoLog: f.autoLog,
       ...(f.every !== "month" ? { every: f.every } : {}),
       ...(f.every === "week" ? { weekday: f.weekday } : {}),
       ...(f.every === "year" ? { month: f.month } : {}),
@@ -402,11 +406,15 @@ function BillEditor({ value, onClose }: { value: Bill | "new" | null; onClose: (
           </>
         )}
       </div>
-      <Field label="Category">
-        <select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value as Category })}>
-          {pickableCategories(f.category).map((c) => <option key={c} value={c}>{categoryMeta(c).title}</option>)}
-        </select>
-      </Field>
+      <div className="row gap8">
+        <Field label="Category">
+          <select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value as Category })}>
+            {pickableCategories(f.category).map((c) => <option key={c} value={c}>{categoryMeta(c).title}</option>)}
+          </select>
+        </Field>
+        <PaidFrom label="Paid from" value={f.account} onChange={(account) => setF({ ...f, account })} />
+      </div>
+      <AccountNote name={f.account} what="Each payment added to expenses" />
       <div>
         <Toggle label="Subscription" checked={f.isSubscription} onChange={(v) => setF({ ...f, isSubscription: v })} />
         <Toggle label="Add to expenses on the due date" hint="Each time it falls due, it's added to your spending" checked={f.autoLog} onChange={(v) => setF({ ...f, autoLog: v })} />
@@ -520,7 +528,8 @@ function RegularIncomeEditor({ value, onClose }: { value: RecurringIncome | "new
           </select>
         </Field>
       </div>
-      <Field label="Received in"><input type="text" value={f.account} onChange={(e) => setF({ ...f, account: e.target.value })} /></Field>
+      <PaidFrom label="Received in" value={f.account} onChange={(account) => setF({ ...f, account })} />
+      <AccountNote name={f.account} what="Each payment added to income" incoming />
       <div>
         <Toggle label="Add to income on that day" hint="Each month, on or after the day, it's added to that month's income" checked={f.autoLog} onChange={(v) => setF({ ...f, autoLog: v })} />
         {askLogNow && (
@@ -554,7 +563,9 @@ const toDateInput = (ms: number) => {
 
 function LoanEditor({ value, onClose }: { value: Loan | "new" | null; onClose: () => void }) {
   const loan = value && value !== "new" ? value : null;
-  const blank = { name: "", lender: "", principal: "", rate: "", months: "", first: "", emi: "", emiTouched: false, autoLog: true, category: "bills" as Category };
+  const s = useTally();
+  const bankName = s.accounts.find((a) => a.kind === "bank")?.name ?? "Bank";
+  const blank = { name: "", lender: "", principal: "", rate: "", months: "", first: "", emi: "", emiTouched: false, autoLog: true, category: "bills" as Category, account: bankName };
   const [f, setF] = useState(blank);
   const [seen, setSeen] = useState<typeof value>(null);
   if (value !== seen) {
@@ -564,6 +575,7 @@ function LoanEditor({ value, onClose }: { value: Loan | "new" | null; onClose: (
     setF(loan ? {
       name: loan.name, lender: loan.lender, principal: String(loan.principal / 100), rate: String(loan.ratePct), months: String(loan.months),
       first: toDateInput(loan.firstDueAt), emi: String(loan.emi / 100), emiTouched: true, autoLog: loan.autoLog, category: loan.category,
+      account: loan.account || bankName,
     } : { ...blank, first: toDateInput(next.getTime()) });
   }
   const principal = parsePaise(f.principal);
@@ -589,7 +601,7 @@ function LoanEditor({ value, onClose }: { value: Loan | "new" | null; onClose: (
     }
     const saved: Loan = {
       id: loan?.id ?? uid(), name: f.name.trim(), lender: f.lender.trim(), principal: principal!, ratePct: rate!, months, emi, firstDueAt,
-      category: f.category, account: loan?.account ?? "Bank", autoLog: f.autoLog, lastLoggedMonth,
+      category: f.category, account: f.account, autoLog: f.autoLog, lastLoggedMonth,
       createdAt: loan?.createdAt ?? Date.now(),
     };
     saveLoan(saved);
@@ -630,11 +642,15 @@ function LoanEditor({ value, onClose }: { value: Loan | "new" | null; onClose: (
           <span className="tiny t-muted">{t("Total interest {amount} · last EMI {date}", { amount: formatMoney(preview.totalInterest), date: preview.endsOn.toLocaleDateString(dateLocale(), { month: "short", year: "numeric" }) })}</span>
         </div>
       )}
-      <Field label={t("Category")}>
-        <select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value as Category })}>
-          {pickableCategories(f.category).map((c) => <option key={c} value={c}>{categoryMeta(c).title}</option>)}
-        </select>
-      </Field>
+      <div className="row gap8">
+        <Field label={t("Category")}>
+          <select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value as Category })}>
+            {pickableCategories(f.category).map((c) => <option key={c} value={c}>{categoryMeta(c).title}</option>)}
+          </select>
+        </Field>
+        <PaidFrom label="EMI paid from" value={f.account} onChange={(account) => setF({ ...f, account })} />
+      </div>
+      <AccountNote name={f.account} what="Each EMI added to expenses" />
       <Toggle label={t("Add each EMI to expenses")} hint={t("On the EMI date each month, so it counts toward your budget")} checked={f.autoLog} onChange={(v) => setF({ ...f, autoLog: v })} />
       {loan && dueThisMonth && !loggedThisMonth && (
         <button className="btn block" onClick={() => { logEmi(loan, now); showToast(t("Added {name} EMI for {month}", { name: loan.name, month: monthName })); onClose(); }}>
@@ -645,5 +661,31 @@ function LoanEditor({ value, onClose }: { value: Loan | "new" | null; onClose: (
       {loan && <button className="btn danger block" onClick={() => { deleteLoan(loan.id); onClose(); }}>{t("Delete loan")}</button>}
       <p className="t-muted tiny" style={{ margin: 0 }}>{t("What's left is worked out from the EMI schedule. If you prepay, edit the amount borrowed and months to match your lender's statement.")}</p>
     </Sheet>
+  );
+}
+
+/** Pick the account a payment comes from (or goes into): the same choices as Quick add. */
+function PaidFrom({ label, value, onChange }: { label: string; value: string; onChange: (account: string) => void }) {
+  const s = useTally();
+  return (
+    <Field label={label}>
+      <select value={value} onChange={(e) => onChange(e.target.value)}>
+        {accountChoices(s, value).map((a) => <option key={a} value={a}>{a}</option>)}
+      </select>
+    </Field>
+  );
+}
+
+/** Says whether the chosen account's balance will move, so the link to Accounts is visible. */
+function AccountNote({ name, what, incoming }: { name: string; what: string; incoming?: boolean }) {
+  const s = useTally();
+  const acct = accountNamed(s, name);
+  if (!acct) return null;
+  return (
+    <p className="t-muted tiny" style={{ margin: "-6px 0 0" }}>
+      {acct.tracked
+        ? `${what} ${incoming ? "goes into" : "comes out of"} ${acct.name}'s balance in Accounts.`
+        : `${acct.name} doesn't update from transactions. Turn that on in Accounts to have this move its balance.`}
+    </p>
   );
 }

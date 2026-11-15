@@ -559,6 +559,17 @@ export const moneyIn = (a: Account, amount: number): Account =>
   ({ ...a, balance: liveBalance(a) + (a.kind === "card" ? -amount : amount), updatedAt: Date.now() });
 
 const nameKey = (v: string) => v.trim().toLowerCase();
+
+/** What money can be paid from or into: the usual methods, the user's accounts, and `current` if it's something else. */
+export function accountChoices(s: Pick<State, "accounts">, current?: string): string[] {
+  const list = ["UPI", "Cash", "Credit card", ...s.accounts.map((a) => a.name)];
+  if (current?.trim()) list.push(current.trim());
+  const seen = new Set<string>();
+  return list.filter((n) => { const k = nameKey(n); if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
+/** The account with this name, if the user has one. */
+export const accountNamed = (s: Pick<State, "accounts">, name: string) => s.accounts.find((a) => !!name && nameKey(a.name) === nameKey(name));
 const isAccount = (a: Account, name: string) => !!name && nameKey(name) === nameKey(a.name);
 
 /**

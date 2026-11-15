@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from "react";
-import { addExpense, deleteExpense, setSettings, showToast, useTally } from "../data/store";
+import { accountChoices, addExpense, deleteExpense, setSettings, showToast, useTally } from "../data/store";
 import { categoryMeta, pickableCategories, type Category } from "../core/categories";
 import { evaluate, formatMoney } from "../core/money";
 import { parseLines, yourShare } from "../core/smartParser";
@@ -39,10 +39,7 @@ export function QuickAdd({ open, onClose, onSmart, initialDate }: {
   const isSumText = /[+−×÷]/.test(digits.replace(/[+−×÷]$/, ""));
   const result = evaluate(digits.replace(/[+−×÷]$/, "") || "0");
   const amount = result !== null && result > 0 ? Math.round(result * 100) : 0;
-  const accounts = useMemo(() => {
-    const names = ["UPI", "Cash", "Credit card", ...s.accounts.map((a) => a.name)];
-    return [...new Set(names)];
-  }, [s.accounts]);
+  const accounts = useMemo(() => accountChoices(s), [s.accounts]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const tap = (k: string) => {
     if (k === "⌫") return setDigits((d) => d.slice(0, -1));
