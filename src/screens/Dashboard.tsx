@@ -1,6 +1,6 @@
 import { useContext, useMemo, useState, type ReactNode } from "react";
 import {
-  accountsNow, backupOverdueDays, budgetSnapshot, budgetSpent, cardStatus, counts, inMonth, monthSpent, nextDue, recurringSuggestions, useTally,
+  accountsNow, backupOverdueDays, budgetSnapshot, budgetSpent, cardLimitUsage, cardStatus, counts, inMonth, monthSpent, nextDue, recurringSuggestions, useTally,
   type Chip, type Expense,
 } from "../data/store";
 import { addMonths, dayOfMonth, daysInMonth, monthKey, monthLabel, monthRange } from "../core/budget";
@@ -246,6 +246,29 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
           </DashCard>
         )}
 
+        {s.accounts.some((a) => a.kind === "card" && (a.limit || (a.statementDay && a.dueDay))) && (
+          <DashCard title={t("Credit cards")} sub={cardsSub(s)} action={t("Accounts")} onAction={() => go("accounts")}>
+            <div className="col gap12">
+              {s.accounts.filter((a) => a.kind === "card" && (a.limit || (a.statementDay && a.dueDay))).slice(0, 4).map((a) => {
+                const u = cardLimitUsage(a, s);
+                const bill = cardStatus(a, s, now);
+                return (
+                  <div key={a.id} className="col gap4">
+                    <div className="row between small">
+                      <span className="t-strong ellipsis">{a.name}</span>
+                      <span className="num" style={{ color: u?.tone === "over" ? "var(--danger)" : u?.tone === "near" ? "var(--warn)" : "var(--muted)" }}>
+                        {u ? (u.available >= 0 ? t("{amount} left", { amount: formatMoney(u.available) }) : t("Over limit")) : ""}
+                      </span>
+                    </div>
+                    {u && <Progress value={u.share} tone={u.tone === "over" ? "over" : u.tone === "near" ? "warn" : "ok"} />}
+                    {bill?.due && <span className="tiny t-muted">{t("{amount} due {date}", { amount: formatMoney(bill.due.amount), date: bill.due.date.toLocaleDateString(dateLocale(), { day: "numeric", month: "short" }) })}</span>}
+                  </div>
+                );
+              })}
+            </div>
+          </DashCard>
+        )}
+
         <DashCard title={t("Net worth")} action={t("Accounts")} onAction={() => go("accounts")}>
           {s.accounts.length === 0 && s.loans.length === 0 ? (
             <p className="t-muted small" style={{ margin: 0 }}>{t("Add your bank, cards, cash and investments to track net worth month by month.")}</p>
@@ -322,3 +345,11 @@ function BudgetMini({ label, spent, limit }: { label: string; spent: number; lim
   );
 }
 
+
+/** "₹14,000 of ₹1,50,000 used" across cards with a limit. */
+function cardsSub(s: ReturnType<typeof useTally>): string | undefined {
+  const usages = s.accounts.map((a) => cardLimitUsage(a, s)).filter((u): u is NonNullable<typeof u> => !!u);
+  if (!usages.length) return undefined;
+  const used = usages.reduce((t, u) => t + u.used, 0), limit = usages.reduce((t, u) => t + u.limit, 0);
+  return t("{used} of {limit} used", { used: formatMoney(used), limit: formatMoney(limit) });
+}

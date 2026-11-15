@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import {
   billOverdue, billPaid, budgetSpent, deleteBill, deleteBudget, deleteGoal, deleteRecurringIncome, dismissRecurring, logBill, logRecurringIncome, monthSpent, nextDue,
   recurringSuggestions, runDueBills, runDueIncome, saveBill, saveBudget, saveGoal, saveRecurringIncome, showToast, uid, useTally,
-  deleteLoan, emiThisMonth, logEmi, runDueLoans, saveLoan, accountChoices, accountNamed,
+  deleteLoan, emiThisMonth, logEmi, runDueLoans, saveLoan, accountNamed, liveBalance, scheduledFlows, type ScheduledFlow,
   type Bill, type Goal, type Loan, type RecurringIncome,
 } from "../data/store";
 import { emiFor, loanStatus } from "../core/loans";
@@ -15,6 +15,7 @@ import { formatMoney, parsePaise } from "../core/money";
 import { CategoryIcon, Icon } from "../ui/icons";
 import type { RecurringCharge } from "../core/recurring";
 import { ProfileButton } from "../ui/ProfileMenu";
+import { AccountSelect } from "../ui/AccountSelect";
 import { Empty, Field, Progress, Sheet, Toggle } from "../ui/components";
 
 export function Plan() {
@@ -110,6 +111,9 @@ export function Plan() {
           </p>
         )}
       </section>
+
+      <AccountSchedule onBill={(id) => { const b = s.bills.find((x) => x.id === id); if (b) setBill(b); }}
+        onLoan={(id) => { const l = s.loans.find((x) => x.id === id); if (l) setLoan(l); }} />
 
       <section className="col gap8" id="loans">
         <div className="section-title">
@@ -666,12 +670,9 @@ function LoanEditor({ value, onClose }: { value: Loan | "new" | null; onClose: (
 
 /** Pick the account a payment comes from (or goes into): the same choices as Quick add. */
 function PaidFrom({ label, value, onChange }: { label: string; value: string; onChange: (account: string) => void }) {
-  const s = useTally();
   return (
     <Field label={label}>
-      <select value={value} onChange={(e) => onChange(e.target.value)}>
-        {accountChoices(s, value).map((a) => <option key={a} value={a}>{a}</option>)}
-      </select>
+      <AccountSelect value={value} onChange={onChange} />
     </Field>
   );
 }
@@ -687,5 +688,83 @@ function AccountNote({ name, what, incoming }: { name: string; what: string; inc
         ? `${what} ${incoming ? "goes into" : "comes out of"} ${acct.name}'s balance in Accounts.`
         : `${acct.name} doesn't update from transactions. Turn that on in Accounts to have this move its balance.`}
     </p>
+  );
+}
+
+/**
+ * What's set to come out of (and into) each account over the next 30 days — bills and EMIs from
+ * the account they're paid from, repeating transfers, card bills that pay themselves, regular
+ * income — with the balance it leaves, so a shortfall or a card over its limit shows up early.
+ */
+function AccountSchedule({ onBill, onLoan }: { onBill: (id: string) => void; onLoan: (id: string) => void }) {
+  const s = useTally();
+  const now = new Date();
+  const flows = useMemo(() => scheduledFlows(s, now, 30), [s]); // eslint-disable-line react-hooks/exhaustive-deps
+  const groups = new Map<string, ScheduledFlow[]>();
+  for (const f of flows) {
+    const k = f.account.trim().toLowerCase();
+    groups.set(k, [...(groups.get(k) ?? []), f]);
+  }
+  const day = (t: number) => new Date(t).toLocaleDateString([], { day: "numeric", month: "short" });
+
+  return (
+    <section className="col gap8" id="accounts-schedule">
+      <div className="section-title"><span>From your accounts</span><span className="t-muted">next 30 days</span></div>
+      <div className="card flush divided">
+        {groups.size === 0 && (
+          <Empty title="Nothing scheduled" body="Bills, EMIs, repeating transfers and card bills that pay themselves show here, under the account each one is paid from." />
+        )}
+        {[...groups.values()].map((list) => {
+          const acct = accountNamed(s, list[0].account);
+          const out = list.filter((f) => f.direction === "out").reduce((t, f) => t + f.amount, 0);
+          const inn = list.filter((f) => f.direction === "in").reduce((t, f) => t + f.amount, 0);
+          const card = acct?.kind === "card";
+          const now$ = acct ? liveBalance(acct, s) : null;
+          // A card's balance is what's owed: charges add to it, payments take it down.
+          const after = now$ === null ? null : card ? now$ + out - inn : now$ - out + inn;
+          const short = !card && after !== null && after < 0 ? -after : 0;
+          const over = card && acct?.limit && after !== null && after > acct.limit ? after - acct.limit : 0;
+          const shown = (v: number) => formatMoney(card ? -v : v);
+          return (
+            <div key={list[0].account} className="sched-group">
+              <div className="row gap12">
+                <span className="cat-icon" style={{ width: 36, height: 36, background: "var(--fill)" }}>
+                  <Icon name={card ? "card" : acct ? "home" : "bag"} size={18} />
+                </span>
+                <span className="grow col" style={{ minWidth: 0 }}>
+                  <span className="t-strong ellipsis">{acct?.name ?? list[0].account}</span>
+                  <span className="tiny t-muted">
+                    {out ? `${formatMoney(out)} going out` : ""}{out && inn ? " · " : ""}{inn ? `${formatMoney(inn)} coming in` : ""}
+                  </span>
+                </span>
+                {now$ !== null && after !== null && (
+                  <span className="col" style={{ alignItems: "flex-end" }}>
+                    <span className="tiny t-muted">{card ? "owed" : "balance"} now → after</span>
+                    <span className="small t-strong num">{shown(now$)} → {shown(after)}</span>
+                  </span>
+                )}
+              </div>
+              {short > 0 && <span className="tag warn">May run short by {formatMoney(short)}. Move money in before {day(list.find((f) => f.direction === "out")!.at)}.</span>}
+              {over > 0 && <span className="tag warn">Would go {formatMoney(over)} over its limit</span>}
+              {!acct && <span className="tiny t-muted">Not one of your accounts. Add it in Accounts to see its balance here.</span>}
+              <ul className="sched-list">
+                {list.map((f) => {
+                  const open = f.ref && (f.kind === "bill" ? () => onBill(f.ref!) : f.kind === "emi" ? () => onLoan(f.ref!) : null);
+                  const body = (
+                    <>
+                      <span className="sched-date">{day(f.at)}</span>
+                      <span className="grow ellipsis">{f.label}</span>
+                      <span className={`num t-strong ${f.direction === "in" ? "in" : ""}`}>{f.direction === "in" ? "+" : "−"}{formatMoney(f.amount)}</span>
+                    </>
+                  );
+                  return <li key={f.key}>{open ? <button className="sched-item" onClick={open}>{body}</button> : <span className="sched-item">{body}</span>}</li>;
+                })}
+              </ul>
+            </div>
+          );
+        })}
+      </div>
+      <p className="t-muted tiny" style={{ margin: "0 4px" }}>Open a bill or loan to change the account it's paid from. Card bills pay themselves when set up in Accounts.</p>
+    </section>
   );
 }

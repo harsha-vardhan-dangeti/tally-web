@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getState, handleUrlActions, load, runDueBills, runDueIncome, runDueLoans, runDueTransfers, useTally, type Expense } from "./data/store";
+import { getState, handleUrlActions, load, runDueBills, runDueIncome, runDueCardPayments, runDueLoans, runDueTransfers, useTally, type Expense } from "./data/store";
 import { Icon } from "./ui/icons";
 import { ToastHost, UpdateBar, useLongPress } from "./ui/components";
 import { Home } from "./screens/Dashboard";
@@ -60,7 +60,7 @@ export function App() {
   // Tally may stay open for days: when it comes back into view, add bills and income that fell due meanwhile.
   useEffect(() => {
     if (!s.ready) return;
-    const onVisible = () => { if (document.visibilityState === "visible") { runDueBills(); runDueIncome(); runDueLoans(); runDueTransfers(); } };
+    const onVisible = () => { if (document.visibilityState === "visible") { runDueBills(); runDueIncome(); runDueLoans(); runDueTransfers(); runDueCardPayments(); } };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [s.ready]);

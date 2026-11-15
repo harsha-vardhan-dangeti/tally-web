@@ -54,3 +54,24 @@ export function cardBill(owed: number, spentSince: number | null, statementDay: 
     nextStatement: c.nextStatement,
   };
 }
+
+export interface CardUsage {
+  used: number;
+  limit: number;
+  available: number;
+  /** Share of the limit used, 0–1 (can go above 1 when over the limit). */
+  share: number;
+  /** ok under 30% (what lenders like to see), high from 30%, near from 80%, over past the limit. */
+  tone: "ok" | "high" | "near" | "over";
+}
+
+/** How much of a card's limit is used. Null when the card has no limit set. */
+export function cardUsage(owed: number, limit: number | undefined): CardUsage | null {
+  if (!limit || limit <= 0) return null;
+  const used = Math.max(0, owed);
+  const share = used / limit;
+  return {
+    used, limit, available: limit - used, share,
+    tone: share > 1 ? "over" : share >= 0.8 ? "near" : share >= 0.3 ? "high" : "ok",
+  };
+}

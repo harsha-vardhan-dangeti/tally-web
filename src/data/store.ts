@@ -8,7 +8,8 @@ import {
   crossedThreshold, monthKey, monthRange, periodBounds, sameDay, setMonthStartDay, snapshot, type BudgetPeriod, type BudgetSnapshot,
 } from "../core/budget";
 import { dueInPeriod, nextDueDate, periodKey, type Every } from "../core/schedule";
-import { cardBill, cardCycle, type CardBill } from "../core/cards";
+import { cardBill, cardCycle, cardUsage, type CardBill, type CardUsage } from "../core/cards";
+import { dueDate as emiDate } from "../core/loans";
 import { formatMoney, isCurrency, setCurrency } from "../core/money";
 import { yourShare } from "../core/smartParser";
 import { emiFor, loanStatus, dueDate, type LoanTerms } from "../core/loans";
@@ -80,6 +81,11 @@ export interface Account {
   /** Credit cards: day the statement is made and day the bill is due (1–31). */
   statementDay?: number;
   dueDay?: number;
+  /** Credit cards: the credit limit, in paise. */
+  limit?: number;
+  /** Credit cards: the account that pays the bill, and whether Tally records that payment on the due date. */
+  payFrom?: string;
+  autoPay?: boolean;
 }
 /** A transfer that repeats every month on `day`, like a SIP. */
 export interface ScheduledTransfer {
@@ -269,6 +275,7 @@ export async function load() {
   runDueIncome();
   runDueLoans();
   runDueTransfers();
+  runDueCardPayments();
   // Ask the browser not to evict our data under storage pressure.
   navigator.storage?.persist?.().catch(() => {});
 }
@@ -463,6 +470,7 @@ export function addExpense(input: NewExpense): Expense {
   set({ expenses: sortExpenses([e, ...state.expenses]) });
   void persist("expenses", e);
   checkThreshold(before);
+  checkCardLimit(e);
   track("expense_added", { source: e.source, split: e.splitWays > 1 });
   return e;
 }
@@ -604,15 +612,123 @@ export function accountsNow(s: State = state): Account[] {
   return s.accounts.map((a) => ({ ...a, balance: homeBalance(a, s), updatedAt: Math.max(a.updatedAt, now) }));
 }
 
+/** How much of a card's limit is used, from its balance now. */
+export function cardLimitUsage(a: Account, s: State = state): CardUsage | null {
+  return a.kind === "card" ? cardUsage(liveBalance(a, s), a.limit) : null;
+}
+
+/** Credit left on the card called `name`, if it's one of the user's cards with a limit. */
+export function creditLeft(name: string, s: State = state): { card: Account; usage: CardUsage } | null {
+  const card = s.accounts.find((a) => a.kind === "card" && isAccount(a, name));
+  const usage = card ? cardLimitUsage(card, s) : null;
+  return card && usage ? { card, usage } : null;
+}
+
+/** After an expense on a card: a heads-up when it pushes the card past 80% or 100% of its limit. */
+function checkCardLimit(e: Expense) {
+  const left = creditLeft(e.account);
+  if (!left || !left.card.tracked || e.paidBy || e.occurredAt <= left.card.updatedAt) return;
+  const after = left.usage.used;
+  const pct = crossedThreshold(after - e.amount, after, left.usage.limit);
+  if (!pct) return;
+  const name = left.card.name;
+  setTimeout(() => showToast(pct === 100
+    ? `${name} is over its limit by ${formatMoney(after - left.usage.limit)}`
+    : `${name} is ${Math.round(left.usage.share * 100)}% used · ${formatMoney(left.usage.available)} left`), 2600);
+}
+
+/**
+ * Card bills set to pay themselves: on the due date, a transfer of what's due from the paying
+ * account. The transfer ID is fixed per card and due date, so it happens once on any device.
+ */
+export function runDueCardPayments(now = new Date()) {
+  const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59).getTime();
+  for (const card of state.accounts) {
+    if (card.kind !== "card" || !card.autoPay || !card.payFrom) continue;
+    const bill = cardStatus(card, state, now);
+    if (!bill?.due || bill.due.date.getTime() > endOfToday) continue;
+    const d = bill.due.date;
+    const key = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+    addTransfer({ id: `cardpay-${card.id}-${key}`, fromId: card.payFrom, toId: card.id, amount: bill.due.amount, note: `${card.name} bill`,
+      occurredAt: Math.min(new Date(d.getFullYear(), d.getMonth(), d.getDate(), 10).getTime(), now.getTime()) });
+  }
+}
+
+export interface ScheduledFlow {
+  key: string;
+  /** Account name the money leaves (out) or reaches (in). */
+  account: string;
+  label: string;
+  amount: number;
+  at: number;
+  direction: "out" | "in";
+  kind: "bill" | "emi" | "transfer" | "card" | "income";
+  /** The bill or loan it comes from, to open it. */
+  ref?: string;
+}
+
+/**
+ * Everything set to move money in the next `days` days, by account: bills and EMIs (from the
+ * account they're paid from), repeating transfers, regular income, and card bills that pay
+ * themselves. Plan uses it to show what's coming out of each account and whether it's enough.
+ */
+export function scheduledFlows(s: State = state, now = new Date(), days = 30): ScheduledFlow[] {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const end = new Date(today.getFullYear(), today.getMonth(), today.getDate() + days, 23, 59);
+  const out: ScheduledFlow[] = [];
+  const name = (id: string) => s.accounts.find((a) => a.id === id)?.name ?? "";
+  for (const b of s.bills) {
+    for (let d = nextDueDate(b, now), n = 0; d <= end && n < 6; d = nextDueDate(b, new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)), n++) {
+      if (periodKey(b, d) === b.lastLoggedMonth) continue; // this period's payment is already in
+      out.push({ key: `bill-${b.id}-${d.getTime()}`, account: b.account, label: b.name, amount: b.amount, at: d.getTime(), direction: "out", kind: "bill", ref: b.id });
+    }
+  }
+  for (const l of s.loans) {
+    for (let k = 0; k < l.months; k++) {
+      const d = emiDate(l.firstDueAt, k);
+      if (d < today) continue;
+      if (d > end) break;
+      if (monthKey(d) === l.lastLoggedMonth) continue;
+      out.push({ key: `emi-${l.id}-${k}`, account: l.account, label: `${l.name} EMI`, amount: l.emi, at: d.getTime(), direction: "out", kind: "emi", ref: l.id });
+    }
+  }
+  const monthly = (day: number, last: string) => {
+    const thisMonth = new Date(today.getFullYear(), today.getMonth(), day);
+    const d = thisMonth >= today && monthKey(thisMonth) !== last ? thisMonth : new Date(today.getFullYear(), today.getMonth() + 1, day);
+    return d <= end ? d : null;
+  };
+  for (const t of s.settings.scheduledTransfers) {
+    const d = monthly(t.day, t.lastLoggedMonth);
+    if (!d) continue;
+    const label = t.note || `Transfer to ${name(t.toId)}`;
+    out.push({ key: `st-${t.id}-out`, account: name(t.fromId), label, amount: t.amount, at: d.getTime(), direction: "out", kind: "transfer" });
+    out.push({ key: `st-${t.id}-in`, account: name(t.toId), label: t.note || `Transfer from ${name(t.fromId)}`, amount: t.amount, at: d.getTime(), direction: "in", kind: "transfer" });
+  }
+  for (const r of s.recurringIncomes) {
+    const d = monthly(r.day, r.lastLoggedMonth);
+    if (d) out.push({ key: `inc-${r.id}`, account: r.account, label: r.source || "Income", amount: r.amount, at: d.getTime(), direction: "in", kind: "income" });
+  }
+  for (const card of s.accounts) {
+    if (card.kind !== "card" || !card.autoPay || !card.payFrom) continue;
+    const bill = cardStatus(card, s, now);
+    if (!bill?.due || bill.due.date > end) continue;
+    const at = bill.due.date.getTime();
+    out.push({ key: `cardpay-${card.id}-out`, account: name(card.payFrom), label: `${card.name} bill`, amount: bill.due.amount, at, direction: "out", kind: "card" });
+    out.push({ key: `cardpay-${card.id}-in`, account: card.name, label: "Bill payment", amount: bill.due.amount, at, direction: "in", kind: "card" });
+  }
+  return out.filter((f) => f.account).sort((a, b) => a.at - b.at);
+}
+
 /** A credit card's bill: due amount and date from its statement and due days. */
 export function cardStatus(a: Account, s: State = state, now = new Date()): CardBill | null {
   if (a.kind !== "card" || !a.statementDay || !a.dueDay) return null;
   const owed = liveBalance(a, s);
   let spentSince: number | null = null;
   if (a.tracked) {
+    // Everything charged since the statement is still unbilled; payments (transfers in) lower the
+    // balance, so what's left of the bill is the balance minus those charges.
     const since = cardCycle(a.statementDay, a.dueDay, now).lastStatement.getTime() - 1;
-    // Only charges after the balance was last set are known; before that, assume they're in the bill.
-    const f = netFlow(a, Math.max(since, a.updatedAt), s);
+    const f = netFlow(a, since, s);
     spentSince = Math.max(0, f.out - f.in);
   }
   return cardBill(owed, spentSince, a.statementDay, a.dueDay, now);
@@ -1047,7 +1163,10 @@ export async function exportXLSX(): Promise<Blob> {
   })));
   sheet("Income", incomes.map((x) => ({ Date: day(x.receivedAt), [`Amount (${cur})`]: money(x.amount), Source: x.source, Account: x.account, Note: x.note })));
   sheet("Transfers", transfers.map((t) => ({ Date: day(t.occurredAt), From: t.fromName, To: t.toName, [`Amount (${cur})`]: money(t.amount), Note: t.note })));
-  sheet("Accounts", accounts.map((a) => ({ Name: a.name, Type: ACCOUNT_KIND_LABEL[a.kind], Balance: money(liveBalance(a)), Currency: a.currency ?? cur })));
+  sheet("Accounts", accounts.map((a) => ({
+    Name: a.name, Type: ACCOUNT_KIND_LABEL[a.kind], Balance: money(liveBalance(a)), Currency: a.currency ?? cur,
+    "Credit limit": a.limit ? money(a.limit) : "", Available: a.limit ? money(a.limit - liveBalance(a)) : "",
+  })));
   sheet("Loans", loans.map((l) => ({ Name: l.name, Lender: l.lender, Borrowed: money(l.principal), "Rate %": l.ratePct, Months: l.months, EMI: money(l.emi),
     "First EMI": day(l.firstDueAt) })));
   sheet("People", ledger.map((x) => ({ Date: day(x.occurredAt), Person: x.person, Kind: x.kind, [`They owe you (${cur})`]: money(x.amount), Note: x.note })));

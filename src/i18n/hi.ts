@@ -272,4 +272,8 @@ export const hi: Record<string, string> = {
   "1 hour away": "1 घंटे बाद",
   "Couldn't make the Excel file. Check your connection and try again.": "Excel फ़ाइल नहीं बन सकी। अपना कनेक्शन जाँचें और फिर कोशिश करें।",
   "Export Excel": "Excel में निकालें",
+  "Credit cards": "क्रेडिट कार्ड",
+  "Over limit": "सीमा से ज़्यादा",
+  "{amount} due {date}": "{date} को {amount} देय",
+  "{used} of {limit} used": "{limit} में से {used} इस्तेमाल",
 };

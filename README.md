@@ -74,6 +74,8 @@ A new release installs in the background and waits. `src/data/updates.ts` shows 
 - **Calculator:** amount fields take sums (`250+120`, `1800/4`), and Quick add's keypad has + − × ÷ (`evaluate` in `src/core/money.ts`, no eval).
 - **Budgets per week, month or year** for each category.
 - **Accounts that follow transactions:** an account can update from expenses paid from it and income into it (matched by name), from the balance you last set (`liveBalance` in `src/data/store.ts`). Credit cards take a statement day and due day and show the bill and due date (`src/core/cards.ts`), which also appears in Coming up. Accounts can hold another currency, converted for net worth.
+- **Credit card limits and auto-pay:** each card can have a limit (used, available and % used in Accounts and on Home; Quick add and the expense sheet show the credit left and warn before going over; a heads-up at 80% and 100%). A card's bill can pay itself from a bank account on the due date, recorded as a transfer (`runDueCardPayments`).
+- **From your accounts** (Plan): the next 30 days of bills, EMIs, repeating transfers, card bills and regular income under the account each uses, with the balance it leaves and a warning before a shortfall or a card over its limit (`scheduledFlows` in `src/data/store.ts`). Bills, EMIs and regular income pick their account from the same list as Quick add (`src/ui/AccountSelect.tsx`).
 - **Repeats:** bills every week, month or year (`src/core/schedule.ts`) and transfers that repeat monthly, like a SIP.
 - **Excel export** (Settings → Export Excel): expenses, income, transfers, accounts, loans and people as one workbook.
 - **App lock delay:** ask again on leaving, or after 1, 5, 15 or 60 minutes away.

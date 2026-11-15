@@ -620,3 +620,12 @@ button.note-card:hover { background: var(--surface-2); }
 .keypad.calc { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .keypad.calc button.op { background: var(--brand-soft); color: var(--accent); font-weight: 700; }
 .calc-line { letter-spacing: 0.02em; min-height: 18px; }
+.card-usage { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 2px; max-width: 360px; }
+.card-usage .progress { height: 6px; }
+.sched-group { display: flex; flex-direction: column; gap: 8px; padding: 14px; }
+.sched-group > .tag { align-self: flex-start; white-space: normal; }
+.sched-list { list-style: none; margin: 0; padding: 0 0 0 48px; display: flex; flex-direction: column; }
+.sched-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; font-size: 14px; }
+button.sched-item { cursor: pointer; border-radius: 8px; }
+button.sched-item:hover { background: var(--fill); }
+.sched-date { width: 52px; flex-shrink: 0; color: var(--muted); font-size: 13px; }

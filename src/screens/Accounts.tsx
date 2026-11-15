@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react";
 import {
-  ACCOUNT_KIND_LABEL, accountsNow, addTransfer, cardStatus, deleteAccount, deleteScheduledTransfer, deleteTransfer, homeBalance, liveBalance, moneyIn,
+  ACCOUNT_KIND_LABEL, accountsNow, addTransfer, cardLimitUsage, cardStatus, deleteAccount, deleteScheduledTransfer, deleteTransfer, homeBalance, liveBalance, moneyIn,
   saveAccount, saveScheduledTransfer, setSettings, showToast, uid, useTally, type Account, type AccountKind,
 } from "../data/store";
 import { monthKey } from "../core/budget";
 import { CURRENCIES } from "../core/money";
-import { Toggle } from "../ui/components";
+import { Progress, Toggle } from "../ui/components";
 import { netWorthSeries } from "../core/reports";
 import { formatMoney, parsePaise, currencySymbol } from "../core/money";
 import { Icon } from "../ui/icons";
@@ -83,7 +83,7 @@ export function Accounts() {
             const total = list.reduce((t, a) => t + (a.kind === "card" ? -homeBalance(a, s) : homeBalance(a, s)), 0);
             return (
               <section key={g.title} className="col gap8">
-                <div className="section-title"><span>{g.title}</span><span className="t-muted num">{signed(total)}</span></div>
+                <div className="section-title"><span>{g.title}</span><span className="t-muted num">{g.kinds.includes("card") ? cardsSummary(list, s) || signed(total) : signed(total)}</span></div>
                 <div className="card flush divided">
                   {list.map((acct) => (
                     <button key={acct.id} className="list-row row-btn" onClick={() => setEditing(acct)}>
@@ -183,14 +183,37 @@ function AccountBalance({ acct }: { acct: Account }) {
 function CardLine({ acct }: { acct: Account }) {
   const s = useTally();
   const bill = cardStatus(acct, s);
-  if (!bill) return null;
-  const soon = bill.due && bill.due.date.getTime() - Date.now() < 4 * 86_400_000;
+  const usage = cardLimitUsage(acct, s);
+  if (!bill && !usage) return null;
+  const soon = bill?.due && bill.due.date.getTime() - Date.now() < 4 * 86_400_000;
+  const payer = acct.autoPay && acct.payFrom ? s.accounts.find((a) => a.id === acct.payFrom)?.name : null;
   return (
-    <span className="tiny" style={{ color: soon ? "var(--warn)" : "var(--muted)" }}>
-      {bill.due ? `${formatMoney(bill.due.amount)} due ${shortDate(bill.due.date)}` : `Next statement ${shortDate(bill.nextStatement)}`}
-      {bill.unbilled ? ` · ${formatMoney(bill.unbilled)} spent since the statement` : ""}
-    </span>
+    <>
+      {usage && (
+        <span className="card-usage">
+          <Progress value={usage.share} tone={usage.tone === "over" ? "over" : usage.tone === "near" ? "warn" : "ok"} />
+          <span className="tiny" style={{ color: usage.tone === "over" ? "var(--danger)" : usage.tone === "near" ? "var(--warn)" : "var(--muted)" }}>
+            {usage.available >= 0 ? `${formatMoney(usage.available)} available` : `${formatMoney(-usage.available)} over the limit`}
+            {` · ${Math.round(usage.share * 100)}% of ${formatMoney(usage.limit)} used`}
+          </span>
+        </span>
+      )}
+      {bill && (
+        <span className="tiny" style={{ color: soon ? "var(--warn)" : "var(--muted)" }}>
+          {bill.due ? `${formatMoney(bill.due.amount)} due ${shortDate(bill.due.date)}${payer ? `, paid from ${payer}` : ""}` : `Next statement ${shortDate(bill.nextStatement)}`}
+          {bill.unbilled ? ` · ${formatMoney(bill.unbilled)} spent since the statement` : ""}
+        </span>
+      )}
+    </>
   );
+}
+
+/** "₹14,000 of ₹1,50,000 used" across the cards that have a limit. */
+function cardsSummary(cards: Account[], s: ReturnType<typeof useTally>): string {
+  const usages = cards.map((c) => cardLimitUsage(c, s)).filter((u): u is NonNullable<typeof u> => !!u);
+  if (!usages.length) return "";
+  const used = usages.reduce((t, u) => t + u.used, 0), limit = usages.reduce((t, u) => t + u.limit, 0);
+  return `${formatMoney(used)} of ${formatMoney(limit)} used`;
 }
 
 const today = () => new Date().toLocaleDateString("en-CA"); // yyyy-mm-dd in local time
@@ -291,6 +314,9 @@ function AccountEditor({ value, onClose }: { value: Account | "new" | null; onCl
   const [rate, setRate] = useState("");
   const [statementDay, setStatementDay] = useState(0);
   const [dueDay, setDueDay] = useState(0);
+  const [limit, setLimit] = useState("");
+  const [payFrom, setPayFrom] = useState("");
+  const [autoPay, setAutoPay] = useState(false);
   const [seen, setSeen] = useState<typeof value>(null);
   if (value !== seen) {
     setSeen(value);
@@ -303,7 +329,11 @@ function AccountEditor({ value, onClose }: { value: Account | "new" | null; onCl
     setRate(acct?.currency ? String(s.settings.fxRates[acct.currency] ?? "") : "");
     setStatementDay(acct?.statementDay ?? 0);
     setDueDay(acct?.dueDay ?? 0);
+    setLimit(acct?.limit ? String(acct.limit / 100) : "");
+    setPayFrom(acct?.payFrom ?? s.accounts.find((a) => a.kind === "bank")?.id ?? "");
+    setAutoPay(!!acct?.autoPay);
   }
+  const banks = s.accounts.filter((a) => a.kind !== "card" && a.id !== acct?.id);
   const foreign = currency !== home;
   const days = Array.from({ length: 31 }, (_, i) => i + 1);
   return (
@@ -330,6 +360,11 @@ function AccountEditor({ value, onClose }: { value: Account | "new" | null; onCl
         </Field>
       )}
       {kind === "card" && (
+        <Field label={`Credit limit (${currencySymbol(currency)})`}>
+          <input type="text" inputMode="decimal" value={limit} onChange={(e) => setLimit(e.target.value)} placeholder="150000" />
+        </Field>
+      )}
+      {kind === "card" && (
         <div className="row gap8">
           <Field label="Statement day">
             <select value={statementDay} onChange={(e) => setStatementDay(Number(e.target.value))}>
@@ -343,6 +378,19 @@ function AccountEditor({ value, onClose }: { value: Account | "new" | null; onCl
               {days.map((d) => <option key={d} value={d}>{d}</option>)}
             </select>
           </Field>
+        </div>
+      )}
+      {kind === "card" && statementDay > 0 && dueDay > 0 && banks.length > 0 && (
+        <div className="card col gap8" style={{ background: "var(--surface-2)", padding: "0 14px 12px" }}>
+          <Toggle label="Pay the bill automatically" checked={autoPay} onChange={setAutoPay}
+            hint="On the due date, Tally records paying what's due from the account below: a transfer, so it isn't counted as spending twice." />
+          {autoPay && (
+            <Field label="Pay from">
+              <select value={payFrom} onChange={(e) => setPayFrom(e.target.value)}>
+                {banks.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </Field>
+          )}
         </div>
       )}
       {!foreign && (
@@ -362,6 +410,8 @@ function AccountEditor({ value, onClose }: { value: Account | "new" | null; onCl
           ...(tracked && !foreign ? { tracked: true } : {}),
           ...(foreign ? { currency } : {}),
           ...(kind === "card" && statementDay && dueDay ? { statementDay, dueDay } : {}),
+          ...(kind === "card" && parsePaise(limit) ? { limit: parsePaise(limit)! } : {}),
+          ...(kind === "card" && statementDay && dueDay && autoPay && payFrom ? { autoPay: true, payFrom } : {}),
         });
         onClose();
       }}>Save</button>

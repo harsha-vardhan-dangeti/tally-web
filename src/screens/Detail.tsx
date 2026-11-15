@@ -6,6 +6,7 @@ import { payLink, sharePerPerson, splitNames } from "../core/people";
 import { CURRENCIES, currencySymbol } from "../core/money";
 import { t } from "../i18n";
 import { shareText } from "../ui/share";
+import { AccountHint, AccountSelect } from "../ui/AccountSelect";
 import { categoryMeta, pickableCategories, type Category } from "../core/categories";
 import { formatMoney, parsePaise } from "../core/money";
 import { Icon } from "../ui/icons";
@@ -93,12 +94,13 @@ export function Detail({ id, onClose }: { id: string | null; onClose: () => void
         }}>Always put {e.merchant.trim()} in {categoryMeta(e.category).title}</button>
       )}
       <div className="row gap8">
-        <Field label="Paid from"><input type="text" value={e.account} onChange={(ev) => set({ account: ev.target.value })} /></Field>
+        <Field label="Paid from"><AccountSelect value={e.account} onChange={(account) => set({ account })} /></Field>
         <Field label="When">
           <input type="datetime-local" value={toInput(e.occurredAt)}
             onChange={(ev) => { const t = new Date(ev.target.value).getTime(); if (!Number.isNaN(t)) set({ occurredAt: t }); }} />
         </Field>
       </div>
+      <AccountHint account={e.account} amount={0} />
       <Field label="Note"><textarea rows={2} value={e.note} onChange={(ev) => set({ note: ev.target.value })} /></Field>
       <TagsField tags={e.tags ?? []} onChange={(tags) => set({ tags: tags.length ? tags : undefined })} />
 

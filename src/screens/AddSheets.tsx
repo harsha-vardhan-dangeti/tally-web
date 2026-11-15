@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from "react";
-import { accountChoices, addExpense, deleteExpense, setSettings, showToast, useTally } from "../data/store";
+import { addExpense, deleteExpense, setSettings, showToast, useTally } from "../data/store";
+import { AccountHint, AccountSelect } from "../ui/AccountSelect";
 import { categoryMeta, pickableCategories, type Category } from "../core/categories";
 import { evaluate, formatMoney } from "../core/money";
 import { parseLines, yourShare } from "../core/smartParser";
@@ -39,7 +40,6 @@ export function QuickAdd({ open, onClose, onSmart, initialDate }: {
   const isSumText = /[+−×÷]/.test(digits.replace(/[+−×÷]$/, ""));
   const result = evaluate(digits.replace(/[+−×÷]$/, "") || "0");
   const amount = result !== null && result > 0 ? Math.round(result * 100) : 0;
-  const accounts = useMemo(() => accountChoices(s), [s.accounts]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const tap = (k: string) => {
     if (k === "⌫") return setDigits((d) => d.slice(0, -1));
@@ -134,11 +134,10 @@ export function QuickAdd({ open, onClose, onSmart, initialDate }: {
       )}
 
       <div className="row gap8">
-        <select aria-label={t("Paid from")} value={account} onChange={(e) => setAccount(e.target.value)} style={{ flex: 1 }}>
-          {accounts.map((a) => <option key={a}>{a}</option>)}
-        </select>
+        <div style={{ flex: 1, minWidth: 0 }}><AccountSelect label={t("Paid from")} value={account} onChange={setAccount} /></div>
         <input aria-label="Date" type="date" value={date} max={toLocalInput(new Date())} onChange={(e) => setDate(e.target.value)} style={{ flex: 1 }} />
       </div>
+      <AccountHint account={account} amount={amount} />
       <input type="text" aria-label={t("Merchant or note")} placeholder={t("Merchant or note (optional)")} value={note} onChange={(e) => setNote(e.target.value)} />
 
       <div className="keypad calc">

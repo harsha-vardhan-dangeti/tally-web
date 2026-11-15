@@ -131,7 +131,10 @@ export function parseBackup(text: string): Backup {
       ...(r.tracked === true ? { tracked: true } : {}),
       ...(isCurrency(r.currency) ? { currency: r.currency } : {}),
       ...(dayOk(r.statementDay) ? { statementDay: r.statementDay as number } : {}),
-      ...(dayOk(r.dueDay) ? { dueDay: r.dueDay as number } : {}) };
+      ...(dayOk(r.dueDay) ? { dueDay: r.dueDay as number } : {}),
+      ...(paise(r.limit) ? { limit: r.limit as number } : {}),
+      ...(id(r.payFrom) ? { payFrom: r.payFrom as string } : {}),
+      ...(r.autoPay === true ? { autoPay: true } : {}) };
   });
   const goals = optionalRows<Goal>(data.goals, (r) => {
     const rowId = id(r.id), target = paise(r.target);

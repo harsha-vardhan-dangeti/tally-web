@@ -272,4 +272,8 @@ export const ta: Record<string, string> = {
   "1 hour away": "1 மணி நேரத்திற்குப் பிறகு",
   "Couldn't make the Excel file. Check your connection and try again.": "Excel கோப்பை உருவாக்க முடியவில்லை. இணைப்பைச் சரிபார்த்து மீண்டும் முயலுங்கள்.",
   "Export Excel": "Excel ஏற்றுமதி",
+  "Credit cards": "கிரெடிட் கார்டுகள்",
+  "Over limit": "வரம்பை மீறியது",
+  "{amount} due {date}": "{date} அன்று {amount} செலுத்த வேண்டும்",
+  "{used} of {limit} used": "{limit} இல் {used} பயன்படுத்தப்பட்டது",
 };
