@@ -1,7 +1,7 @@
 import { useContext, useMemo, useState, type ReactNode } from "react";
 import {
   accountsNow, backupOverdueDays, budgetSnapshot, budgetSpent, cardActivity, cardLimitUsage, cardSpendByMonth, cardStatus, counts, homeBalance, inMonth, investmentsSummary,
-  nextDue, recurringSuggestions, unlinkedCardExpenses, useTally, type Account, type Chip, type Expense,
+  nextDue, recurringSuggestions, unlinkedCardExpenses, unlinkedIncomeRules, unlinkedIncomes, useTally, type Account, type Chip, type Expense,
 } from "../data/store";
 import { addMonths, dayOfMonth, daysInMonth, monthKey, monthLabel, monthRange } from "../core/budget";
 import { people, peopleTotals } from "../core/people";
@@ -16,6 +16,7 @@ import { CategoryIcon, Icon } from "../ui/icons";
 import { Progress } from "../ui/components";
 import { BarList, LegendItem, PaceChart, Sparkline } from "../ui/charts";
 import { CardSheet } from "../ui/CardSheet";
+import { IncomeLinkSheet } from "../ui/IncomeLinkSheet";
 import { TallyMarks } from "../ui/tally";
 import { ProfileButton, ShellContext } from "../ui/ProfileMenu";
 import { ChipButton, ChipEditor, ExpenseRowView, greeting } from "./Activity";
@@ -78,6 +79,11 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
     return cardSpendByMonth({ ...s, expenses: s.expenses.filter((e) => e.occurredAt < cut) }, 2, now)[0]?.spent ?? 0;
   }, [s.expenses, s.accounts]); // eslint-disable-line react-hooks/exhaustive-deps
   const [cardOpen, setCardOpen] = useState<string | null>(null);
+  const [incomeLink, setIncomeLink] = useState(false);
+  // Income going into "Bank", "UPI" or nothing, once there's a bank or cash account it could go into.
+  const canLinkIncome = s.accounts.some((a) => a.kind === "bank" || a.kind === "cash");
+  const looseIncomeTotal = canLinkIncome ? unlinkedIncomes(s).reduce((x, i) => x + i.amount, 0) : 0;
+  const looseIncome = looseIncomeTotal > 0 || (canLinkIncome && unlinkedIncomeRules(s).length > 0);
 
   // In the first week of a month, offer last month's recap picture once.
   const lastMonth = addMonths(now, -1);
@@ -348,6 +354,14 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
               </dl>
             </>
           )}
+          {looseIncome && (
+            <div className="row between gap8" style={{ alignItems: "center" }}>
+              <span className="tiny" style={{ color: "var(--warn)" }}>{looseIncomeTotal > 0
+                ? t("{amount} of income isn't in any of your accounts", { amount: formatMoney(looseIncomeTotal) })
+                : t("Your regular income isn't going into any of your accounts")}</span>
+              <button className="btn ghost small-btn" onClick={() => setIncomeLink(true)}>{t("Choose account")}</button>
+            </div>
+          )}
           {(owe.owedToYou > 0 || owe.youOwe > 0) && (
             <button className="dash-people" onClick={() => go("people")}>
               <Icon name="split" size={16} />
@@ -373,6 +387,7 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
 
       <ChipEditor chip={chipMenu} open={chipMenu !== null || newChip} onClose={() => { setChipMenu(null); setNewChip(false); }} />
       <CardSheet cardId={cardOpen} onClose={() => setCardOpen(null)} />
+      <IncomeLinkSheet open={incomeLink} onClose={() => setIncomeLink(false)} />
     </div>
   );
 }

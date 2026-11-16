@@ -346,4 +346,7 @@ export const hi: Record<string, string> = {
   "{amount} on cards this month": "इस महीने कार्ड पर {amount}",
   "{amount} since last month": "पिछले महीने से {amount}",
   "{pct}% of limit used": "सीमा का {pct}% इस्तेमाल",
+  "{amount} of income isn't in any of your accounts": "{amount} की आय आपके किसी खाते में नहीं है",
+  "Your regular income isn't going into any of your accounts": "आपकी नियमित आय आपके किसी खाते में नहीं जा रही",
+  "Choose account": "खाता चुनें",
 };

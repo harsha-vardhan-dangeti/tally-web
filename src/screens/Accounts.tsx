@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import {
   ACCOUNT_KIND_LABEL, accountsNow, addTransfer, cardLimitUsage, cardStatus, deleteAccount, deleteLedgerEntry, deleteScheduledTransfer, deleteTransfer, homeBalance,
   investmentReturn, investmentsSummary, liveBalance, moneyIn, netInvested, runDueTransfers, saveAccount, saveLedgerEntry, saveScheduledTransfer, setSettings, showToast,
-  sipsInto, uid, useTally, type Account, type AccountKind, type ScheduledTransfer,
+  sipsInto, uid, unlinkedIncomeRules, unlinkedIncomes, useTally, type Account, type AccountKind, type ScheduledTransfer,
 } from "../data/store";
 import { people } from "../core/people";
 import { monthKey } from "../core/budget";
@@ -15,6 +15,7 @@ import { Empty, Field, Sheet } from "../ui/components";
 import { ChartCard, DataTable, TrendLine } from "../ui/charts";
 import { ProfileButton } from "../ui/ProfileMenu";
 import { CardSheet } from "../ui/CardSheet";
+import { IncomeLinkSheet } from "../ui/IncomeLinkSheet";
 
 const GROUPS: { kinds: AccountKind[]; title: string }[] = [
   { kinds: ["bank", "cash"], title: "Cash and bank" },
@@ -27,6 +28,10 @@ export function Accounts() {
   const s = useTally();
   const [editing, setEditing] = useState<Account | "new" | null>(null);
   const [viewing, setViewing] = useState<string | null>(null);
+  const [linkingIncome, setLinkingIncome] = useState(false);
+  const looseIncome = unlinkedIncomes(s);
+  const looseRules = unlinkedIncomeRules(s);
+  const hasBank = s.accounts.some((a) => a.kind === "bank" || a.kind === "cash");
   const [moving, setMoving] = useState(false);
   const [sip, setSip] = useState<ScheduledTransfer | "new" | null>(null);
   const [allTransfers, setAllTransfers] = useState(false);
@@ -84,6 +89,17 @@ export function Accounts() {
                 points={charted.map((p) => ({ key: p.month.toISOString(), label: p.month.toLocaleDateString([], { month: "short" }),
                   title: p.month.toLocaleDateString([], { month: "long", year: "numeric" }), value: p.net }))} />
             </ChartCard>
+          )}
+
+          {hasBank && (looseIncome.length > 0 || looseRules.length > 0) && (
+            <div className="banner span-2" role="status">
+              <Icon name="alert" size={20} />
+              <span className="grow small">
+                {[looseIncome.length ? `${formatMoney(looseIncome.reduce((t, x) => t + x.amount, 0))} of income` : "",
+                  looseRules.length ? `${looseRules.length === 1 ? "a regular income" : `${looseRules.length} regular incomes`}` : ""].filter(Boolean).join(" and ")} {looseIncome.length + looseRules.length === 1 ? "isn't" : "aren't"} going into any of your accounts, so no balance shows {looseIncome.length + looseRules.length === 1 ? "it" : "them"}.
+              </span>
+              <button className="btn small-btn" onClick={() => setLinkingIncome(true)}>Choose account</button>
+            </div>
           )}
 
           {GROUPS.map((g) => {
@@ -194,6 +210,7 @@ export function Accounts() {
         </>
       )}
 
+      <IncomeLinkSheet open={linkingIncome} onClose={() => setLinkingIncome(false)} />
       <CardSheet cardId={viewing} onClose={() => setViewing(null)} onEdit={(a) => { setViewing(null); setEditing(a); }} />
       <AccountEditor value={editing} onClose={() => setEditing(null)} />
       <TransferSheet open={moving} onClose={() => setMoving(false)} />

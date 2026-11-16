@@ -834,7 +834,8 @@ export function scheduledFlows(s: State = state, now = new Date(), days = 30): S
     out.push({ key: `cardpay-${card.id}-out`, account: name(card.payFrom), label: `${card.name} bill`, amount: bill.due.amount, at, direction: "out", kind: "card" });
     out.push({ key: `cardpay-${card.id}-in`, account: card.name, label: "Bill payment", amount: bill.due.amount, at, direction: "in", kind: "card" });
   }
-  return out.filter((f) => f.account).sort((a, b) => a.at - b.at);
+  // "Bank" or "Credit card" means your bank or card when you have just one.
+  return out.filter((f) => f.account).map((f) => ({ ...f, account: resolveAccount(f.account, s) })).sort((a, b) => a.at - b.at);
 }
 
 /** A credit card's bill: due amount and date from its statement and due days. */
@@ -859,11 +860,57 @@ const GENERIC_CARD = new Set(["credit card", "card", "credit"]);
 /** "Credit card" without saying which one: the general method, not one of your accounts. */
 export const isGenericCard = (name: string, s: Pick<State, "accounts"> = state) => GENERIC_CARD.has(nameKey(name)) && !accountNamed(s, name);
 
-/** The account money goes to: "Credit card" means your card when you have exactly one. */
+const GENERIC_BANK = new Set(["bank", "bank account"]);
+
+/**
+ * The account money goes to or comes from: "Credit card" means your card when you have exactly one,
+ * and "Bank" your bank account when you have exactly one.
+ */
 export function resolveAccount(name: string, s: Pick<State, "accounts"> = state): string {
-  if (!isGenericCard(name, s)) return name;
-  const cards = s.accounts.filter((a) => a.kind === "card");
-  return cards.length === 1 ? cards[0].name : name;
+  if (accountNamed(s, name)) return name;
+  const kind = GENERIC_CARD.has(nameKey(name)) ? "card" : GENERIC_BANK.has(nameKey(name)) ? "bank" : null;
+  if (!kind) return name;
+  const list = s.accounts.filter((a) => a.kind === kind);
+  return list.length === 1 ? list[0].name : name;
+}
+
+// ---------- income not linked to an account ----------
+
+/** Incomes that went into something that isn't one of your accounts ("Bank", "UPI", nothing), so no balance has them. */
+export const unlinkedIncomes = (s: Pick<State, "accounts" | "incomes"> = state) =>
+  s.incomes.filter((x) => !accountNamed(s, x.account));
+
+/** Regular incomes in the same state: each month's payment would land in no account. ("Bank" with one bank account does.) */
+export const unlinkedIncomeRules = (s: Pick<State, "accounts" | "recurringIncomes"> = state) =>
+  s.recurringIncomes.filter((r) => !accountNamed(s, resolveAccount(r.account, s)));
+
+/** What linking would add to an account's balance from before it was last set (see linkIncomes). */
+export function incomeBeforeBalance(a: Account, list: Income[]): number {
+  return a.tracked ? list.filter((x) => x.receivedAt <= a.updatedAt).reduce((t, x) => t + x.amount, 0) : 0;
+}
+
+/**
+ * Puts incomes (and regular incomes, for the months to come) into one of your accounts. On an account
+ * that follows its transactions, those after its balance was last set add to it; earlier ones are taken
+ * to be in that balance already, unless `addEarlier` adds them too. Returns an undo.
+ */
+export function linkIncomes(accountId: string, ids: string[], ruleIds: string[], addEarlier = false): () => void {
+  const acct = state.accounts.find((a) => a.id === accountId);
+  if (!acct) return () => {};
+  const idSet = new Set(ids), ruleSet = new Set(ruleIds);
+  const before = state.incomes.filter((x) => idSet.has(x.id));
+  const rules = state.recurringIncomes.filter((r) => ruleSet.has(r.id));
+  const earlier = addEarlier ? incomeBeforeBalance(acct, before) : 0;
+  const sign = acct.kind === "card" ? -1 : 1;
+  void importTransactions([], before.map((x) => ({ ...x, account: acct.name })));
+  for (const r of rules) saveRecurringIncome({ ...r, account: acct.name });
+  if (earlier) saveAccount({ ...acct, balance: acct.balance + sign * earlier });
+  return () => {
+    void importTransactions([], before);
+    for (const r of rules) putRecurringIncome(r);
+    const now = state.accounts.find((a) => a.id === accountId);
+    if (earlier && now) saveAccount({ ...now, balance: now.balance - sign * earlier });
+  };
 }
 
 /** Expenses you paid by card without saying which card. */
@@ -1203,7 +1250,8 @@ export function saveImportLayout(layout: ImportLayout) {
 
 const sortIncomes = (list: Income[]) => [...list].sort((a, b) => b.receivedAt - a.receivedAt);
 
-export function saveIncome(income: Income) {
+export function saveIncome(input: Income) {
+  const income = { ...input, account: resolveAccount(input.account) };
   const rest = state.incomes.filter((x) => x.id !== income.id);
   set({ incomes: sortIncomes([income, ...rest]) });
   void persist("incomes", income);
@@ -1243,7 +1291,12 @@ export function removeImported(expenseIds: string[], incomeIds: string[]) {
   for (const id of incomeIds) void remove("incomes", id);
 }
 
-export function saveRecurringIncome(rule: RecurringIncome) {
+export function saveRecurringIncome(input: RecurringIncome) {
+  putRecurringIncome({ ...input, account: resolveAccount(input.account) });
+}
+
+/** Saves a regular income exactly as given (an undo puts back what was there). */
+function putRecurringIncome(rule: RecurringIncome) {
   const rest = state.recurringIncomes.filter((x) => x.id !== rule.id);
   set({ recurringIncomes: [...rest, rule].sort((a, b) => a.day - b.day) });
   void persist("recurringIncomes", rule);

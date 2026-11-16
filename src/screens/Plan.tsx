@@ -15,7 +15,7 @@ import { formatMoney, parsePaise } from "../core/money";
 import { CategoryIcon, Icon } from "../ui/icons";
 import type { RecurringCharge } from "../core/recurring";
 import { ProfileButton } from "../ui/ProfileMenu";
-import { AccountSelect } from "../ui/AccountSelect";
+import { AccountNote, AccountSelect } from "../ui/AccountSelect";
 import { Empty, Field, Progress, Sheet, Toggle } from "../ui/components";
 
 export function Plan() {
@@ -675,20 +675,6 @@ function PaidFrom({ label, value, onChange }: { label: string; value: string; on
     <Field label={label}>
       <AccountSelect value={value} onChange={onChange} />
     </Field>
-  );
-}
-
-/** Says whether the chosen account's balance will move, so the link to Accounts is visible. */
-function AccountNote({ name, what, incoming }: { name: string; what: string; incoming?: boolean }) {
-  const s = useTally();
-  const acct = accountNamed(s, name);
-  if (!acct) return null;
-  return (
-    <p className="t-muted tiny" style={{ margin: "-6px 0 0" }}>
-      {acct.tracked
-        ? `${what} ${incoming ? "goes into" : "comes out of"} ${acct.name}'s balance in Accounts.`
-        : `${acct.name} doesn't update from transactions. Turn that on in Accounts to have this move its balance.`}
-    </p>
   );
 }
 

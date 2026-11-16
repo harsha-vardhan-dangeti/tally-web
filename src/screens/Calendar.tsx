@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import {
-  counts, deleteIncome, expenseTitle, runDueIncome, saveIncome, saveRecurringIncome, share, uid, useTally, type Expense, type Income,
+  accountNamed, counts, deleteIncome, expenseTitle, runDueIncome, saveIncome, saveRecurringIncome, share, uid, useTally, type Expense, type Income,
 } from "../data/store";
 import { dayOfMonth, daysInMonth, monthKey, monthLabel, monthRange, sameDay, startOfDay } from "../core/budget";
 import { compactMoney, formatMoney, parsePaise, currencySymbol } from "../core/money";
 import { Icon } from "../ui/icons";
 import { Empty, Field, Sheet, Toggle } from "../ui/components";
 import { ExpenseRowView } from "./Activity";
+import { AccountNote, AccountSelect } from "../ui/AccountSelect";
 
 /** Spent and received per day of the budget month. Index 0 is its first day. */
 function dayTotals(expenses: Expense[], incomes: Income[], month: Date) {
@@ -153,6 +154,13 @@ export function DaySheet({ day, onClose, onOpenExpense, onAddExpense, onEditInco
 }
 
 const SOURCES = ["Salary", "Freelance", "Refund", "Interest", "Gift", "Other"];
+
+/** Where new income goes by default: the account your last income went into, else your first bank or cash account. */
+function defaultIncomeAccount(s: ReturnType<typeof useTally>): string {
+  const last = s.incomes.find((x) => accountNamed(s, x.account));
+  return last ? accountNamed(s, last.account)!.name
+    : s.accounts.find((a) => a.kind === "bank")?.name ?? s.accounts.find((a) => a.kind === "cash")?.name ?? "Bank";
+}
 const toDateInput = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 /** Add or edit one income entry. */
@@ -171,7 +179,7 @@ export function IncomeEditor({ value, onClose }: { value: { income: Income | nul
     if (value) {
       setAmount(existing ? String(existing.amount / 100) : "");
       setSource(existing?.source ?? "Salary");
-      setAccount(existing?.account ?? s.accounts.find((a) => a.kind === "bank")?.name ?? "Bank");
+      setAccount(existing?.account ?? defaultIncomeAccount(s));
       setDate(toDateInput(existing ? new Date(existing.receivedAt) : value.day));
       setNote(existing?.note ?? "");
       setRepeats(false);
@@ -180,14 +188,21 @@ export function IncomeEditor({ value, onClose }: { value: { income: Income | nul
   // Entries added by a regular income are named "income-<rule>-<month>".
   const fromRule = existing ? s.recurringIncomes.find((r) => existing.id.startsWith(`income-${r.id}-`)) : undefined;
   const paise = parsePaise(amount);
-  const accounts = [...new Set(["Bank", "UPI", "Cash", ...s.accounts.map((a) => a.name)])];
+
+  // Keep the original time when only other fields changed; today means now (so it lands after a
+  // balance set earlier today); another day, noon on that day.
+  const when = (): number => {
+    const [y, m, d] = date.split("-").map(Number);
+    if (existing && toDateInput(new Date(existing.receivedAt)) === date) return existing.receivedAt;
+    return date === toDateInput(new Date()) ? Date.now() : new Date(y, m - 1, d, 12).getTime();
+  };
+  const into = accountNamed(s, account);
+  const beforeBalance = !!date && !!into?.tracked && !existing && when() <= into.updatedAt;
 
   const save = () => {
     if (!paise || !value) return;
-    const [y, m, d] = date.split("-").map(Number);
-    // Keep the original time when only other fields changed; otherwise noon on the chosen day.
-    const keep = existing && toDateInput(new Date(existing.receivedAt)) === date;
-    const receivedAt = keep ? existing.receivedAt : new Date(y, m - 1, d, 12).getTime();
+    const d = Number(date.split("-")[2]);
+    const receivedAt = when();
     let id = existing?.id ?? uid();
     if (repeats && !existing) {
       // Becomes a regular income: this entry is its first month, and later months add themselves.
@@ -224,13 +239,15 @@ export function IncomeEditor({ value, onClose }: { value: { income: Income | nul
       </div>
       <div className="row gap8">
         <Field label="Received in">
-          <input type="text" list="income-accounts" value={account} onChange={(e) => setAccount(e.target.value)} />
-          <datalist id="income-accounts">{accounts.map((a) => <option key={a} value={a} />)}</datalist>
+          <AccountSelect value={account} onChange={setAccount} label="Received in" />
         </Field>
         <Field label="Date">
           <input type="date" value={date} max={toDateInput(new Date())} onChange={(e) => setDate(e.target.value)} />
         </Field>
       </div>
+      {beforeBalance && into
+        ? <p className="tiny" style={{ margin: "-6px 0 0", color: "var(--warn)" }}>Dated before you set {into.name}'s balance on {new Date(into.updatedAt).toLocaleDateString([], { day: "numeric", month: "short" })}, so it's taken to be in that balance already. To add it, update the balance in Accounts.</p>
+        : <AccountNote name={account} what={repeats ? "Each payment" : "This income"} incoming />}
       <Field label="Note"><input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional" /></Field>
       {!existing && (
         <Toggle label="Repeats every month" hint="Adds itself on this day each month, like a salary. Manage it in Plan." checked={repeats} onChange={setRepeats} />

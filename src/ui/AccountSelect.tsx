@@ -65,3 +65,23 @@ export function AccountHint({ account, amount }: { account: string; amount: numb
   }
   return null;
 }
+
+/**
+ * Says whether the chosen account's balance will move. For money coming in, it also says when it
+ * won't because the money goes to something that isn't one of your accounts.
+ */
+export function AccountNote({ name, what, incoming }: { name: string; what: string; incoming?: boolean }) {
+  const s = useTally();
+  const acct = accountNamed(s, name);
+  if (!acct) {
+    if (!incoming || !s.accounts.some((a) => a.kind === "bank" || a.kind === "cash")) return null;
+    return <p className="tiny" style={{ margin: "-6px 0 0", color: "var(--warn)" }}>“{name || "Nothing"}” isn't one of your accounts, so no balance changes. Pick the account it lands in.</p>;
+  }
+  return (
+    <p className="t-muted tiny" style={{ margin: "-6px 0 0" }}>
+      {acct.tracked
+        ? `${what} ${incoming ? "goes into" : "comes out of"} ${acct.name}'s balance in Accounts.`
+        : `${acct.name} doesn't update from transactions. Turn that on in Accounts to have this move its balance.`}
+    </p>
+  );
+}

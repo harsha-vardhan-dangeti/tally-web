@@ -346,4 +346,7 @@ export const te: Record<string, string> = {
   "{amount} on cards this month": "ఈ నెల కార్డులపై {amount}",
   "{amount} since last month": "గత నెల నుంచి {amount}",
   "{pct}% of limit used": "పరిమితిలో {pct}% వాడారు",
+  "{amount} of income isn't in any of your accounts": "{amount} ఆదాయం మీ ఏ ఖాతాలోనూ లేదు",
+  "Your regular income isn't going into any of your accounts": "మీ క్రమ ఆదాయం మీ ఏ ఖాతాలోకీ వెళ్లడం లేదు",
+  "Choose account": "ఖాతాను ఎంచుకోండి",
 };

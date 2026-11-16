@@ -7,7 +7,7 @@ import {
 import { pdfRows, type TextItem } from "../core/pdfTable";
 import { categoryMeta, pickableCategories, type Category } from "../core/categories";
 import { formatMoney } from "../core/money";
-import { importTransactions, removeImported, saveImportLayout, saveRule, showToast, uid, useTally, type Expense, type Income } from "../data/store";
+import { importTransactions, removeImported, resolveAccount, saveImportLayout, saveRule, showToast, uid, useTally, type Expense, type Income } from "../data/store";
 import { Icon } from "../ui/icons";
 import { Empty, Field, Sheet } from "../ui/components";
 
@@ -161,7 +161,7 @@ export function ImportSheet({ open, onClose }: { open: boolean; onClose: () => v
 
   const add = async () => {
     const now = Date.now();
-    const acct = account.trim() || "Bank";
+    const acct = resolveAccount(account.trim() || "Bank");
     const expenses: Expense[] = chosen.filter((t) => t.direction === "debit").map((t) => ({
       id: t.id, amount: t.amount, merchant: t.name, note: t.description, category: categories[t.id] ?? t.category, account: acct,
       occurredAt: t.date.getTime(), createdAt: now, source: "import", pending: false, splitWays: 1, splitWith: "", exclude: false, recurring: false,

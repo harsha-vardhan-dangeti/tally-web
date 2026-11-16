@@ -346,4 +346,7 @@ export const ta: Record<string, string> = {
   "{amount} on cards this month": "இந்த மாதம் கார்டுகளில் {amount}",
   "{amount} since last month": "கடந்த மாதத்திலிருந்து {amount}",
   "{pct}% of limit used": "வரம்பில் {pct}% பயன்பாடு",
+  "{amount} of income isn't in any of your accounts": "{amount} வருமானம் உங்கள் எந்தக் கணக்கிலும் இல்லை",
+  "Your regular income isn't going into any of your accounts": "உங்கள் வழக்கமான வருமானம் உங்கள் எந்தக் கணக்கிற்கும் செல்லவில்லை",
+  "Choose account": "கணக்கைத் தேர்வுசெய்யவும்",
 };
