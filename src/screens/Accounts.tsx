@@ -35,7 +35,8 @@ export function Accounts() {
   const latest = series[series.length - 1] ?? { assets: 0, debts: 0, net: 0 };
   // Only months with a recorded balance are worth charting.
   const charted = series.slice(series.findIndex((p) => p.assets !== 0 || p.debts !== 0));
-  const prev = charted.length > 1 ? charted[charted.length - 2].net : null;
+  // Only against a month with account balances recorded: loans alone would make a huge false jump.
+  const prev = charted.length > 1 && charted[charted.length - 2].assets ? charted[charted.length - 2].net : null;
   const signed = (v: number) => `${v < 0 ? "−" : ""}${formatMoney(Math.abs(v))}`;
   const investIds = new Set(s.accounts.filter((a) => a.kind === "investment").map((a) => a.id));
   const sips = s.settings.scheduledTransfers.filter((r) => investIds.has(r.toId)).sort((a, b) => a.day - b.day);

@@ -635,3 +635,24 @@ button.sched-item:hover { background: var(--fill); }
 .splitwise-rows input[type="checkbox"], .pick-rows input[type="checkbox"] { width: 18px; height: 18px; flex-shrink: 0; }
 
 .card-dash-row { background: none; border: 0; padding: 0; margin: 0; width: 100%; text-align: left; color: inherit; font: inherit; cursor: pointer; border-radius: 8px; }
+
+/* Home: This month, Net worth */
+.dash-note { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); font-size: 13px; line-height: 1.45; }
+.dash-note > svg { flex-shrink: 0; margin-top: 2px; }
+.dash-note.warn { background: var(--warn-soft); }
+.dash-note.warn > svg { color: var(--warn); }
+.dash-note.good { background: var(--good-soft); }
+.dash-note.good > svg { color: var(--good); }
+.dash-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; }
+@container dashgrid (min-width: 640px) { .dash-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.dash-stat { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dash-stat-value { font-size: 20px; font-weight: 650; letter-spacing: -0.01em; }
+.dash-breakdown { margin: 0; display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.dash-breakdown > div { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+.dash-breakdown dt { color: var(--ink-2, var(--muted)); min-width: 0; }
+.dash-breakdown dd { margin: 0; font-weight: 600; }
+.dash-breakdown dd.owe { color: var(--warn); }
+.dash-people { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: 0; border-radius: 12px; background: var(--surface-2); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.page.dash > .page-head { flex-wrap: nowrap; }
+.page.dash > .page-head > .col { min-width: 0; }
+.page.dash > .page-head h1 { font-size: clamp(20px, 5.6vw, 30px); }
