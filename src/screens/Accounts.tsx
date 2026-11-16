@@ -1,8 +1,10 @@
 import { useMemo, useState } from "react";
 import {
-  ACCOUNT_KIND_LABEL, accountsNow, addTransfer, cardLimitUsage, cardStatus, deleteAccount, deleteScheduledTransfer, deleteTransfer, homeBalance, liveBalance, moneyIn,
-  saveAccount, saveScheduledTransfer, setSettings, showToast, uid, useTally, type Account, type AccountKind,
+  ACCOUNT_KIND_LABEL, accountsNow, addTransfer, cardLimitUsage, cardStatus, deleteAccount, deleteLedgerEntry, deleteScheduledTransfer, deleteTransfer, homeBalance,
+  investmentReturn, investmentsSummary, liveBalance, moneyIn, netInvested, runDueTransfers, saveAccount, saveLedgerEntry, saveScheduledTransfer, setSettings, showToast,
+  sipsInto, uid, useTally, type Account, type AccountKind, type ScheduledTransfer,
 } from "../data/store";
+import { people } from "../core/people";
 import { monthKey } from "../core/budget";
 import { CURRENCIES } from "../core/money";
 import { Progress, Toggle } from "../ui/components";
@@ -24,14 +26,18 @@ export function Accounts() {
   const s = useTally();
   const [editing, setEditing] = useState<Account | "new" | null>(null);
   const [moving, setMoving] = useState(false);
+  const [sip, setSip] = useState<ScheduledTransfer | "new" | null>(null);
   const [allTransfers, setAllTransfers] = useState(false);
   const now = new Date();
-  const series = useMemo(() => netWorthSeries(accountsNow(s), now, 12, s.loans), [s.accounts, s.loans, s.expenses, s.incomes]); // eslint-disable-line react-hooks/exhaustive-deps
+  const series = useMemo(() => netWorthSeries(accountsNow(s), now, 12, s.loans), [s.accounts, s.loans, s.expenses, s.incomes, s.ledger]); // eslint-disable-line react-hooks/exhaustive-deps
   const latest = series[series.length - 1] ?? { assets: 0, debts: 0, net: 0 };
   // Only months with a recorded balance are worth charting.
   const charted = series.slice(series.findIndex((p) => p.assets !== 0 || p.debts !== 0));
   const prev = charted.length > 1 ? charted[charted.length - 2].net : null;
   const signed = (v: number) => `${v < 0 ? "−" : ""}${formatMoney(Math.abs(v))}`;
+  const investIds = new Set(s.accounts.filter((a) => a.kind === "investment").map((a) => a.id));
+  const sips = s.settings.scheduledTransfers.filter((r) => investIds.has(r.toId)).sort((a, b) => a.day - b.day);
+  const others = s.settings.scheduledTransfers.filter((r) => !investIds.has(r.toId));
 
   return (
     <div className="page wide">
@@ -40,7 +46,7 @@ export function Accounts() {
         <ProfileButton />
       </header>
       <div className="row gap8 wrap span-2">
-        {s.accounts.length >= 2 && <button className="btn" onClick={() => setMoving(true)}><Icon name="transfer" size={16} />Transfer</button>}
+        {s.accounts.length >= 1 && <button className="btn" onClick={() => setMoving(true)}><Icon name="transfer" size={16} />Transfer</button>}
         <button className="btn primary" onClick={() => setEditing("new")}><Icon name="plus" size={16} />Add account</button>
       </div>
 
@@ -83,15 +89,16 @@ export function Accounts() {
             const total = list.reduce((t, a) => t + (a.kind === "card" ? -homeBalance(a, s) : homeBalance(a, s)), 0);
             return (
               <section key={g.title} className="col gap8">
-                <div className="section-title"><span>{g.title}</span><span className="t-muted num">{g.kinds.includes("card") ? cardsSummary(list, s) || signed(total) : signed(total)}</span></div>
+                <div className="section-title"><span>{g.title}</span><span className="t-muted num">{g.kinds.includes("card") ? cardsSummary(list, s) || signed(total) : g.kinds.includes("investment") ? investSummary(s) || signed(total) : signed(total)}</span></div>
                 <div className="card flush divided">
                   {list.map((acct) => (
                     <button key={acct.id} className="list-row row-btn" onClick={() => setEditing(acct)}>
                       <span className={`acct-icon ${acct.kind}`}><Icon name={acct.kind === "card" ? "card" : acct.kind === "investment" ? "trend" : acct.kind === "cash" ? "bag" : "home"} size={18} /></span>
                       <span className="grow col">
                         <span className="t-strong">{acct.name}</span>
-                        <span className="t-muted tiny">{ACCOUNT_KIND_LABEL[acct.kind]} · {acct.tracked ? "follows your expenses and income" : `updated ${new Date(acct.updatedAt).toLocaleDateString([], { day: "numeric", month: "short" })}`}</span>
+                        <span className="t-muted tiny">{ACCOUNT_KIND_LABEL[acct.kind]} · {acct.kind === "investment" ? `value as of ${new Date(acct.updatedAt).toLocaleDateString([], { day: "numeric", month: "short" })}` : acct.tracked ? "follows your expenses and income" : `updated ${new Date(acct.updatedAt).toLocaleDateString([], { day: "numeric", month: "short" })}`}</span>
                         <CardLine acct={acct} />
+                        <InvestLine acct={acct} />
                       </span>
                       <AccountBalance acct={acct} />
                     </button>
@@ -101,11 +108,39 @@ export function Accounts() {
             );
           })}
 
-          {s.settings.scheduledTransfers.length > 0 && (
+          {s.accounts.some((a) => a.kind === "investment") && s.accounts.some((a) => a.kind !== "investment" && a.kind !== "card") && (
+            <section className="col gap8">
+              <div className="section-title"><span>SIPs</span>
+                <button className="btn ghost" onClick={() => setSip("new")}><Icon name="plus" size={14} />Add SIP</button>
+              </div>
+              {sips.length === 0 ? (
+                <div className="card"><p className="t-muted small" style={{ margin: 0 }}>Add each SIP with the investment it goes into (Groww, Zerodha, PPF…) and the account it leaves. Tally moves the money on its day each month and adds it to what you've invested.</p></div>
+              ) : (
+                <div className="card flush divided">
+                  {sips.map((r) => {
+                    const into = s.accounts.find((x) => x.id === r.toId);
+                    const from = s.accounts.find((x) => x.id === r.fromId);
+                    return (
+                      <button key={r.id} className="list-row row-btn" onClick={() => setSip(r)}>
+                        <span className="acct-icon investment"><Icon name="trend" size={18} /></span>
+                        <span className="grow col" style={{ minWidth: 0 }}>
+                          <span className="t-strong ellipsis">{r.note || into?.name}</span>
+                          <span className="t-muted tiny ellipsis">{r.note ? `${into?.name} · ` : ""}{ordinal(r.day)} of every month from {from?.name ?? "deleted account"}</span>
+                        </span>
+                        <span className="t-strong num">{formatMoney(r.amount)}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          )}
+
+          {others.length > 0 && (
             <section className="col gap8">
               <div className="section-title"><span>Repeating transfers</span></div>
               <div className="card flush divided">
-                {s.settings.scheduledTransfers.map((r) => {
+                {others.map((r) => {
                   const name = (id: string) => s.accounts.find((x) => x.id === id)?.name ?? "deleted account";
                   return (
                     <div key={r.id} className="list-row">
@@ -158,6 +193,7 @@ export function Accounts() {
 
       <AccountEditor value={editing} onClose={() => setEditing(null)} />
       <TransferSheet open={moving} onClose={() => setMoving(false)} />
+      <SipSheet value={sip} onClose={() => setSip(null)} />
     </div>
   );
 }
@@ -209,6 +245,34 @@ function CardLine({ acct }: { acct: Account }) {
   );
 }
 
+const pctText = (p: number | null) => (p === null ? "" : ` (${p >= 0 ? "+" : "−"}${Math.abs(p * 100).toFixed(1)}%)`);
+
+/** An investment's returns, and the SIPs going into it. */
+function InvestLine({ acct }: { acct: Account }) {
+  const s = useTally();
+  if (acct.kind !== "investment") return null;
+  const r = investmentReturn(acct, s);
+  const sips = sipsInto(acct, s);
+  const monthly = sips.reduce((t, x) => t + x.amount, 0);
+  return (
+    <>
+      {r ? (
+        <span className="tiny" style={{ color: r.gain < 0 ? "var(--warn)" : "var(--muted)" }}>
+          Invested {formatMoney(r.invested)} · {r.gain >= 0 ? "+" : "−"}{formatMoney(Math.abs(r.gain))}{pctText(r.pct)}
+        </span>
+      ) : <span className="tiny t-muted">Add how much you've put in to see returns</span>}
+      {sips.length > 0 && <span className="tiny t-muted">{sips.length === 1 ? "SIP" : `${sips.length} SIPs`} · {formatMoney(monthly)} a month</span>}
+    </>
+  );
+}
+
+/** "₹2,40,000 · +₹18,000 (8.1%)" across investments. */
+function investSummary(s: ReturnType<typeof useTally>): string {
+  const x = investmentsSummary(s);
+  if (!x.withReturns) return "";
+  return `${formatMoney(x.value)} · ${x.gain >= 0 ? "+" : "−"}${formatMoney(Math.abs(x.gain))}${pctText(x.invested ? x.gain / x.invested : null)}`;
+}
+
 /** "₹14,000 of ₹1,50,000 used" across the cards that have a limit. */
 function cardsSummary(cards: Account[], s: ReturnType<typeof useTally>): string {
   const usages = cards.map((c) => cardLimitUsage(c, s)).filter((u): u is NonNullable<typeof u> => !!u);
@@ -218,6 +282,109 @@ function cardsSummary(cards: Account[], s: ReturnType<typeof useTally>): string 
 }
 
 const today = () => new Date().toLocaleDateString("en-CA"); // yyyy-mm-dd in local time
+const PERSON = "__person";
+/** An amount that may be 0; null when empty or not a number. */
+const amountOrZero = (v: string) => (/^\s*0+(\.0*)?\s*$/.test(v) ? 0 : v.trim() ? parsePaise(v) : null);
+
+/** A SIP: a monthly transfer from a bank account into an investment. */
+function SipSheet({ value, onClose }: { value: ScheduledTransfer | "new" | null; onClose: () => void }) {
+  const s = useTally();
+  const editing = value && value !== "new" ? value : null;
+  const investments = s.accounts.filter((a) => a.kind === "investment");
+  const payers = s.accounts.filter((a) => a.kind === "bank" || a.kind === "cash");
+  const [name, setName] = useState("");
+  const [toId, setToId] = useState("");
+  const [newInto, setNewInto] = useState("");
+  const [fromId, setFromId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [day, setDay] = useState(5);
+  const [recordNow, setRecordNow] = useState(false);
+  const [seen, setSeen] = useState<typeof value>(null);
+  if (value !== seen) {
+    setSeen(value);
+    if (value) {
+      setName(editing?.note ?? "");
+      setToId(editing?.toId ?? investments[0]?.id ?? NEW_INTO);
+      setNewInto("");
+      setFromId(editing?.fromId ?? payers[0]?.id ?? "");
+      setAmount(editing ? String(editing.amount / 100) : "");
+      setDay(editing?.day ?? Math.min(new Date().getDate(), 28));
+      setRecordNow(false);
+    }
+  }
+  const paise = parsePaise(amount) ?? 0;
+  const creating = toId === NEW_INTO;
+  const ready = paise > 0 && fromId && (creating ? !!newInto.trim() : !!toId);
+  const now = new Date();
+  const passed = day <= now.getDate();
+  const key = monthKey(now);
+
+  const save = () => {
+    if (!ready) return;
+    let into = toId;
+    if (creating) {
+      into = uid();
+      saveAccount({ id: into, name: newInto.trim(), kind: "investment", balance: 0, order: s.accounts.length, updatedAt: Date.now(), invested: 0, investedAt: Date.now() });
+    }
+    const rule: ScheduledTransfer = {
+      id: editing?.id ?? uid(), fromId, toId: into, amount: paise, day, note: name.trim(),
+      // A new SIP whose day has passed starts next month, unless this month's should be recorded now.
+      lastLoggedMonth: editing ? editing.lastLoggedMonth : passed && !recordNow ? key : "",
+    };
+    saveScheduledTransfer(rule);
+    if (!editing && passed && recordNow) runDueTransfers();
+    showToast(editing ? "SIP updated" : `SIP added · ${formatMoney(paise)} on the ${ordinal(day)}`);
+    onClose();
+  };
+
+  return (
+    <Sheet open={value !== null} onClose={onClose} title={editing ? "Edit SIP" : "New SIP"}>
+      <Field label="Fund or plan"><input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="Parag Parikh Flexi Cap" autoFocus={!editing} /></Field>
+      <div className="row gap8">
+        <Field label="Invested in">
+          <select value={toId} onChange={(e) => setToId(e.target.value)}>
+            {investments.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            <option value={NEW_INTO}>New investment account…</option>
+          </select>
+        </Field>
+        <Field label="Paid from">
+          <select value={fromId} onChange={(e) => setFromId(e.target.value)}>
+            {payers.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        </Field>
+      </div>
+      {creating && (
+        <Field label="Where is it invested?"><input type="text" value={newInto} onChange={(e) => setNewInto(e.target.value)} placeholder="Groww, Zerodha, Kuvera, PPF…" /></Field>
+      )}
+      <div className="row gap8">
+        <Field label={`Amount (${currencySymbol()})`}>
+          <input type="text" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="5000" />
+        </Field>
+        <Field label="Day of the month">
+          <select value={day} onChange={(e) => setDay(Number(e.target.value))}>
+            {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => <option key={d} value={d}>{ordinal(d)}</option>)}
+          </select>
+        </Field>
+      </div>
+      {!editing && passed && (
+        <div className="card" style={{ background: "var(--surface-2)", padding: "0 14px" }}>
+          <Toggle label="Record this month's SIP now" checked={recordNow} onChange={setRecordNow}
+            hint={`The ${ordinal(day)} has passed. Turn on if this month's ${paise ? formatMoney(paise) : "SIP"} isn't in your balances yet; otherwise it starts next month.`} />
+        </div>
+      )}
+      <p className="t-muted tiny" style={{ margin: 0 }}>Each month on its day, Tally moves the amount from the bank account to the investment and adds it to what you've invested. A SIP is saving, not spending, so your budget doesn't change.</p>
+      <button className="btn primary block" disabled={!ready} onClick={save}>{editing ? "Save" : paise ? `Add SIP · ${formatMoney(paise)} a month` : "Enter an amount"}</button>
+      {editing && (
+        <button className="btn danger block" onClick={() => {
+          deleteScheduledTransfer(editing.id);
+          showToast("SIP stopped. Past instalments stay.", () => saveScheduledTransfer(editing));
+          onClose();
+        }}>Stop SIP</button>
+      )}
+    </Sheet>
+  );
+}
+const NEW_INTO = "__new";
 
 function TransferSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const s = useTally();
@@ -227,6 +394,7 @@ function TransferSheet({ open, onClose }: { open: boolean; onClose: () => void }
   const [date, setDate] = useState(today);
   const [note, setNote] = useState("");
   const [repeat, setRepeat] = useState(false);
+  const [person, setPerson] = useState("");
   const [seen, setSeen] = useState(false);
   if (open !== seen) {
     setSeen(open);
@@ -234,7 +402,8 @@ function TransferSheet({ open, onClose }: { open: boolean; onClose: () => void }
       // Most transfers leave a bank: start there, going to the first other account.
       const from = s.accounts.find((a) => a.kind === "bank") ?? s.accounts[0];
       setFromId(from?.id ?? "");
-      setToId(s.accounts.find((a) => a.id !== from?.id)?.id ?? "");
+      setToId(s.accounts.find((a) => a.id !== from?.id)?.id ?? PERSON);
+      setPerson("");
       setAmount("");
       setDate(today());
       setNote("");
@@ -242,9 +411,11 @@ function TransferSheet({ open, onClose }: { open: boolean; onClose: () => void }
     }
   }
   const from = s.accounts.find((a) => a.id === fromId);
+  const toPerson = toId === PERSON;
   const to = s.accounts.find((a) => a.id === toId);
   const paise = parsePaise(amount) ?? 0;
-  const ready = from && to && from.id !== to.id && paise > 0 && date;
+  const known = useMemo(() => people(s.expenses, s.ledger).map((p) => p.name), [s.expenses, s.ledger]);
+  const ready = from && (toPerson ? !!person.trim() : to && from.id !== to.id) && paise > 0 && date;
   const shown = (a: Account) => formatMoney(a.kind === "card" ? -liveBalance(a, s) : liveBalance(a, s));
   const after = (a: Account, n: number) => shown(moneyIn(a, n));
 
@@ -253,6 +424,17 @@ function TransferSheet({ open, onClose }: { open: boolean; onClose: () => void }
     const [y, m, d] = date.split("-").map(Number);
     const at = new Date(y, m - 1, d, 12);
     const isToday = at.toDateString() === new Date().toDateString();
+    if (toPerson) {
+      // Money sent to someone: they owe it to you, and it leaves the account.
+      const name = person.trim();
+      const entry = { id: uid(), person: name, amount: paise, kind: "lent" as const, note: note.trim(), occurredAt: isToday ? Date.now() : at.getTime(),
+        createdAt: Date.now(), account: from.name };
+      saveLedgerEntry(entry);
+      showToast(`${name} owes you ${formatMoney(paise)} · see People`, () => deleteLedgerEntry(entry.id, false));
+      onClose();
+      return;
+    }
+    if (!to) return;
     const t = addTransfer({ fromId: from.id, toId: to.id, amount: paise, note: note.trim(), occurredAt: isToday ? Date.now() : at.getTime() });
     if (t) showToast(`Moved ${formatMoney(paise)} from ${from.name} to ${to.name}`, () => deleteTransfer(t.id, false));
     if (repeat) {
@@ -264,7 +446,7 @@ function TransferSheet({ open, onClose }: { open: boolean; onClose: () => void }
   };
 
   return (
-    <Sheet open={open} onClose={onClose} title="Transfer between accounts">
+    <Sheet open={open} onClose={onClose} title={toPerson ? "Send money to someone" : "Transfer between accounts"}>
       <div className="row gap8">
         <Field label="From">
           <select value={fromId} onChange={(e) => { setFromId(e.target.value); if (e.target.value === toId) setToId(fromId); }}>
@@ -273,10 +455,21 @@ function TransferSheet({ open, onClose }: { open: boolean; onClose: () => void }
         </Field>
         <Field label="To">
           <select value={toId} onChange={(e) => { setToId(e.target.value); if (e.target.value === fromId) setFromId(toId); }}>
-            {s.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            <optgroup label="Your accounts">
+              {s.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </optgroup>
+            <optgroup label="Someone else">
+              <option value={PERSON}>A person (they'll owe you)</option>
+            </optgroup>
           </select>
         </Field>
       </div>
+      {toPerson && (
+        <Field label="Who are you sending it to?">
+          <input type="text" list="transfer-people" value={person} onChange={(e) => setPerson(e.target.value)} placeholder="Name" />
+          <datalist id="transfer-people">{known.map((n) => <option key={n} value={n} />)}</datalist>
+        </Field>
+      )}
       <div className="row gap8">
         <Field label={`Amount (${currencySymbol()})`}>
           <input type="text" inputMode="decimal" autoFocus value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="5000" />
@@ -284,9 +477,18 @@ function TransferSheet({ open, onClose }: { open: boolean; onClose: () => void }
         <Field label="Date"><input type="date" value={date} max={today()} onChange={(e) => setDate(e.target.value)} /></Field>
       </div>
       <Field label="Note"><input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="optional, like “Card bill”" /></Field>
-      <div className="card" style={{ background: "var(--surface-2)", padding: "0 14px" }}>
-        <Toggle label="Repeat every month" hint={`On the ${ordinal(Math.min(Number(date.split("-")[2]) || 1, 28))}, like a SIP or rent to a flatmate`} checked={repeat} onChange={setRepeat} />
-      </div>
+      {!toPerson && (
+        <div className="card" style={{ background: "var(--surface-2)", padding: "0 14px" }}>
+          <Toggle label="Repeat every month" hint={`On the ${ordinal(Math.min(Number(date.split("-")[2]) || 1, 28))}, like a SIP or rent to a flatmate`} checked={repeat} onChange={setRepeat} />
+        </div>
+      )}
+      {toPerson && from && (
+        <div className="card col gap4 small" style={{ background: "var(--surface-2)" }} aria-live="polite">
+          <div className="row between"><span className="t-muted">{from.name}</span><span className="num">{shown(from)} → <b>{after(from, -paise)}</b></span></div>
+          <div className="row between"><span className="t-muted">{person.trim() || "They"} will owe you</span><span className="num in t-strong">{formatMoney(paise)}</span></div>
+          <span className="t-muted tiny">It shows in People until they pay you back. Lending isn't spending, so your budget doesn't change.</span>
+        </div>
+      )}
 
       {from && to && from.id !== to.id && (
         <div className="card col gap4 small" style={{ background: "var(--surface-2)" }} aria-live="polite">
@@ -298,7 +500,7 @@ function TransferSheet({ open, onClose }: { open: boolean; onClose: () => void }
         </div>
       )}
 
-      <button className="btn primary block" disabled={!ready} onClick={save}>{paise ? `Transfer ${formatMoney(paise)}` : "Enter an amount"}</button>
+      <button className="btn primary block" disabled={!ready} onClick={save}>{!paise ? "Enter an amount" : toPerson ? `Send ${formatMoney(paise)}` : `Transfer ${formatMoney(paise)}`}</button>
     </Sheet>
   );
 }
@@ -318,6 +520,7 @@ function AccountEditor({ value, onClose }: { value: Account | "new" | null; onCl
   const [limit, setLimit] = useState("");
   const [payFrom, setPayFrom] = useState("");
   const [autoPay, setAutoPay] = useState(false);
+  const [invested, setInvested] = useState("");
   const [seen, setSeen] = useState<typeof value>(null);
   if (value !== seen) {
     setSeen(value);
@@ -333,6 +536,8 @@ function AccountEditor({ value, onClose }: { value: Account | "new" | null; onCl
     setLimit(acct?.limit ? String(acct.limit / 100) : "");
     setPayFrom(acct?.payFrom ?? s.accounts.find((a) => a.kind === "bank")?.id ?? "");
     setAutoPay(!!acct?.autoPay);
+    const inv = acct ? netInvested(acct, s) : null;
+    setInvested(inv !== null ? String(inv / 100) : "");
   }
   const banks = s.accounts.filter((a) => a.kind !== "card" && a.id !== acct?.id);
   const foreign = currency !== home;
@@ -352,9 +557,14 @@ function AccountEditor({ value, onClose }: { value: Account | "new" | null; onCl
           </select>
         </Field>
       </div>
-      <Field label={`${kind === "card" ? "Amount owed" : "Balance"} (${currencySymbol(currency)})`}>
+      <Field label={`${kind === "card" ? "Amount owed" : kind === "investment" ? "Value now" : "Balance"} (${currencySymbol(currency)})`}>
         <input type="text" inputMode="decimal" value={balance} onChange={(e) => setBalance(e.target.value)} placeholder="0" />
       </Field>
+      {kind === "investment" && (
+        <Field label={`Invested so far (${currencySymbol(currency)})`}>
+          <input type="text" inputMode="decimal" value={invested} onChange={(e) => setInvested(e.target.value)} placeholder="What you've put in, for returns" />
+        </Field>
+      )}
       {foreign && (
         <Field label={`1 ${currency} in ${home}, for net worth`}>
           <input type="text" inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} placeholder="83.2" />
@@ -413,6 +623,7 @@ function AccountEditor({ value, onClose }: { value: Account | "new" | null; onCl
           ...(kind === "card" && statementDay && dueDay ? { statementDay, dueDay } : {}),
           ...(kind === "card" && parsePaise(limit) ? { limit: parsePaise(limit)! } : {}),
           ...(kind === "card" && statementDay && dueDay && autoPay && payFrom ? { autoPay: true, payFrom } : {}),
+          ...(kind === "investment" && amountOrZero(invested) !== null ? { invested: amountOrZero(invested)!, investedAt: Date.now() } : {}),
         });
         onClose();
       }}>Save</button>

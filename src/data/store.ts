@@ -12,6 +12,7 @@ import { cardBill, cardCycle, cardUsage, type CardBill, type CardUsage } from ".
 import { dueDate as emiDate } from "../core/loans";
 import { formatMoney, isCurrency, setCurrency } from "../core/money";
 import { yourShare } from "../core/smartParser";
+import type { PlannedRow } from "../core/splitwise";
 import { emiFor, loanStatus, dueDate, type LoanTerms } from "../core/loans";
 import type { LedgerKind } from "../core/people";
 import { isLang, setLanguage, type Lang } from "../i18n";
@@ -89,6 +90,12 @@ export interface Account {
   /** Credit cards: the account that pays the bill, and whether Tally records that payment on the due date. */
   payFrom?: string;
   autoPay?: boolean;
+  /**
+   * Investments: money put in so far, as of `investedAt`. Transfers in (like each SIP) add to it and
+   * transfers out take from it, so returns are the balance (its value) minus what went in.
+   */
+  invested?: number;
+  investedAt?: number;
 }
 /** A transfer that repeats every month on `day`, like a SIP. */
 export interface ScheduledTransfer {
@@ -139,6 +146,11 @@ export interface LedgerEntry {
   note: string;
   occurredAt: number;
   createdAt: number;
+  /**
+   * The account the money left (amount +: you lent, or paid them back) or came into (amount −: you
+   * borrowed, or they paid you back). A tracked account's balance moves with it.
+   */
+  account?: string;
 }
 /** A loan repaid in EMIs (see core/loans.ts). Each month's EMI can be added to expenses on its day. */
 export interface Loan extends LoanTerms {
@@ -305,13 +317,20 @@ function readSettings(stored: unknown): Settings {
       : {},
     monthStartDay: Number.isInteger(v.monthStartDay) && v.monthStartDay >= 1 && v.monthStartDay <= 28 ? v.monthStartDay : 1,
     subcategories: readSubcategories(v.subcategories),
-    scheduledTransfers: list<ScheduledTransfer>(v.scheduledTransfers, (t) => {
-      const x = t as ScheduledTransfer;
-      return !!x && typeof x.id === "string" && typeof x.fromId === "string" && typeof x.toId === "string" && x.fromId !== x.toId
-        && Number.isSafeInteger(x.amount) && x.amount > 0 && Number.isInteger(x.day) && x.day >= 1 && x.day <= 28;
-    }).map((x) => ({ ...x, note: typeof x.note === "string" ? x.note : "", lastLoggedMonth: typeof x.lastLoggedMonth === "string" ? x.lastLoggedMonth : "" })),
+    scheduledTransfers: readScheduledTransfers(v.scheduledTransfers),
     lockAfter: [0, 1, 5, 15, 60].includes(v.lockAfter) ? v.lockAfter : 0,
   };
+}
+
+/** Repeating transfers as stored, with anything malformed dropped. */
+export function readScheduledTransfers(v: unknown): ScheduledTransfer[] {
+  if (!Array.isArray(v)) return [];
+  return v.filter((t) => {
+    const x = t as ScheduledTransfer;
+    return !!x && typeof x.id === "string" && typeof x.fromId === "string" && typeof x.toId === "string" && x.fromId !== x.toId
+      && Number.isSafeInteger(x.amount) && x.amount > 0 && Number.isInteger(x.day) && x.day >= 1 && x.day <= 28;
+  }).map((x: ScheduledTransfer) => ({ id: x.id, fromId: x.fromId, toId: x.toId, amount: x.amount, day: x.day,
+    note: typeof x.note === "string" ? x.note : "", lastLoggedMonth: typeof x.lastLoggedMonth === "string" ? x.lastLoggedMonth : "" }));
 }
 
 /** { food: ["Coffee", "Groceries"] } with only short, unique names. */
@@ -589,16 +608,22 @@ const isAccount = (a: Account, name: string) => !!name && nameKey(name) === name
  * What came into an account (income) minus what went out (expenses paid from it) after `since`.
  * Split expenses paid by someone else never left your account.
  */
-function netFlow(a: Account, since: number, s: Pick<State, "expenses" | "incomes"> = state): { in: number; out: number } {
+function netFlow(a: Account, since: number, s: FlowState = state): { in: number; out: number } {
   let inflow = 0, out = 0;
   // A purchase converted to EMI left the card's balance for the EMI plan; its EMIs are charged instead.
   for (const e of s.expenses) if (!e.pending && !e.paidBy && !e.emiLoan && e.occurredAt > since && isAccount(a, e.account)) out += e.amount;
   for (const x of s.incomes) if (x.receivedAt > since && isAccount(a, x.account)) inflow += x.amount;
+  // Money lent or paid back left the account; money borrowed or paid back to you came into it.
+  for (const l of s.ledger ?? []) {
+    if (l.occurredAt <= since || !l.account || !isAccount(a, l.account)) continue;
+    if (l.amount > 0) out += l.amount; else inflow -= l.amount;
+  }
   return { in: inflow, out };
 }
+type FlowState = Pick<State, "expenses" | "incomes"> & { ledger?: LedgerEntry[] };
 
 /** An account's balance now: for one that follows its transactions, everything since it was last set. */
-export function liveBalance(a: Account, s: Pick<State, "expenses" | "incomes"> = state): number {
+export function liveBalance(a: Account, s: FlowState = state): number {
   if (!a.tracked || (a.currency && a.currency !== state.settings.currency)) return a.balance;
   const f = netFlow(a, a.updatedAt, s);
   return a.balance + (a.kind === "card" ? f.out - f.in : f.in - f.out);
@@ -616,6 +641,60 @@ export function homeBalance(a: Account, s: State = state): number {
 export function accountsNow(s: State = state): Account[] {
   const now = Date.now();
   return s.accounts.map((a) => ({ ...a, balance: homeBalance(a, s), updatedAt: Math.max(a.updatedAt, now) }));
+}
+
+// ---------- investments and SIPs ----------
+
+/** Money put into an investment so far: what was entered, plus transfers in since, minus transfers out. */
+export function netInvested(a: Account, s: Pick<State, "transfers"> = state): number | null {
+  if (a.kind !== "investment" || a.invested === undefined) return null;
+  const since = a.investedAt ?? 0;
+  let v = a.invested;
+  for (const t of s.transfers) {
+    if (t.createdAt <= since) continue;
+    if (t.toId === a.id) v += t.amount;
+    else if (t.fromId === a.id) v -= t.amount;
+  }
+  return Math.max(0, v);
+}
+
+export interface InvestmentReturn { value: number; invested: number; gain: number; pct: number | null }
+
+/** Value, money put in, and the gain on it. Null until you've said how much went in. */
+export function investmentReturn(a: Account, s: State = state): InvestmentReturn | null {
+  const invested = netInvested(a, s);
+  if (invested === null) return null;
+  const value = homeBalance(a, s);
+  const gain = value - invested;
+  return { value, invested, gain, pct: invested > 0 ? gain / invested : null };
+}
+
+/** The repeating transfers into an investment: its SIPs. */
+export const sipsInto = (a: Account, s: Pick<State, "settings"> = state) => s.settings.scheduledTransfers.filter((t) => t.toId === a.id);
+
+export interface InvestmentsSummary {
+  count: number;
+  value: number;
+  /** Across the investments where you've entered what went in. */
+  invested: number;
+  gain: number;
+  withReturns: number;
+  sipCount: number;
+  sipMonthly: number;
+}
+
+export function investmentsSummary(s: State = state): InvestmentsSummary {
+  const list = s.accounts.filter((a) => a.kind === "investment");
+  const ids = new Set(list.map((a) => a.id));
+  const sips = s.settings.scheduledTransfers.filter((t) => ids.has(t.toId));
+  let invested = 0, gain = 0, withReturns = 0;
+  for (const a of list) {
+    const r = investmentReturn(a, s);
+    if (!r) continue;
+    invested += r.invested; gain += r.gain; withReturns++;
+  }
+  return { count: list.length, value: list.reduce((t, a) => t + homeBalance(a, s), 0), invested, gain, withReturns,
+    sipCount: sips.length, sipMonthly: sips.reduce((t, x) => t + x.amount, 0) };
 }
 
 /** How much of a card's limit is used, from its balance now. */
@@ -858,6 +937,49 @@ export function deleteLedgerEntry(id: string, withUndo = true) {
   set({ ledger: state.ledger.filter((x) => x.id !== id) });
   void remove("ledger", id);
   if (withUndo) showToast(`Removed · ${formatMoney(Math.abs(victim.amount))}`, () => saveLedgerEntry(victim));
+}
+
+/**
+ * Adds a Splitwise export to Tally: your share of each expense to spending, and what each person
+ * owes you (or you owe them) to People. IDs are fixed per row, so importing next month's export
+ * only adds what's new.
+ */
+export async function importSplitwise(rows: PlannedRow[], opts: { group: string; addSpending: boolean }): Promise<{ expenseIds: string[]; ledgerIds: string[] }> {
+  const note = opts.group.trim() ? `Splitwise · ${opts.group.trim()}` : "Splitwise";
+  const now = Date.now();
+  const haveE = new Set(state.expenses.map((e) => e.id)), haveL = new Set(state.ledger.map((l) => l.id));
+  const expenses: Expense[] = [];
+  const ledger: LedgerEntry[] = [];
+  for (const r of rows) {
+    const at = r.date.getTime();
+    if (opts.addSpending && r.share > 0 && !haveE.has(r.key)) {
+      haveE.add(r.key);
+      expenses.push({ id: r.key, amount: r.share, merchant: r.description, note, category: toCategory(r.category), account: "Splitwise",
+        occurredAt: at, createdAt: now, source: "import", pending: false, splitWays: 1, splitWith: "", exclude: false, recurring: false,
+        tags: ["splitwise"], ...(r.fx ? { fx: { currency: r.fx.currency, amount: Math.round(r.share / r.fx.rate), rate: r.fx.rate } } : {}) });
+    }
+    for (const x of r.entries) {
+      if (haveL.has(x.id)) continue;
+      haveL.add(x.id);
+      ledger.push({ id: x.id, person: x.person, amount: x.amount, kind: x.kind, note: r.description, occurredAt: at, createdAt: now });
+    }
+  }
+  if (expenses.length) await importTransactions(expenses, []);
+  if (ledger.length) {
+    set({ ledger: sortLedger([...ledger, ...state.ledger]) });
+    try { await db.putMany("ledger", ledger); } catch { showToast("Couldn't save to this browser's storage"); }
+    for (const l of ledger) changeListener?.("ledger", l.id, l);
+  }
+  track("import_done", { kind: "splitwise", expenses: expenses.length, entries: ledger.length });
+  return { expenseIds: expenses.map((e) => e.id), ledgerIds: ledger.map((l) => l.id) };
+}
+
+/** Undoes a Splitwise import. */
+export function removeSplitwise(expenseIds: string[], ledgerIds: string[]) {
+  removeImported(expenseIds, []);
+  const l = new Set(ledgerIds);
+  set({ ledger: state.ledger.filter((x) => !l.has(x.id)) });
+  for (const id of ledgerIds) void remove("ledger", id);
 }
 
 // ---------- loans ----------
@@ -1213,10 +1335,11 @@ export async function exportXLSX(): Promise<Blob> {
   sheet("Accounts", accounts.map((a) => ({
     Name: a.name, Type: ACCOUNT_KIND_LABEL[a.kind], Balance: money(liveBalance(a)), Currency: a.currency ?? cur,
     "Credit limit": a.limit ? money(a.limit) : "", Available: a.limit ? money(a.limit - liveBalance(a)) : "",
+    Invested: netInvested(a) !== null ? money(netInvested(a)!) : "",
   })));
   sheet("Loans", loans.map((l) => ({ Name: l.name, Lender: l.lender, Borrowed: money(l.principal), "Rate %": l.ratePct, Months: l.months, EMI: money(l.emi),
     "First EMI": day(l.firstDueAt), "Paid from": l.account, Outstanding: money(loanStatus(l, Date.now()).outstanding) })));
-  sheet("People", ledger.map((x) => ({ Date: day(x.occurredAt), Person: x.person, Kind: x.kind, [`They owe you (${cur})`]: money(x.amount), Note: x.note })));
+  sheet("People", ledger.map((x) => ({ Date: day(x.occurredAt), Person: x.person, Kind: x.kind, [`They owe you (${cur})`]: money(x.amount), Note: x.note, Account: x.account ?? "" })));
   const data = XLSX.write(book, { bookType: "xlsx", type: "array" }) as ArrayBuffer;
   return new Blob([data], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
 }

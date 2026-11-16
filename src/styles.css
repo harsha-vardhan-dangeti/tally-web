@@ -629,3 +629,7 @@ button.note-card:hover { background: var(--surface-2); }
 button.sched-item { cursor: pointer; border-radius: 8px; }
 button.sched-item:hover { background: var(--fill); }
 .sched-date { width: 52px; flex-shrink: 0; color: var(--muted); font-size: 13px; }
+
+/* Splitwise import: a long export scrolls inside the sheet. */
+.splitwise-rows { max-height: 320px; overflow-y: auto; }
+.splitwise-rows input[type="checkbox"] { width: 18px; height: 18px; flex-shrink: 0; }

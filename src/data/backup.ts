@@ -3,7 +3,7 @@ import { sanitizeRules } from "../core/rules";
 import { isCurrency } from "../core/money";
 import { isLang } from "../i18n";
 import type { LedgerKind } from "../core/people";
-import { readSubcategories } from "./store";
+import { readScheduledTransfers, readSubcategories } from "./store";
 import type {
   Account, AccountKind, Bill, CategoryBudget, Chip, Expense, Goal, Income, LedgerEntry, Loan, RecurringIncome, Settings, Source, Transfer,
 } from "./store";
@@ -135,7 +135,8 @@ export function parseBackup(text: string): Backup {
       ...(dayOk(r.dueDay) ? { dueDay: r.dueDay as number } : {}),
       ...(paise(r.limit) ? { limit: r.limit as number } : {}),
       ...(id(r.payFrom) ? { payFrom: r.payFrom as string } : {}),
-      ...(r.autoPay === true ? { autoPay: true } : {}) };
+      ...(r.autoPay === true ? { autoPay: true } : {}),
+      ...(Number.isSafeInteger(r.invested) && (r.invested as number) >= 0 ? { invested: r.invested as number, investedAt: time(r.investedAt) ?? 0 } : {}) };
   });
   const goals = optionalRows<Goal>(data.goals, (r) => {
     const rowId = id(r.id), target = paise(r.target);
@@ -169,7 +170,7 @@ export function parseBackup(text: string): Backup {
     if (!rowId || !person || !Number.isSafeInteger(r.amount) || r.amount === 0 || occurredAt === null
       || !LEDGER_KINDS.includes(r.kind as LedgerKind)) return null;
     return { id: rowId, person, amount: r.amount as number, kind: r.kind as LedgerKind, note: str(r.note), occurredAt,
-      createdAt: time(r.createdAt) ?? occurredAt };
+      createdAt: time(r.createdAt) ?? occurredAt, ...(str(r.account).trim() ? { account: str(r.account).trim() } : {}) };
   });
 
   const loans = optionalRows<Loan>(data.loans, (r) => {
@@ -192,6 +193,7 @@ export function parseBackup(text: string): Backup {
   if (typeof s.upiId === "string") settings.upiId = s.upiId.slice(0, 100);
   if (Number.isInteger(s.monthStartDay) && (s.monthStartDay as number) >= 1 && (s.monthStartDay as number) <= 28) settings.monthStartDay = s.monthStartDay as number;
   if (isRow(s.subcategories)) settings.subcategories = readSubcategories(s.subcategories);
+  if (Array.isArray(s.scheduledTransfers)) settings.scheduledTransfers = readScheduledTransfers(s.scheduledTransfers);
   if (typeof s.lockAfter === "number" && [0, 1, 5, 15, 60].includes(s.lockAfter)) settings.lockAfter = s.lockAfter;
   if (Array.isArray(s.rules)) settings.rules = sanitizeRules(s.rules).filter((r) => known.has(r.category));
   if (Array.isArray(s.dismissedRecurring)) settings.dismissedRecurring = s.dismissedRecurring.filter((k): k is string => typeof k === "string").slice(-200);

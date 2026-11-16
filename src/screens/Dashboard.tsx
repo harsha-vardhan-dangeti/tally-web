@@ -1,6 +1,6 @@
 import { useContext, useMemo, useState, type ReactNode } from "react";
 import {
-  accountsNow, backupOverdueDays, budgetSnapshot, budgetSpent, cardLimitUsage, cardStatus, counts, inMonth, monthSpent, nextDue, recurringSuggestions, useTally,
+  accountsNow, backupOverdueDays, budgetSnapshot, budgetSpent, cardLimitUsage, cardStatus, counts, inMonth, investmentsSummary, monthSpent, nextDue, recurringSuggestions, useTally,
   type Chip, type Expense,
 } from "../data/store";
 import { addMonths, dayOfMonth, daysInMonth, monthKey, monthLabel, monthRange } from "../core/budget";
@@ -46,10 +46,11 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
   // Insights compare months, so only monthly budgets go in.
   const note = useMemo(() => insights(s.expenses, now, now, s.settings.monthlyBudget, s.budgets.filter((b) => !b.period || b.period === "month"))[0],
     [s.expenses, s.budgets, s.settings.monthlyBudget]); // eslint-disable-line react-hooks/exhaustive-deps
-  const series = useMemo(() => netWorthSeries(accountsNow(s), now, 6, s.loans), [s.accounts, s.loans, s.expenses, s.incomes]); // eslint-disable-line react-hooks/exhaustive-deps
+  const series = useMemo(() => netWorthSeries(accountsNow(s), now, 6, s.loans), [s.accounts, s.loans, s.expenses, s.incomes, s.ledger]); // eslint-disable-line react-hooks/exhaustive-deps
   const folks = useMemo(() => people(s.expenses, s.ledger), [s.expenses, s.ledger]);
   const owing = folks.filter((p) => p.balance !== 0);
   const owe = peopleTotals(folks);
+  const inv = investmentsSummary(s);
 
   // In the first week of a month, offer last month's recap picture once.
   const lastMonth = addMonths(now, -1);
@@ -265,6 +266,21 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
                   </div>
                 );
               })}
+            </div>
+          </DashCard>
+        )}
+
+        {inv.count > 0 && (
+          <DashCard title={t("Investments")} action={t("Accounts")} onAction={() => go("accounts")}
+            sub={inv.sipCount === 1 ? t("{amount} a month in 1 SIP", { amount: formatMoney(inv.sipMonthly) })
+              : inv.sipCount ? t("{amount} a month in {n} SIPs", { amount: formatMoney(inv.sipMonthly), n: inv.sipCount }) : undefined}>
+            <div className="col gap4">
+              <span className="display num" style={{ fontSize: 28 }}>{formatMoney(inv.value)}</span>
+              {inv.withReturns ? (
+                <span className="tiny num" style={{ color: inv.gain < 0 ? "var(--warn)" : "var(--muted)" }}>
+                  {t("Invested {amount}", { amount: formatMoney(inv.invested) })} · <span className={inv.gain >= 0 ? "in" : ""}>{inv.gain >= 0 ? "+" : "−"}{formatMoney(Math.abs(inv.gain))}{inv.invested ? ` (${(Math.abs(inv.gain / inv.invested) * 100).toFixed(1)}%)` : ""}</span>
+                </span>
+              ) : <span className="tiny t-muted">{t("Add what you've invested to see returns")}</span>}
             </div>
           </DashCard>
         )}

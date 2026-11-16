@@ -22,6 +22,7 @@ export interface LedgerLine {
   kind: LedgerKind;
   note: string;
   occurredAt: number;
+  account?: string;
 }
 
 export interface PersonItem {
@@ -32,6 +33,8 @@ export interface PersonItem {
   at: number;
   expenseId?: string;
   entryId?: string;
+  /** For money lent, borrowed or paid back: the account it left or came into. */
+  account?: string;
 }
 
 export interface Person {
@@ -84,7 +87,7 @@ export function people(expenses: SplitExpense[], ledger: LedgerLine[]): Person[]
   }
   for (const l of ledger) {
     if (!l.amount) continue;
-    add(l.person, { key: `l-${l.id}`, kind: l.kind, amount: l.amount, title: l.note, at: l.occurredAt, entryId: l.id });
+    add(l.person, { key: `l-${l.id}`, kind: l.kind, amount: l.amount, title: l.note, at: l.occurredAt, entryId: l.id, ...(l.account ? { account: l.account } : {}) });
   }
   for (const p of map.values()) p.items.sort((a, b) => b.at - a.at);
   return [...map.values()].sort((a, b) => (Math.abs(b.balance) > 0 ? 1 : 0) - (Math.abs(a.balance) > 0 ? 1 : 0) || b.lastAt - a.lastAt);
