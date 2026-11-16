@@ -78,3 +78,22 @@ export function cardUsage(owed: number, limit: number | undefined, onEmi = 0): C
     tone: share > 1 ? "over" : share >= 0.8 ? "near" : share >= 0.3 ? "high" : "ok",
   };
 }
+
+export interface CardPeriod { start: Date; end: Date }
+
+/**
+ * The card's last `count` billing periods, oldest first; the last is the one running now. With a
+ * statement day each runs from one statement to the next; without one, calendar months.
+ */
+export function cardPeriods(statementDay: number | undefined, count: number, now = new Date()): CardPeriod[] {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOf = (k: number): Date => {
+    if (!statementDay) return new Date(today.getFullYear(), today.getMonth() - k, 1);
+    let last = dayIn(today, 0, statementDay);
+    if (last > today) last = dayIn(today, -1, statementDay);
+    return dayIn(last, -k, statementDay);
+  };
+  const out: CardPeriod[] = [];
+  for (let k = count - 1; k >= 0; k--) out.push({ start: startOf(k), end: startOf(k - 1) });
+  return out;
+}

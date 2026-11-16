@@ -13,7 +13,9 @@ export function AccountSelect({ value, onChange, label, id }: { value: string; o
   const own = s.accounts.filter((a) => a.kind !== "card");
   const cards = s.accounts.filter((a) => a.kind === "card");
   const taken = new Set(s.accounts.map((a) => key(a.name)));
-  const other = [...GENERIC, ...(value.trim() && !accountNamed(s, value) && !GENERIC.some((g) => key(g) === key(value)) ? [value.trim()] : [])]
+  // With your cards listed, "Credit card" alone would leave the expense on no card: offered only if already chosen.
+  const generic = GENERIC.filter((g) => !(cards.length && key(g) === "credit card" && key(value) !== "credit card"));
+  const other = [...generic, ...(value.trim() && !accountNamed(s, value) && !GENERIC.some((g) => key(g) === key(value)) ? [value.trim()] : [])]
     .filter((n) => !taken.has(key(n)));
   return (
     <select id={id} aria-label={label} value={accountNamed(s, value)?.name ?? value} onChange={(e) => onChange(e.target.value)}>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from "react";
-import { addExpense, deleteExpense, setSettings, showToast, useTally } from "../data/store";
+import { addExpense, deleteExpense, isGenericCard, resolveAccount, setSettings, showToast, useTally } from "../data/store";
 import { AccountHint, AccountSelect } from "../ui/AccountSelect";
 import { categoryMeta, pickableCategories, type Category } from "../core/categories";
 import { evaluate, formatMoney } from "../core/money";
@@ -178,11 +178,29 @@ export function SmartAdd({ open, onClose }: { open: boolean; onClose: () => void
   const subFor = (category: string, words: string) =>
     (s.settings.subcategories[category] ?? []).find((x) => new RegExp(`\\b${x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(words));
 
+  // An account named in the text is the one it was paid with: its full name ("450 swiggy hdfc
+  // regalia"), or with "card" its first word when only one card starts with it ("swiggy hdfc card").
+  const accountIn = (p: (typeof parsed)[number]) => {
+    const merchant = p.merchant ?? "";
+    if (p.account && !isGenericCard(p.account, s)) return { account: p.account, note: p.note, merchant };
+    const pool = s.accounts.filter((a) => (p.account ? a.kind === "card" : true));
+    const words = `${p.note} ${merchant}`;
+    const word = (w: string) => new RegExp(`\\b${w.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
+    const first = (name: string) => name.trim().split(/\s+/)[0];
+    const full = pool.filter((a) => word(a.name).test(words));
+    // Only when the text says "card": "500 amazon" is a purchase, not the Amazon Pay card.
+    const byFirst = p.account ? pool.filter((a) => first(a.name).length >= 3 && word(first(a.name)).test(words)) : [];
+    const hit = full.length === 1 ? { a: full[0], re: word(full[0].name) } : byFirst.length === 1 ? { a: byFirst[0], re: word(first(byFirst[0].name)) } : null;
+    if (!hit) return { account: p.account, note: p.note, merchant };
+    return { account: hit.a.name, note: p.note.replace(hit.re, " ").replace(/\s+/g, " ").trim(), merchant: merchant.replace(hit.re, "").trim() ? merchant : "" };
+  };
+
   const save = () => {
     const ids: string[] = [];
     for (const p of parsed) {
+      const paid = accountIn(p);
       ids.push(addExpense({
-        amount: p.amount, category: p.category, merchant: p.merchant ?? "", note: p.note, account: p.account,
+        amount: p.amount, category: p.category, merchant: paid.merchant, note: paid.note, account: paid.account ?? undefined,
         occurredAt: p.date.getTime(), source: "smart", splitWays: p.splitWays, splitWith: p.splitWith.join(", "),
         tags: p.tags, sub: subFor(p.category, `${p.note} ${p.merchant ?? ""}`),
       }).id);
@@ -245,7 +263,7 @@ export function SmartAdd({ open, onClose }: { open: boolean; onClose: () => void
                 <span className="tag">{categoryMeta(p.category).title}</span>
                 {p.merchant && p.note && <span className="tag">{p.note}</span>}
                 <span className="tag">{sameDayLabel(p.date)}</span>
-                <span className="tag">{p.account ?? s.settings.defaultAccount}</span>
+                <span className="tag">{resolveAccount(accountIn(p).account ?? s.settings.defaultAccount, s)}</span>
                 {subFor(p.category, `${p.note} ${p.merchant ?? ""}`) && <span className="tag">{subFor(p.category, `${p.note} ${p.merchant ?? ""}`)}</span>}
                 {p.tags.map((x) => <span key={x} className="tag">#{x}</span>)}
                 {p.splitWays > 1 && (

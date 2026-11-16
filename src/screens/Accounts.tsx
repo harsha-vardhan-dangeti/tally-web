@@ -14,6 +14,7 @@ import { Icon } from "../ui/icons";
 import { Empty, Field, Sheet } from "../ui/components";
 import { ChartCard, DataTable, TrendLine } from "../ui/charts";
 import { ProfileButton } from "../ui/ProfileMenu";
+import { CardSheet } from "../ui/CardSheet";
 
 const GROUPS: { kinds: AccountKind[]; title: string }[] = [
   { kinds: ["bank", "cash"], title: "Cash and bank" },
@@ -25,6 +26,7 @@ const GROUPS: { kinds: AccountKind[]; title: string }[] = [
 export function Accounts() {
   const s = useTally();
   const [editing, setEditing] = useState<Account | "new" | null>(null);
+  const [viewing, setViewing] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
   const [sip, setSip] = useState<ScheduledTransfer | "new" | null>(null);
   const [allTransfers, setAllTransfers] = useState(false);
@@ -92,7 +94,7 @@ export function Accounts() {
                 <div className="section-title"><span>{g.title}</span><span className="t-muted num">{g.kinds.includes("card") ? cardsSummary(list, s) || signed(total) : g.kinds.includes("investment") ? investSummary(s) || signed(total) : signed(total)}</span></div>
                 <div className="card flush divided">
                   {list.map((acct) => (
-                    <button key={acct.id} className="list-row row-btn" onClick={() => setEditing(acct)}>
+                    <button key={acct.id} className="list-row row-btn" onClick={() => (acct.kind === "card" ? setViewing(acct.id) : setEditing(acct))}>
                       <span className={`acct-icon ${acct.kind}`}><Icon name={acct.kind === "card" ? "card" : acct.kind === "investment" ? "trend" : acct.kind === "cash" ? "bag" : "home"} size={18} /></span>
                       <span className="grow col">
                         <span className="t-strong">{acct.name}</span>
@@ -191,6 +193,7 @@ export function Accounts() {
         </>
       )}
 
+      <CardSheet cardId={viewing} onClose={() => setViewing(null)} onEdit={(a) => { setViewing(null); setEditing(a); }} />
       <AccountEditor value={editing} onClose={() => setEditing(null)} />
       <TransferSheet open={moving} onClose={() => setMoving(false)} />
       <SipSheet value={sip} onClose={() => setSip(null)} />

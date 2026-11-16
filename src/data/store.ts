@@ -8,7 +8,7 @@ import {
   crossedThreshold, monthKey, monthRange, periodBounds, sameDay, setMonthStartDay, snapshot, type BudgetPeriod, type BudgetSnapshot,
 } from "../core/budget";
 import { dueInPeriod, nextDueDate, periodKey, type Every } from "../core/schedule";
-import { cardBill, cardCycle, cardUsage, type CardBill, type CardUsage } from "../core/cards";
+import { cardBill, cardCycle, cardPeriods, cardUsage, type CardBill, type CardUsage } from "../core/cards";
 import { dueDate as emiDate } from "../core/loans";
 import { formatMoney, isCurrency, setCurrency } from "../core/money";
 import { yourShare } from "../core/smartParser";
@@ -485,7 +485,7 @@ export function addExpense(input: NewExpense): Expense {
   const before = monthSpent(state.expenses, new Date());
   const e: Expense = {
     id: input.id ?? uid(), amount: input.amount, merchant: input.merchant ?? "", note: input.note ?? "",
-    category: toCategory(input.category), account: input.account || state.settings.defaultAccount,
+    category: toCategory(input.category), account: resolveAccount(input.account || state.settings.defaultAccount),
     occurredAt: input.occurredAt ?? Date.now(), createdAt: Date.now(), source: input.source,
     pending: input.pending ?? false, splitWays: Math.max(input.splitWays ?? 1, 1), splitWith: input.splitWith ?? "",
     exclude: false, recurring: false, ...(input.paidBy ? { paidBy: input.paidBy } : {}),
@@ -850,6 +850,104 @@ export function cardStatus(a: Account, s: State = state, now = new Date()): Card
     spentSince = Math.max(0, f.out - f.in);
   }
   return cardBill(owed, spentSince, a.statementDay, a.dueDay, now);
+}
+
+// ---------- credit card activity ----------
+
+const GENERIC_CARD = new Set(["credit card", "card", "credit"]);
+
+/** "Credit card" without saying which one: the general method, not one of your accounts. */
+export const isGenericCard = (name: string, s: Pick<State, "accounts"> = state) => GENERIC_CARD.has(nameKey(name)) && !accountNamed(s, name);
+
+/** The account money goes to: "Credit card" means your card when you have exactly one. */
+export function resolveAccount(name: string, s: Pick<State, "accounts"> = state): string {
+  if (!isGenericCard(name, s)) return name;
+  const cards = s.accounts.filter((a) => a.kind === "card");
+  return cards.length === 1 ? cards[0].name : name;
+}
+
+/** Expenses you paid by card without saying which card. */
+export const unlinkedCardExpenses = (s: Pick<State, "accounts" | "expenses"> = state) =>
+  s.expenses.filter((e) => !e.paidBy && isGenericCard(e.account, s));
+
+/**
+ * Moves expenses paid with "Credit card" onto one of your cards. On a card that follows your
+ * expenses, those after its balance was last set add to what you owe; earlier ones are taken to be
+ * in that balance already, unless `addEarlier` adds them too. Returns an undo.
+ */
+export function linkToCard(cardId: string, ids: string[], addEarlier = false): () => void {
+  const card = state.accounts.find((a) => a.id === cardId);
+  if (!card) return () => {};
+  const idSet = new Set(ids);
+  const before = state.expenses.filter((e) => idSet.has(e.id));
+  const earlier = earlierThanBalance(card, before);
+  void importTransactions(before.map((e) => ({ ...e, account: card.name })), []);
+  if (addEarlier && earlier) saveAccount({ ...card, balance: card.balance + earlier });
+  return () => {
+    void importTransactions(before, []);
+    const now = state.accounts.find((a) => a.id === cardId);
+    if (addEarlier && earlier && now) saveAccount({ ...now, balance: now.balance - earlier });
+  };
+}
+
+/** What linking would add to a card's balance from before it was last set (see linkToCard). */
+export function earlierThanBalance(card: Account, list: Expense[]): number {
+  return card.tracked ? list.filter((e) => e.occurredAt <= card.updatedAt && !e.emiLoan && !e.pending).reduce((t, e) => t + e.amount, 0) : 0;
+}
+
+export interface CardPeriodSpend { start: Date; end: Date; spent: number; paid: number }
+
+export interface CardActivity {
+  /** What you owe on it now (negative: money in your favour). */
+  owed: number;
+  /** Billing periods, oldest first; the last is the one running now. */
+  periods: CardPeriodSpend[];
+  /** This period's spending by category, largest first. */
+  byCategory: { category: Category; amount: number }[];
+  /** Everything charged to it, newest first. */
+  expenses: Expense[];
+  /** Bill payments into it, newest first. */
+  payments: Transfer[];
+}
+
+/** A card's spending and payments, statement by statement (or month by month without a statement day). */
+export function cardActivity(a: Account, s: State = state, now = new Date(), count = 6): CardActivity {
+  const expenses = s.expenses.filter((e) => !e.paidBy && isAccount(a, e.account));
+  const payments = s.transfers.filter((t) => t.toId === a.id).sort((x, y) => y.occurredAt - x.occurredAt);
+  const refunds = s.incomes.filter((x) => isAccount(a, x.account));
+  const charged = (e: Expense) => !e.pending && !e.emiLoan;
+  const periods = cardPeriods(a.statementDay, count, now).map((p) => {
+    const lo = p.start.getTime(), hi = p.end.getTime();
+    const inside = (t: number) => t >= lo && t < hi;
+    return {
+      ...p,
+      spent: expenses.filter((e) => charged(e) && inside(e.occurredAt)).reduce((t, e) => t + e.amount, 0),
+      paid: payments.filter((t) => inside(t.occurredAt)).reduce((t, x) => t + x.amount, 0)
+        + refunds.filter((x) => inside(x.receivedAt)).reduce((t, x) => t + x.amount, 0),
+    };
+  });
+  const cur = periods[periods.length - 1];
+  const cats = new Map<Category, number>();
+  for (const e of expenses) {
+    if (!charged(e) || e.occurredAt < cur.start.getTime() || e.occurredAt >= cur.end.getTime()) continue;
+    cats.set(e.category, (cats.get(e.category) ?? 0) + e.amount);
+  }
+  return {
+    owed: liveBalance(a, s), periods, expenses, payments,
+    byCategory: [...cats].map(([category, amount]) => ({ category, amount })).sort((x, y) => y.amount - x.amount),
+  };
+}
+
+/** Spent by card each calendar month, oldest first, on your cards and on "Credit card". */
+export function cardSpendByMonth(s: State = state, months = 6, now = new Date()): { month: Date; spent: number }[] {
+  const onCard = (e: Expense) => !e.paidBy && !e.pending && !e.emiLoan
+    && (isGenericCard(e.account, s) || s.accounts.some((a) => a.kind === "card" && isAccount(a, e.account)));
+  const list = s.expenses.filter(onCard);
+  return Array.from({ length: months }, (_, i) => {
+    const month = new Date(now.getFullYear(), now.getMonth() - (months - 1 - i), 1);
+    const end = new Date(month.getFullYear(), month.getMonth() + 1, 1).getTime();
+    return { month, spent: list.filter((e) => e.occurredAt >= month.getTime() && e.occurredAt < end).reduce((t, e) => t + e.amount, 0) };
+  });
 }
 
 function applyTransfer(t: Transfer, undo: boolean) {

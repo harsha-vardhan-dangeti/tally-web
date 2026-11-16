@@ -1,7 +1,7 @@
 import { useContext, useMemo, useState, type ReactNode } from "react";
 import {
-  accountsNow, backupOverdueDays, budgetSnapshot, budgetSpent, cardLimitUsage, cardStatus, counts, inMonth, investmentsSummary, monthSpent, nextDue, recurringSuggestions, useTally,
-  type Chip, type Expense,
+  accountsNow, backupOverdueDays, budgetSnapshot, budgetSpent, cardActivity, cardLimitUsage, cardSpendByMonth, cardStatus, counts, homeBalance, inMonth, investmentsSummary,
+  monthSpent, nextDue, recurringSuggestions, unlinkedCardExpenses, useTally, type Account, type Chip, type Expense,
 } from "../data/store";
 import { addMonths, dayOfMonth, daysInMonth, monthKey, monthLabel, monthRange } from "../core/budget";
 import { people, peopleTotals } from "../core/people";
@@ -13,7 +13,8 @@ import { netWorthSeries, savingsRate } from "../core/reports";
 import { formatMoney } from "../core/money";
 import { Icon } from "../ui/icons";
 import { Progress } from "../ui/components";
-import { Sparkline } from "../ui/charts";
+import { ColumnChart, Sparkline } from "../ui/charts";
+import { CardSheet } from "../ui/CardSheet";
 import { TallyMarks } from "../ui/tally";
 import { ProfileButton, ShellContext } from "../ui/ProfileMenu";
 import { ChipButton, ChipEditor, ExpenseRowView, greeting } from "./Activity";
@@ -51,6 +52,10 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
   const owing = folks.filter((p) => p.balance !== 0);
   const owe = peopleTotals(folks);
   const inv = investmentsSummary(s);
+  const cards = s.accounts.filter((a) => a.kind === "card");
+  const unlinked = unlinkedCardExpenses(s);
+  const cardMonths = useMemo(() => cardSpendByMonth(s, 6, now), [s.expenses, s.accounts]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [cardOpen, setCardOpen] = useState<string | null>(null);
 
   // In the first week of a month, offer last month's recap picture once.
   const lastMonth = addMonths(now, -1);
@@ -247,25 +252,45 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
           </DashCard>
         )}
 
-        {s.accounts.some((a) => a.kind === "card" && (a.limit || (a.statementDay && a.dueDay))) && (
-          <DashCard title={t("Credit cards")} sub={cardsSub(s)} action={t("Accounts")} onAction={() => go("accounts")}>
+        {(cards.length > 0 || unlinked.length > 0) && (
+          <DashCard title={t("Credit cards")} sub={cardsSub(s, cards)} action={t("Accounts")} onAction={() => go("accounts")}>
             <div className="col gap12">
-              {s.accounts.filter((a) => a.kind === "card" && (a.limit || (a.statementDay && a.dueDay))).slice(0, 4).map((a) => {
+              {cards.slice(0, 4).map((a) => {
                 const u = cardLimitUsage(a, s);
                 const bill = cardStatus(a, s, now);
+                const act = cardActivity(a, s, now, 1);
+                const spent = act.periods[0]?.spent ?? 0;
                 return (
-                  <div key={a.id} className="col gap4">
-                    <div className="row between small">
+                  <button key={a.id} className="col gap4 card-dash-row" onClick={() => setCardOpen(a.id)}>
+                    <span className="row between small" style={{ width: "100%" }}>
                       <span className="t-strong ellipsis">{a.name}</span>
-                      <span className="num" style={{ color: u?.tone === "over" ? "var(--danger)" : u?.tone === "near" ? "var(--warn)" : "var(--muted)" }}>
-                        {u ? (u.available >= 0 ? t("{amount} left", { amount: formatMoney(u.available) }) : t("Over limit")) : ""}
-                      </span>
-                    </div>
+                      <span className="num t-strong" style={{ color: act.owed > 0 ? "var(--warn)" : undefined }}>{act.owed < 0 ? "+" : ""}{formatMoney(Math.abs(act.owed))}</span>
+                    </span>
                     {u && <Progress value={u.share} tone={u.tone === "over" ? "over" : u.tone === "near" ? "warn" : "ok"} />}
-                    {bill?.due && <span className="tiny t-muted">{t("{amount} due {date}", { amount: formatMoney(bill.due.amount), date: bill.due.date.toLocaleDateString(dateLocale(), { day: "numeric", month: "short" }) })}</span>}
-                  </div>
+                    <span className="tiny t-muted" style={{ textAlign: "left" }}>{[
+                      bill?.due ? t("{amount} due {date}", { amount: formatMoney(bill.due.amount), date: bill.due.date.toLocaleDateString(dateLocale(), { day: "numeric", month: "short" }) }) : "",
+                      spent ? (a.statementDay ? t("{amount} spent this statement", { amount: formatMoney(spent) }) : t("{amount} spent this month", { amount: formatMoney(spent) })) : "",
+                      u ? (u.available >= 0 ? t("{amount} left", { amount: formatMoney(u.available) }) : t("Over limit")) : "",
+                    ].filter(Boolean).join(" · ") || (a.tracked ? t("Nothing spent on it yet") : t("Tap to have it follow your expenses"))}</span>
+                  </button>
                 );
               })}
+              {cardMonths.some((m) => m.spent > 0) && (
+                <div className="col gap4">
+                  <span className="tiny t-muted">{t("Spent by card, last 6 months")}</span>
+                  <ColumnChart height={120} ariaLabel={t("Card spending over the last 6 months, {amount} this month", { amount: formatMoney(cardMonths[cardMonths.length - 1].spent) })}
+                    columns={cardMonths.map((m, i) => ({ key: m.month.toISOString(), label: m.month.toLocaleDateString(dateLocale(), { month: "short" }),
+                      title: m.month.toLocaleDateString(dateLocale(), { month: "long", year: "numeric" }), value: m.spent, emphasis: i === cardMonths.length - 1 }))} />
+                </div>
+              )}
+              {unlinked.length > 0 && (
+                <div className="row between gap8" style={{ alignItems: "center" }}>
+                  <span className="tiny" style={{ color: "var(--warn)" }}>{t("{amount} paid by “Credit card” isn't on any card yet", { amount: formatMoney(unlinked.reduce((x, e) => x + e.amount, 0)) })}</span>
+                  {cards.length > 0
+                    ? <button className="btn ghost small-btn" onClick={() => setCardOpen(cards[0].id)}>{t("Choose the card")}</button>
+                    : <button className="btn ghost small-btn" onClick={() => go("accounts")}>{t("Add your card")}</button>}
+                </div>
+              )}
             </div>
           </DashCard>
         )}
@@ -318,6 +343,7 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
       </div>
 
       <ChipEditor chip={chipMenu} open={chipMenu !== null || newChip} onClose={() => { setChipMenu(null); setNewChip(false); }} />
+      <CardSheet cardId={cardOpen} onClose={() => setCardOpen(null)} />
     </div>
   );
 }
@@ -362,10 +388,13 @@ function BudgetMini({ label, spent, limit }: { label: string; spent: number; lim
 }
 
 
-/** "₹14,000 of ₹1,50,000 used" across cards with a limit. */
-function cardsSub(s: ReturnType<typeof useTally>): string | undefined {
-  const usages = s.accounts.map((a) => cardLimitUsage(a, s)).filter((u): u is NonNullable<typeof u> => !!u);
-  if (!usages.length) return undefined;
-  const used = usages.reduce((t, u) => t + u.used, 0), limit = usages.reduce((t, u) => t + u.limit, 0);
-  return t("{used} of {limit} used", { used: formatMoney(used), limit: formatMoney(limit) });
+/** "You owe ₹14,000 · ₹14,000 of ₹1,50,000 used" across your cards. */
+function cardsSub(s: ReturnType<typeof useTally>, cards: Account[]): string | undefined {
+  const owed = cards.reduce((x, a) => x + Math.max(0, homeBalance(a, s)), 0);
+  const usages = cards.map((a) => cardLimitUsage(a, s)).filter((u): u is NonNullable<typeof u> => !!u);
+  const used = usages.reduce((x, u) => x + u.used, 0), limit = usages.reduce((x, u) => x + u.limit, 0);
+  return [
+    cards.length ? t("You owe {amount}", { amount: formatMoney(owed) }) : "",
+    usages.length ? t("{used} of {limit} used", { used: formatMoney(used), limit: formatMoney(limit) }) : "",
+  ].filter(Boolean).join(" · ") || undefined;
 }
