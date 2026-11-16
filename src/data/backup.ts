@@ -130,6 +130,7 @@ export function parseBackup(text: string): Backup {
     return { id: rowId, name: str(r.name), kind: r.kind as AccountKind, balance: r.balance as number, order: int(r.order, 0), updatedAt: time(r.updatedAt) ?? Date.now(),
       ...(history ? { history } : {}),
       ...(r.tracked === true ? { tracked: true } : {}),
+      ...(time(r.balanceSetAt) ? { balanceSetAt: time(r.balanceSetAt)! } : {}),
       ...(isCurrency(r.currency) ? { currency: r.currency } : {}),
       ...(dayOk(r.statementDay) ? { statementDay: r.statementDay as number } : {}),
       ...(dayOk(r.dueDay) ? { dueDay: r.dueDay as number } : {}),

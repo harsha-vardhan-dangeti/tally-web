@@ -166,7 +166,7 @@ export function App() {
         {tab === "reports" && <Reports />}
         {tab === "plan" && <Plan />}
         {tab === "people" && <People />}
-        {tab === "accounts" && <Accounts />}
+        {tab === "accounts" && <Accounts onOpen={openDetail} />}
         {tab === "inbox" && <Inbox onOpen={openDetail} />}
       </main>
 

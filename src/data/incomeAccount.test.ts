@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  getState, linkIncomes, liveBalance, resolveAccount, saveAccount, saveIncome, saveRecurringIncome, unlinkedIncomeRules, unlinkedIncomes,
+  accountItems, addExpense, addTransfer, getState, linkIncomes, saveLedgerEntry, liveBalance, resolveAccount, saveAccount, saveIncome, saveRecurringIncome, unlinkedIncomeRules, unlinkedIncomes,
 } from "./store";
 
 const acct = (id: string) => getState().accounts.find((a) => a.id === id)!;
@@ -44,5 +44,35 @@ describe("income and the account it lands in", () => {
     expect(hdfc()).toBe(63_000_00);
     undo2();
     expect(hdfc()).toBe(11_000_00);
+  });
+});
+
+describe("an account's money in and out", () => {
+  it("lists income, expenses, transfers and money lent through it, newest first, and which moved the balance", () => {
+    const now = Date.now();
+    saveAccount({ id: "axis", name: "Axis", kind: "bank", balance: 20_000_00, order: 5, updatedAt: now - 3_600_000, balanceSetAt: now - 3_600_000, tracked: true });
+    saveAccount({ id: "wallet", name: "Wallet", kind: "cash", balance: 1_000_00, order: 6, updatedAt: now - 3_600_000, tracked: true });
+    saveIncome({ id: "ax-old", amount: 40_000_00, source: "Salary", note: "", account: "Axis", receivedAt: now - 7_200_000, createdAt: now });
+    saveIncome({ id: "ax-new", amount: 3_000_00, source: "Freelance", note: "Logo", account: "Axis", receivedAt: now - 5000, createdAt: now });
+    addExpense({ amount: 1_200_00, category: "food", merchant: "Swiggy", account: "Axis", source: "manual", occurredAt: now - 4000 });
+    addExpense({ amount: 900_00, category: "food", merchant: "Dinner", account: "Axis", source: "manual", paidBy: "Ravi", occurredAt: now - 3500 });
+    saveLedgerEntry({ id: "ax-l", person: "Arun", amount: 500_00, kind: "lent", note: "", occurredAt: now - 2000, createdAt: now, account: "Axis" });
+    // A transfer re-sets the stored balance; what came before it still counts as having moved it.
+    addTransfer({ fromId: "axis", toId: "wallet", amount: 2_000_00, note: "ATM", occurredAt: now - 3000 });
+
+    const items = accountItems(acct("axis"));
+    expect(items.map((x) => [x.kind, x.title, x.amount])).toEqual([
+      ["ledger", "Lent to Arun", -500_00],
+      ["transfer", "To Wallet", -2_000_00],
+      ["expense", "Swiggy", -1_200_00],
+      ["income", "Freelance", 3_000_00],
+      ["income", "Salary", 40_000_00],
+    ]);
+    // The salary was dated before the balance was entered, so it's taken to be in it.
+    expect(items.find((x) => x.title === "Salary")?.counted).toBe(false);
+    expect(items.filter((x) => x.counted)).toHaveLength(4);
+    // The balance agrees: 20,000 + 3,000 − 1,200 − 2,000 − 500.
+    expect(liveBalance(acct("axis"))).toBe(19_300_00);
+    expect(accountItems(acct("wallet")).map((x) => [x.title, x.amount])).toEqual([["From Axis", 2_000_00]]);
   });
 });

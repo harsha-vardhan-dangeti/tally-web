@@ -80,6 +80,8 @@ export interface Account {
    * balance on from `balance` as of `updatedAt`.
    */
   tracked?: boolean;
+  /** When you last entered the balance yourself (transfers also re-set `updatedAt`; this stays). */
+  balanceSetAt?: number;
   /** Balance kept in another currency; net worth converts it at the rate in settings.fxRates. */
   currency?: string;
   /** Credit cards: day the statement is made and day the bill is due (1–31). */
@@ -983,6 +985,59 @@ export function cardActivity(a: Account, s: State = state, now = new Date(), cou
     owed: liveBalance(a, s), periods, expenses, payments,
     byCategory: [...cats].map(([category, amount]) => ({ category, amount })).sort((x, y) => y.amount - x.amount),
   };
+}
+
+export interface AccountItem {
+  key: string;
+  kind: "income" | "expense" | "transfer" | "ledger";
+  title: string;
+  detail: string;
+  at: number;
+  /** + into the account, − out of it. */
+  amount: number;
+  /** False for entries dated before you entered the balance yourself: taken to be in it already. */
+  counted: boolean;
+  income?: Income;
+  expense?: Expense;
+}
+
+/**
+ * Everything that went into or out of a bank, cash or investment account, newest first: income,
+ * expenses paid from it, transfers, and money lent or paid back through it.
+ */
+/**
+ * When you last entered an account's balance yourself, if known. Older accounts don't record it; for
+ * them it's `updatedAt`, unless a transfer has re-set that since.
+ */
+export function balanceEnteredAt(a: Account, s: Pick<State, "transfers"> = state): number | null {
+  if (a.balanceSetAt) return a.balanceSetAt;
+  const moved = s.transfers.some((t) => (t.fromId === a.id || t.toId === a.id) && t.createdAt >= a.updatedAt - 2000);
+  return moved ? null : a.updatedAt;
+}
+
+export function accountItems(a: Account, s: State = state): AccountItem[] {
+  const follows = !!a.tracked && !(a.currency && a.currency !== s.settings.currency);
+  const entered = balanceEnteredAt(a, s);
+  // Entries dated before you entered the balance are taken to be in it.
+  const counted = (at: number) => follows && (entered === null || at > entered);
+  const out: AccountItem[] = [];
+  for (const x of s.incomes) if (isAccount(a, x.account)) {
+    out.push({ key: `i-${x.id}`, kind: "income", title: x.source || "Income", detail: x.note, at: x.receivedAt, amount: x.amount, counted: counted(x.receivedAt), income: x });
+  }
+  for (const e of s.expenses) if (!e.pending && !e.paidBy && isAccount(a, e.account)) {
+    out.push({ key: `e-${e.id}`, kind: "expense", title: expenseTitle(e), detail: categoryMeta(e.category).title, at: e.occurredAt, amount: -e.amount, counted: counted(e.occurredAt), expense: e });
+  }
+  const name = (id: string, fallback: string) => s.accounts.find((x) => x.id === id)?.name ?? fallback;
+  // Transfers change both balances when they're made, so they always count.
+  for (const t of s.transfers) {
+    if (t.toId === a.id) out.push({ key: `t-${t.id}`, kind: "transfer", title: `From ${name(t.fromId, t.fromName)}`, detail: t.note, at: t.occurredAt, amount: t.amount, counted: true });
+    else if (t.fromId === a.id) out.push({ key: `t-${t.id}`, kind: "transfer", title: `To ${name(t.toId, t.toName)}`, detail: t.note, at: t.occurredAt, amount: -t.amount, counted: true });
+  }
+  for (const l of s.ledger) if (l.account && isAccount(a, l.account)) {
+    const title = l.kind === "lent" ? `Lent to ${l.person}` : l.kind === "borrowed" ? `Borrowed from ${l.person}` : l.amount > 0 ? `Paid back ${l.person}` : `${l.person} paid you back`;
+    out.push({ key: `l-${l.id}`, kind: "ledger", title, detail: l.note, at: l.occurredAt, amount: -l.amount, counted: counted(l.occurredAt) });
+  }
+  return out.sort((x, y) => y.at - x.at);
 }
 
 /** Spent by card each calendar month, oldest first, on your cards and on "Credit card". */

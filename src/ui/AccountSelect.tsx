@@ -85,7 +85,7 @@ export function AccountNote({ name, what, incoming }: { name: string; what: stri
       <div className="row between gap8" style={{ margin: "-6px 0 0", alignItems: "center" }}>
         <span className="tiny" style={{ color: "var(--warn)" }}>{acct.name}'s balance only changes when you edit it, so this won't move it.</span>
         <button type="button" className="btn ghost small-btn" onClick={() => {
-          saveAccount({ ...acct, balance: liveBalance(acct, s), tracked: true, updatedAt: Date.now() });
+          saveAccount({ ...acct, balance: liveBalance(acct, s), tracked: true, updatedAt: Date.now(), balanceSetAt: Date.now() });
           showToast(`${acct.name} now follows your expenses and income`);
         }}>Follow transactions</button>
       </div>

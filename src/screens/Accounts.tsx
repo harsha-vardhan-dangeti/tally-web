@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import {
   ACCOUNT_KIND_LABEL, accountsNow, addTransfer, cardLimitUsage, cardStatus, deleteAccount, deleteLedgerEntry, deleteScheduledTransfer, deleteTransfer, homeBalance,
   investmentReturn, investmentsSummary, liveBalance, moneyIn, netInvested, runDueTransfers, saveAccount, saveLedgerEntry, saveScheduledTransfer, setSettings, showToast,
-  sipsInto, uid, unlinkedIncomeRules, unlinkedIncomes, useTally, type Account, type AccountKind, type ScheduledTransfer,
+  sipsInto, uid, unlinkedIncomeRules, unlinkedIncomes, useTally, type Account, type AccountKind, type Expense, type ScheduledTransfer,
 } from "../data/store";
 import { people } from "../core/people";
 import { monthKey } from "../core/budget";
@@ -15,6 +15,7 @@ import { Empty, Field, Sheet } from "../ui/components";
 import { ChartCard, DataTable, TrendLine } from "../ui/charts";
 import { ProfileButton } from "../ui/ProfileMenu";
 import { CardSheet } from "../ui/CardSheet";
+import { AccountSheet } from "./AccountSheet";
 import { IncomeLinkSheet } from "../ui/IncomeLinkSheet";
 
 const GROUPS: { kinds: AccountKind[]; title: string }[] = [
@@ -24,10 +25,11 @@ const GROUPS: { kinds: AccountKind[]; title: string }[] = [
 ];
 
 /** Accounts: what you have and owe, how it has moved, and money moved between accounts. */
-export function Accounts() {
+export function Accounts({ onOpen }: { onOpen?: (e: Expense) => void } = {}) {
   const s = useTally();
   const [editing, setEditing] = useState<Account | "new" | null>(null);
   const [viewing, setViewing] = useState<string | null>(null);
+  const [viewingAccount, setViewingAccount] = useState<string | null>(null);
   const [linkingIncome, setLinkingIncome] = useState(false);
   const looseIncome = unlinkedIncomes(s);
   const looseRules = unlinkedIncomeRules(s);
@@ -111,7 +113,7 @@ export function Accounts() {
                 <div className="section-title"><span>{g.title}</span><span className="t-muted num">{g.kinds.includes("card") ? cardsSummary(list, s) || signed(total) : g.kinds.includes("investment") ? investSummary(s) || signed(total) : signed(total)}</span></div>
                 <div className="card flush divided">
                   {list.map((acct) => (
-                    <button key={acct.id} className="list-row row-btn" onClick={() => (acct.kind === "card" ? setViewing(acct.id) : setEditing(acct))}>
+                    <button key={acct.id} className="list-row row-btn" onClick={() => (acct.kind === "card" ? setViewing(acct.id) : setViewingAccount(acct.id))}>
                       <span className={`acct-icon ${acct.kind}`}><Icon name={acct.kind === "card" ? "card" : acct.kind === "investment" ? "trend" : acct.kind === "cash" ? "bag" : "home"} size={18} /></span>
                       <span className="grow col">
                         <span className="t-strong">{acct.name}</span>
@@ -210,6 +212,8 @@ export function Accounts() {
         </>
       )}
 
+      <AccountSheet accountId={viewingAccount} onClose={() => setViewingAccount(null)} onOpenExpense={onOpen}
+        onEdit={(a) => { setViewingAccount(null); setEditing(a); }} />
       <IncomeLinkSheet open={linkingIncome} onClose={() => setLinkingIncome(false)} />
       <CardSheet cardId={viewing} onClose={() => setViewing(null)} onEdit={(a) => { setViewing(null); setEditing(a); }} />
       <AccountEditor value={editing} onClose={() => setEditing(null)} />
@@ -345,7 +349,7 @@ function SipSheet({ value, onClose }: { value: ScheduledTransfer | "new" | null;
     let into = toId;
     if (creating) {
       into = uid();
-      saveAccount({ id: into, name: newInto.trim(), kind: "investment", balance: 0, order: s.accounts.length, updatedAt: Date.now(), invested: 0, investedAt: Date.now() });
+      saveAccount({ id: into, name: newInto.trim(), kind: "investment", balance: 0, order: s.accounts.length, updatedAt: Date.now(), balanceSetAt: Date.now(), invested: 0, investedAt: Date.now() });
     }
     const rule: ScheduledTransfer = {
       id: editing?.id ?? uid(), fromId, toId: into, amount: paise, day, note: name.trim(),
@@ -637,7 +641,7 @@ function AccountEditor({ value, onClose }: { value: Account | "new" | null; onCl
         const r = Number(rate);
         if (foreign && r > 0) setSettings({ fxRates: { ...s.settings.fxRates, [currency]: r } });
         saveAccount({
-          id: acct?.id ?? uid(), name: name.trim(), kind, balance: amount, order: acct?.order ?? s.accounts.length, updatedAt: Date.now(),
+          id: acct?.id ?? uid(), name: name.trim(), kind, balance: amount, order: acct?.order ?? s.accounts.length, updatedAt: Date.now(), balanceSetAt: Date.now(),
           ...(acct?.history ? { history: acct.history } : {}),
           ...(tracked && !foreign ? { tracked: true } : {}),
           ...(foreign ? { currency } : {}),

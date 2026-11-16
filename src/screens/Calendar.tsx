@@ -164,7 +164,7 @@ function defaultIncomeAccount(s: ReturnType<typeof useTally>): string {
 const toDateInput = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 /** Add or edit one income entry. */
-export function IncomeEditor({ value, onClose }: { value: { income: Income | null; day: Date } | null; onClose: () => void }) {
+export function IncomeEditor({ value, onClose }: { value: { income: Income | null; day: Date; account?: string } | null; onClose: () => void }) {
   const s = useTally();
   const existing = value?.income ?? null;
   const [amount, setAmount] = useState("");
@@ -180,7 +180,7 @@ export function IncomeEditor({ value, onClose }: { value: { income: Income | nul
     if (value) {
       setAmount(existing ? String(existing.amount / 100) : "");
       setSource(existing?.source ?? "Salary");
-      setAccount(existing?.account ?? defaultIncomeAccount(s));
+      setAccount(existing?.account ?? value.account ?? defaultIncomeAccount(s));
       setDate(toDateInput(existing ? new Date(existing.receivedAt) : value.day));
       setNote(existing?.note ?? "");
       setRepeats(false);

@@ -47,7 +47,7 @@ export function CardSheet({ cardId, onClose, onEdit }: { cardId: string | null; 
 
   const follow = () => {
     const before = a;
-    saveAccount({ ...a, tracked: true, updatedAt: Date.now() });
+    saveAccount({ ...a, tracked: true, updatedAt: Date.now(), balanceSetAt: Date.now() });
     showToast(`${a.name} now goes up with each expense on it and down with each payment`, () => saveAccount(before));
   };
   const link = () => {
