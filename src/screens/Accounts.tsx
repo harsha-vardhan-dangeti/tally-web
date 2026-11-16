@@ -115,7 +115,7 @@ export function Accounts() {
                       <span className={`acct-icon ${acct.kind}`}><Icon name={acct.kind === "card" ? "card" : acct.kind === "investment" ? "trend" : acct.kind === "cash" ? "bag" : "home"} size={18} /></span>
                       <span className="grow col">
                         <span className="t-strong">{acct.name}</span>
-                        <span className="t-muted tiny">{ACCOUNT_KIND_LABEL[acct.kind]} · {acct.kind === "investment" ? `value as of ${new Date(acct.updatedAt).toLocaleDateString([], { day: "numeric", month: "short" })}` : acct.tracked ? "follows your expenses and income" : `updated ${new Date(acct.updatedAt).toLocaleDateString([], { day: "numeric", month: "short" })}`}</span>
+                        <span className="t-muted tiny">{ACCOUNT_KIND_LABEL[acct.kind]} · {acct.kind === "investment" ? `value as of ${new Date(acct.updatedAt).toLocaleDateString([], { day: "numeric", month: "short" })}` : acct.tracked ? "follows your expenses and income" : `balance you entered ${new Date(acct.updatedAt).toLocaleDateString([], { day: "numeric", month: "short" })} · doesn't follow transactions`}</span>
                         <CardLine acct={acct} />
                         <InvestLine acct={acct} />
                       </span>

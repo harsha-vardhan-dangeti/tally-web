@@ -1,4 +1,4 @@
-import { accountNamed, cardLimitUsage, creditLeft, liveBalance, useTally } from "../data/store";
+import { accountNamed, cardLimitUsage, creditLeft, liveBalance, saveAccount, showToast, useTally } from "../data/store";
 import { formatMoney } from "../core/money";
 
 const GENERIC = ["UPI", "Cash", "Credit card"];
@@ -77,11 +77,23 @@ export function AccountNote({ name, what, incoming }: { name: string; what: stri
     if (!incoming || !s.accounts.some((a) => a.kind === "bank" || a.kind === "cash")) return null;
     return <p className="tiny" style={{ margin: "-6px 0 0", color: "var(--warn)" }}>“{name || "Nothing"}” isn't one of your accounts, so no balance changes. Pick the account it lands in.</p>;
   }
+  if (acct.currency && acct.currency !== s.settings.currency) {
+    return <p className="t-muted tiny" style={{ margin: "-6px 0 0" }}>{acct.name} is in {acct.currency}, so you update its balance yourself in Accounts.</p>;
+  }
+  if (!acct.tracked) {
+    return (
+      <div className="row between gap8" style={{ margin: "-6px 0 0", alignItems: "center" }}>
+        <span className="tiny" style={{ color: "var(--warn)" }}>{acct.name}'s balance only changes when you edit it, so this won't move it.</span>
+        <button type="button" className="btn ghost small-btn" onClick={() => {
+          saveAccount({ ...acct, balance: liveBalance(acct, s), tracked: true, updatedAt: Date.now() });
+          showToast(`${acct.name} now follows your expenses and income`);
+        }}>Follow transactions</button>
+      </div>
+    );
+  }
   return (
     <p className="t-muted tiny" style={{ margin: "-6px 0 0" }}>
-      {acct.tracked
-        ? `${what} ${incoming ? "goes into" : "comes out of"} ${acct.name}'s balance in Accounts.`
-        : `${acct.name} doesn't update from transactions. Turn that on in Accounts to have this move its balance.`}
+      {what} {incoming ? "goes into" : "comes out of"} {acct.name}'s balance in Accounts.
     </p>
   );
 }

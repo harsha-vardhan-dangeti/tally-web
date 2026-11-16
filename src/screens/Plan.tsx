@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import {
   billOverdue, billPaid, budgetSpent, deleteBill, deleteBudget, deleteGoal, deleteRecurringIncome, dismissRecurring, logBill, logRecurringIncome, monthSpent, nextDue,
   recurringSuggestions, runDueBills, runDueIncome, saveBill, saveBudget, saveGoal, saveRecurringIncome, showToast, uid, useTally,
-  deleteLoan, emiThisMonth, logEmi, runDueLoans, saveLoan, accountNamed, liveBalance, scheduledFlows, type ScheduledFlow,
+  deleteLoan, emiThisMonth, logEmi, runDueLoans, saveLoan, accountNamed, getState, liveBalance, saveAccount, scheduledFlows, type ScheduledFlow,
   type Bill, type Goal, type Loan, type RecurringIncome,
 } from "../data/store";
 import { emiFor, loanStatus } from "../core/loans";
@@ -484,14 +484,14 @@ const INCOME_SOURCES = ["Salary", "Freelance", "Rent received", "Interest", "Pen
 function RegularIncomeEditor({ value, onClose }: { value: RecurringIncome | "new" | null; onClose: () => void }) {
   const s = useTally();
   const rule = value && value !== "new" ? value : null;
-  const [f, setF] = useState({ source: "Salary", amount: "", day: 1, account: "", note: "", autoLog: true, logNow: true });
+  const [f, setF] = useState({ source: "Salary", amount: "", day: 1, account: "", note: "", autoLog: true, logNow: true, toBalance: false });
   const [seen, setSeen] = useState<typeof value>(null);
   if (value !== seen) {
     setSeen(value);
     const bank = s.accounts.find((a) => a.kind === "bank")?.name ?? "Bank";
     setF(rule
-      ? { source: rule.source, amount: String(rule.amount / 100), day: rule.day, account: rule.account, note: rule.note, autoLog: rule.autoLog, logNow: false }
-      : { source: "Salary", amount: "", day: Math.min(new Date().getDate(), 28), account: bank, note: "", autoLog: true, logNow: true });
+      ? { source: rule.source, amount: String(rule.amount / 100), day: rule.day, account: rule.account, note: rule.note, autoLog: rule.autoLog, logNow: false, toBalance: false }
+      : { source: "Salary", amount: "", day: Math.min(new Date().getDate(), 28), account: bank, note: "", autoLog: true, logNow: true, toBalance: false });
   }
   const p = parsePaise(f.amount);
   const now = new Date();
@@ -499,6 +499,10 @@ function RegularIncomeEditor({ value, onClose }: { value: RecurringIncome | "new
   const receivedThisMonth = rule?.lastLoggedMonth === monthKey(now);
   // A new regular income whose day has already come this month: offer to add this month's too.
   const askLogNow = !rule && f.day <= now.getDate();
+  // This month's lands on its day; if the account's balance was set after that, it's taken to be in it already.
+  const into = accountNamed(s, f.account);
+  const thisMonthAt = new Date(now.getFullYear(), now.getMonth(), f.day, 12).getTime();
+  const beforeBalance = askLogNow && f.logNow && !!into?.tracked && Math.min(thisMonthAt, now.getTime()) <= into.updatedAt;
   const save = () => {
     if (!p) return;
     const saved: RecurringIncome = {
@@ -508,6 +512,10 @@ function RegularIncomeEditor({ value, onClose }: { value: RecurringIncome | "new
     saveRecurringIncome(saved);
     if (askLogNow && f.logNow) {
       logRecurringIncome(saved, now);
+      if (beforeBalance && f.toBalance && into) {
+        const acct = accountNamed(getState(), into.name)!;
+        saveAccount({ ...acct, balance: acct.balance + (acct.kind === "card" ? -p : p) });
+      }
       showToast(`Added ${saved.source || "income"} · ${formatMoney(saved.amount)} for ${monthName}`);
     } else {
       runDueIncome(now);
@@ -539,6 +547,10 @@ function RegularIncomeEditor({ value, onClose }: { value: RecurringIncome | "new
         <Toggle label="Add to income on that day" hint="Each month, on or after the day, it's added to that month's income" checked={f.autoLog} onChange={(v) => setF({ ...f, autoLog: v })} />
         {askLogNow && (
           <Toggle label={`Add ${monthName}'s now`} hint="The day has already come this month" checked={f.logNow} onChange={(v) => setF({ ...f, logNow: v })} />
+        )}
+        {beforeBalance && into && (
+          <Toggle label={`Add ${monthName}'s to ${into.name}'s balance`} checked={f.toBalance} onChange={(v) => setF({ ...f, toBalance: v })}
+            hint={`It came before you set ${into.name}'s balance on ${new Date(into.updatedAt).toLocaleDateString([], { day: "numeric", month: "short" })}, so Tally takes it to be in that balance already. Turn this on if it isn't.`} />
         )}
       </div>
       {rule && (receivedThisMonth

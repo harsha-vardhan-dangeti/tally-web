@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import {
-  accountNamed, counts, deleteIncome, expenseTitle, runDueIncome, saveIncome, saveRecurringIncome, share, uid, useTally, type Expense, type Income,
+  accountNamed, counts, deleteIncome, expenseTitle, getState, saveAccount, runDueIncome, saveIncome, saveRecurringIncome, share, uid, useTally, type Expense, type Income,
 } from "../data/store";
 import { dayOfMonth, daysInMonth, monthKey, monthLabel, monthRange, sameDay, startOfDay } from "../core/budget";
 import { compactMoney, formatMoney, parsePaise, currencySymbol } from "../core/money";
@@ -173,6 +173,7 @@ export function IncomeEditor({ value, onClose }: { value: { income: Income | nul
   const [date, setDate] = useState("");
   const [note, setNote] = useState("");
   const [repeats, setRepeats] = useState(false);
+  const [addToBalance, setAddToBalance] = useState(false);
   const [seen, setSeen] = useState<typeof value>(null);
   if (value !== seen) {
     setSeen(value);
@@ -183,6 +184,7 @@ export function IncomeEditor({ value, onClose }: { value: { income: Income | nul
       setDate(toDateInput(existing ? new Date(existing.receivedAt) : value.day));
       setNote(existing?.note ?? "");
       setRepeats(false);
+      setAddToBalance(false);
     }
   }
   // Entries added by a regular income are named "income-<rule>-<month>".
@@ -219,6 +221,11 @@ export function IncomeEditor({ value, onClose }: { value: { income: Income | nul
       receivedAt, createdAt: existing?.createdAt ?? Date.now(),
     });
     if (repeats && !existing) runDueIncome();
+    // The balance was entered without this income in it: raise it (a card's goes down) by the amount.
+    if (beforeBalance && addToBalance && into) {
+      const now = accountNamed(getState(), into.name)!;
+      saveAccount({ ...now, balance: now.balance + (now.kind === "card" ? -paise : paise) });
+    }
     onClose();
   };
 
@@ -246,7 +253,8 @@ export function IncomeEditor({ value, onClose }: { value: { income: Income | nul
         </Field>
       </div>
       {beforeBalance && into
-        ? <p className="tiny" style={{ margin: "-6px 0 0", color: "var(--warn)" }}>Dated before you set {into.name}'s balance on {new Date(into.updatedAt).toLocaleDateString([], { day: "numeric", month: "short" })}, so it's taken to be in that balance already. To add it, update the balance in Accounts.</p>
+        ? <Toggle checked={addToBalance} onChange={setAddToBalance} label={`Add it to ${into.name}'s balance`}
+            hint={`It's dated before you set ${into.name}'s balance on ${new Date(into.updatedAt).toLocaleDateString([], { day: "numeric", month: "short" })}, so Tally takes it to be in that balance already. Turn this on if it isn't.`} />
         : <AccountNote name={account} what={repeats ? "Each payment" : "This income"} incoming />}
       <Field label="Note"><input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional" /></Field>
       {!existing && (
