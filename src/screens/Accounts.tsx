@@ -215,7 +215,7 @@ export function Accounts({ onOpen }: { onOpen?: (e: Expense) => void } = {}) {
       <AccountSheet accountId={viewingAccount} onClose={() => setViewingAccount(null)} onOpenExpense={onOpen}
         onEdit={(a) => { setViewingAccount(null); setEditing(a); }} />
       <IncomeLinkSheet open={linkingIncome} onClose={() => setLinkingIncome(false)} />
-      <CardSheet cardId={viewing} onClose={() => setViewing(null)} onEdit={(a) => { setViewing(null); setEditing(a); }} />
+      <CardSheet cardId={viewing} onClose={() => setViewing(null)} onEdit={(a) => { setViewing(null); setEditing(a); }} onOpenExpense={onOpen} />
       <AccountEditor value={editing} onClose={() => setEditing(null)} />
       <TransferSheet open={moving} onClose={() => setMoving(false)} />
       <SipSheet value={sip} onClose={() => setSip(null)} />

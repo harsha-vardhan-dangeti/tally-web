@@ -386,7 +386,7 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
       </div>
 
       <ChipEditor chip={chipMenu} open={chipMenu !== null || newChip} onClose={() => { setChipMenu(null); setNewChip(false); }} />
-      <CardSheet cardId={cardOpen} onClose={() => setCardOpen(null)} />
+      <CardSheet cardId={cardOpen} onClose={() => setCardOpen(null)} onOpenExpense={onOpen} />
       <IncomeLinkSheet open={incomeLink} onClose={() => setIncomeLink(false)} />
     </div>
   );

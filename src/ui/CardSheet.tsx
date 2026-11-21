@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
-  cardActivity, cardLimitUsage, cardStatus, earlierThanBalance, expenseApplies, expenseTitle, linkToCard, saveAccount, showToast, unlinkedCardExpenses, useTally,
-  type Account,
+  cardActivity, cardLimitUsage, cardStatus, deleteTransfer, earlierThanBalance, expenseApplies, expenseTitle, linkToCard, saveAccount, showToast, unlinkedCardExpenses, useTally,
+  type Account, type Expense,
 } from "../data/store";
 import { categoryMeta } from "../core/categories";
 import { formatMoney } from "../core/money";
@@ -17,7 +17,9 @@ const DAY = 86_400_000;
  * One credit card: what you owe on it, its bill, what you've spent on it statement by statement, and
  * every charge and payment. Expenses paid with "Credit card" (no card named) can be moved onto it.
  */
-export function CardSheet({ cardId, onClose, onEdit }: { cardId: string | null; onClose: () => void; onEdit?: (a: Account) => void }) {
+export function CardSheet({ cardId, onClose, onEdit, onOpenExpense }: {
+  cardId: string | null; onClose: () => void; onEdit?: (a: Account) => void; onOpenExpense?: (e: Expense) => void;
+}) {
   const s = useTally();
   const a = cardId ? s.accounts.find((x) => x.id === cardId && x.kind === "card") ?? null : null;
   const [all, setAll] = useState(false);
@@ -161,16 +163,22 @@ export function CardSheet({ cardId, onClose, onEdit }: { cardId: string | null; 
           <div className="card"><p className="t-muted small" style={{ margin: 0 }}>Nothing yet. When you add an expense, pick {a.name} under “Paid from”, or type it: “450 swiggy {a.name.trim().split(/\s+/)[0].toLowerCase()} card”.</p></div>
         ) : (
           <div className="card flush divided">
-            {shown.map((e) => (
-              <div key={e.id} className="list-row">
-                <CategoryIcon category={e.category} size={32} />
-                <span className="grow col" style={{ minWidth: 0 }}>
-                  <span className="small t-strong ellipsis">{expenseTitle(e)}</span>
-                  <span className="tiny t-muted ellipsis">{shortYear(e.occurredAt)}{e.emiLoan ? " · moved to EMI" : ""}{a.tracked && !e.emiLoan && !expenseApplies(a, e) ? " · in the balance you entered" : ""}</span>
-                </span>
-                <span className="num small" style={{ textDecoration: e.emiLoan ? "line-through" : undefined }}>{formatMoney(e.amount)}</span>
-              </div>
-            ))}
+            {shown.map((e) => {
+              const body = (
+                <>
+                  <CategoryIcon category={e.category} size={32} />
+                  <span className="grow col" style={{ minWidth: 0 }}>
+                    <span className="small t-strong ellipsis">{expenseTitle(e)}</span>
+                    <span className="tiny t-muted ellipsis">{shortYear(e.occurredAt)}{e.emiLoan ? " · moved to EMI" : ""}{a.tracked && !e.emiLoan && !expenseApplies(a, e) ? " · in the balance you entered" : ""}</span>
+                  </span>
+                  <span className="num small" style={{ textDecoration: e.emiLoan ? "line-through" : undefined }}>{formatMoney(e.amount)}</span>
+                </>
+              );
+              // Tap to open it: edit, move it to another card, or delete it (the balance follows).
+              return onOpenExpense
+                ? <button key={e.id} className="list-row row-btn" onClick={() => onOpenExpense(e)}>{body}</button>
+                : <div key={e.id} className="list-row">{body}</div>;
+            })}
           </div>
         )}
       </section>
@@ -187,6 +195,9 @@ export function CardSheet({ cardId, onClose, onEdit }: { cardId: string | null; 
                   <span className="tiny t-muted">{shortYear(t.occurredAt)}</span>
                 </span>
                 <span className="num small in">{formatMoney(t.amount)}</span>
+                <button className="icon-btn" aria-label={`Remove the ${formatMoney(t.amount)} payment and put both balances back`} onClick={() => deleteTransfer(t.id)}>
+                  <Icon name="trash" size={16} />
+                </button>
               </div>
             ))}
           </div>
