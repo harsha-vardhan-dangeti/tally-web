@@ -70,12 +70,13 @@ export function AccountHint({ account, amount }: { account: string; amount: numb
  * Says whether the chosen account's balance will move. For money coming in, it also says when it
  * won't because the money goes to something that isn't one of your accounts.
  */
-export function AccountNote({ name, what, incoming }: { name: string; what: string; incoming?: boolean }) {
+export function AccountNote({ name, what, incoming, strict }: { name: string; what: string; incoming?: boolean; strict?: boolean }) {
   const s = useTally();
   const acct = accountNamed(s, name);
   if (!acct) {
-    if (!incoming || !s.accounts.some((a) => a.kind === "bank" || a.kind === "cash")) return null;
-    return <p className="tiny" style={{ margin: "-6px 0 0", color: "var(--warn)" }}>“{name || "Nothing"}” isn't one of your accounts, so no balance changes. Pick the account it lands in.</p>;
+    // Spending by UPI or card without naming the account is normal; income and money to people should land somewhere.
+    if (!(incoming || strict) || !s.accounts.some((a) => a.kind === "bank" || a.kind === "cash")) return null;
+    return <p className="tiny" style={{ margin: "-6px 0 0", color: "var(--warn)" }}>“{name || "Nothing"}” isn't one of your accounts, so no balance changes. Pick the account it {incoming ? "lands in" : "comes from"}.</p>;
   }
   if (acct.currency && acct.currency !== s.settings.currency) {
     return <p className="t-muted tiny" style={{ margin: "-6px 0 0" }}>{acct.name} is in {acct.currency}, so you update its balance yourself in Accounts.</p>;

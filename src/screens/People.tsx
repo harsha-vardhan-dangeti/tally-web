@@ -1,7 +1,9 @@
 import { useMemo, useRef, useState } from "react";
-import { deleteLedgerEntry, importSplitwise, removeSplitwise, saveLedgerEntry, setSettings, showToast, uid, useTally } from "../data/store";
+import {
+  accountNamed, deleteLedgerEntry, getState, importSplitwise, likelyAccount, removeSplitwise, saveAccount, saveLedgerEntry, setSettings, showToast, uid, unlinkedLedger, useTally,
+} from "../data/store";
 import { guessMe, parseSplitwise, planBalances, planSplitwise, type SplitwiseFile } from "../core/splitwise";
-import { AccountHint, AccountSelect } from "../ui/AccountSelect";
+import { AccountHint, AccountNote, AccountSelect } from "../ui/AccountSelect";
 import { useCloud } from "../data/cloud";
 import { track } from "../data/telemetry";
 import { isUpiId, payLink, people, peopleTotals, unpaidTitles, type Person, type PersonItem } from "../core/people";
@@ -10,6 +12,7 @@ import { dateLocale, t } from "../i18n";
 import { Icon } from "../ui/icons";
 import { Empty, Field, Sheet, Toggle } from "../ui/components";
 import { ProfileButton } from "../ui/ProfileMenu";
+import { LedgerLinkSheet } from "../ui/LedgerLinkSheet";
 import { shareText, whatsapp } from "../ui/share";
 
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "?";
@@ -26,7 +29,10 @@ export function People() {
   const [personKey, setPersonKey] = useState<string | null>(null);
   const [entry, setEntry] = useState<EntryRequest | null>(null);
   const [splitwise, setSplitwise] = useState(false);
+  const [linking, setLinking] = useState(false);
   const person = list.find((p) => p.key === personKey) ?? null;
+  // Money lent or borrowed through "UPI" or no account: no balance moved for it.
+  const loose = s.accounts.some((a) => a.kind === "bank" || a.kind === "cash") ? unlinkedLedger(s) : [];
 
   return (
     <div className="page">
@@ -54,6 +60,16 @@ export function People() {
         <button className="btn" onClick={() => setEntry({ kind: "borrowed", person: "" })}><Icon name="plus" size={16} />{t("I borrowed money")}</button>
         <button className="btn ghost" onClick={() => setSplitwise(true)}><Icon name="download" size={16} />{t("Import from Splitwise")}</button>
       </div>
+
+      {loose.length > 0 && (
+        <div className="banner" role="status">
+          <Icon name="alert" size={20} />
+          <span className="grow small">{loose.length === 1
+            ? t("1 entry isn't linked to any of your accounts, so no balance changed for it.")
+            : t("{n} entries aren't linked to any of your accounts, so no balance changed for them.", { n: loose.length })}</span>
+          <button className="btn small-btn" onClick={() => setLinking(true)}>{t("Choose account")}</button>
+        </div>
+      )}
 
       {list.length === 0 ? (
         <div className="card">
@@ -91,6 +107,7 @@ export function People() {
       <PersonSheet person={person} onClose={() => setPersonKey(null)}
         onAdd={(kind, amount) => { const name = person?.name ?? ""; setPersonKey(null); setEntry({ kind, person: name, amount }); }} />
       <EntrySheet value={entry} known={list.map((p) => p.name)} onClose={() => setEntry(null)} />
+      <LedgerLinkSheet open={linking} onClose={() => setLinking(false)} />
       <SplitwiseSheet open={splitwise} known={list.map((p) => p.name)} onClose={() => setSplitwise(false)} />
     </div>
   );
@@ -217,12 +234,14 @@ function EntrySheet({ value, known, onClose }: { value: EntryRequest | null; kno
   const [note, setNote] = useState("");
   const [date, setDate] = useState(toDateInput(Date.now()));
   const [account, setAccount] = useState("");
+  const [apply, setApply] = useState(false);
   const [seen, setSeen] = useState<typeof value>(null);
   if (value !== seen) {
     setSeen(value);
     if (value) {
       setPerson(value.person); setAmount(value.amount ? String(Math.abs(value.amount) / 100) : ""); setNote("");
-      setDate(toDateInput(Date.now())); setAccount(s.settings.defaultAccount);
+      setDate(toDateInput(Date.now())); setAccount(likelyAccount(s, s.ledger.map((l) => l.account)));
+      setApply(false);
     }
   }
   const p = parsePaise(amount);
@@ -231,17 +250,28 @@ function EntrySheet({ value, known, onClose }: { value: EntryRequest | null; kno
   const sign = kind === "lent" || (kind === "settled" && (value?.amount ?? 0) > 0) ? 1 : -1;
   const leaves = sign > 0;
   const name = person.trim();
+  const when = () => {
+    const [y, m, d] = date.split("-").map(Number);
+    return toDateInput(Date.now()) === date ? Date.now() : new Date(y, m - 1, d, 12).getTime();
+  };
+  // Dated before the account's balance was set: taken to be in it, unless the user says it isn't.
+  const into = accountNamed(s, account);
+  const beforeBalance = !!into?.tracked && !!date && when() <= into.updatedAt;
   const save = () => {
     if (!p || !name) return;
-    const [y, m, d] = date.split("-").map(Number);
-    const today = toDateInput(Date.now()) === date;
     const entry = {
       id: uid(), person: name, amount: sign * p, kind, note: note.trim(),
-      occurredAt: today ? Date.now() : new Date(y, m - 1, d, 12).getTime(), createdAt: Date.now(),
+      occurredAt: when(), createdAt: Date.now(),
       ...(account.trim() ? { account: account.trim() } : {}),
     };
     saveLedgerEntry(entry);
-    const undo = () => deleteLedgerEntry(entry.id, false);
+    let restore: (() => void) | null = null;
+    if (beforeBalance && apply && into) {
+      const acct = accountNamed(getState(), into.name)!;
+      saveAccount({ ...acct, balance: acct.balance + (acct.kind === "card" ? sign * p : -sign * p) });
+      restore = () => { const now = accountNamed(getState(), into.name); if (now) saveAccount({ ...now, balance: now.balance - (acct.kind === "card" ? sign * p : -sign * p) }); };
+    }
+    const undo = () => { deleteLedgerEntry(entry.id, false); restore?.(); };
     if (kind === "settled") showToast(t("Recorded {amount} with {name}", { amount: formatMoney(p), name }), undo);
     else showToast(kind === "lent" ? t("{name} owes you {amount}", { name, amount: formatMoney(p) }) : t("You owe {name} {amount}", { name, amount: formatMoney(p) }), undo);
     onClose();
@@ -265,7 +295,15 @@ function EntrySheet({ value, known, onClose }: { value: EntryRequest | null; kno
       <Field label={leaves ? t("Paid from") : t("Received into")}>
         <AccountSelect value={account} onChange={setAccount} label={leaves ? t("Paid from") : t("Received into")} />
       </Field>
-      {leaves && <AccountHint account={account} amount={p ?? 0} />}
+      {beforeBalance && into ? (
+        <Toggle checked={apply} onChange={setApply} label={leaves ? t("Take it out of {name}'s balance", { name: into.name }) : t("Add it to {name}'s balance", { name: into.name })}
+          hint={t("It's dated before you set {name}'s balance on {date}, so Tally takes it to be in that balance already. Turn this on if it isn't.", { name: into.name, date: day(into.updatedAt) })} />
+      ) : (
+        <>
+          <AccountNote name={account} what={t("This money")} incoming={!leaves} strict />
+          {leaves && <AccountHint account={account} amount={p ?? 0} />}
+        </>
+      )}
       {kind === "settled" && value?.amount && p && p < Math.abs(value.amount) ? (
         <span className="tiny t-muted">{t("Part of it: {left} will still be open.", { left: formatMoney(Math.abs(value.amount) - p) })}</span>
       ) : null}

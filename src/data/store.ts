@@ -886,6 +886,56 @@ export const unlinkedIncomes = (s: Pick<State, "accounts" | "incomes"> = state) 
 export const unlinkedIncomeRules = (s: Pick<State, "accounts" | "recurringIncomes"> = state) =>
   s.recurringIncomes.filter((r) => !accountNamed(s, resolveAccount(r.account, s)));
 
+/**
+ * The account money most likely moves through: the last one you used for this kind of entry, else
+ * your default if it's one of your accounts, else your first bank, then cash account.
+ */
+export function likelyAccount(s: Pick<State, "accounts" | "settings">, recent: (string | undefined)[]): string {
+  const used = recent.find((n) => !!n && accountNamed(s, n));
+  if (used) return accountNamed(s, used)!.name;
+  const def = accountNamed(s, s.settings.defaultAccount);
+  if (def && def.kind !== "investment") return def.name;
+  return s.accounts.find((a) => a.kind === "bank")?.name ?? s.accounts.find((a) => a.kind === "cash")?.name ?? s.settings.defaultAccount;
+}
+
+/**
+ * Money lent, borrowed or paid back that went through no account of yours ("UPI", nothing), so no
+ * balance has it. Entries from a Splitwise import are left out: those are shares of expenses, not money moved.
+ */
+export const unlinkedLedger = (s: Pick<State, "accounts" | "ledger"> = state) =>
+  s.ledger.filter((l) => !l.id.startsWith("sw-") && !(l.account && accountNamed(s, l.account)));
+
+/** What linking would change an account's balance by, for entries from before its balance was set (+ in, − out). */
+export function ledgerBeforeBalance(a: Account, list: LedgerEntry[]): number {
+  return a.tracked ? list.filter((l) => l.occurredAt <= a.updatedAt).reduce((t, l) => t - l.amount, 0) : 0;
+}
+
+/**
+ * Puts money lent, borrowed or paid back through one of your accounts. Those after its balance was
+ * last set move it; earlier ones are taken to be in that balance already, unless `addEarlier` applies
+ * them too. Returns an undo.
+ */
+export function linkLedger(accountId: string, ids: string[], addEarlier = false): () => void {
+  const acct = state.accounts.find((a) => a.id === accountId);
+  if (!acct) return () => {};
+  const idSet = new Set(ids);
+  const before = state.ledger.filter((l) => idSet.has(l.id));
+  const change = addEarlier ? ledgerBeforeBalance(acct, before) : 0;
+  const sign = acct.kind === "card" ? -1 : 1;
+  const write = (list: LedgerEntry[]) => {
+    const byId = new Map(list.map((l) => [l.id, l]));
+    set({ ledger: sortLedger(state.ledger.map((l) => byId.get(l.id) ?? l)) });
+    for (const l of list) void persist("ledger", l);
+  };
+  write(before.map((l) => ({ ...l, account: acct.name })));
+  if (change) saveAccount({ ...acct, balance: acct.balance + sign * change });
+  return () => {
+    write(before);
+    const now = state.accounts.find((a) => a.id === accountId);
+    if (change && now) saveAccount({ ...now, balance: now.balance - sign * change });
+  };
+}
+
 /** What linking would add to an account's balance from before it was last set (see linkIncomes). */
 export function incomeBeforeBalance(a: Account, list: Income[]): number {
   return a.tracked ? list.filter((x) => x.receivedAt <= a.updatedAt).reduce((t, x) => t + x.amount, 0) : 0;
@@ -1124,7 +1174,8 @@ export function budgetSpent(b: CategoryBudget, s: State = state, now = new Date(
 
 const sortLedger = (list: LedgerEntry[]) => [...list].sort((a, b) => b.occurredAt - a.occurredAt);
 
-export function saveLedgerEntry(entry: LedgerEntry) {
+export function saveLedgerEntry(input: LedgerEntry) {
+  const entry = input.account ? { ...input, account: resolveAccount(input.account) } : input;
   const isNew = !state.ledger.some((x) => x.id === entry.id);
   set({ ledger: sortLedger([entry, ...state.ledger.filter((x) => x.id !== entry.id)]) });
   void persist("ledger", entry);

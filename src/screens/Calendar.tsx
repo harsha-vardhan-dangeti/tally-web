@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import {
-  accountNamed, counts, deleteIncome, expenseTitle, getState, saveAccount, runDueIncome, saveIncome, saveRecurringIncome, share, uid, useTally, type Expense, type Income,
+  accountNamed, counts, deleteIncome, expenseTitle, getState, likelyAccount, saveAccount, runDueIncome, saveIncome, saveRecurringIncome, share, uid, useTally, type Expense, type Income,
 } from "../data/store";
 import { dayOfMonth, daysInMonth, monthKey, monthLabel, monthRange, sameDay, startOfDay } from "../core/budget";
 import { compactMoney, formatMoney, parsePaise, currencySymbol } from "../core/money";
@@ -156,11 +156,7 @@ export function DaySheet({ day, onClose, onOpenExpense, onAddExpense, onEditInco
 const SOURCES = ["Salary", "Freelance", "Refund", "Interest", "Gift", "Other"];
 
 /** Where new income goes by default: the account your last income went into, else your first bank or cash account. */
-function defaultIncomeAccount(s: ReturnType<typeof useTally>): string {
-  const last = s.incomes.find((x) => accountNamed(s, x.account));
-  return last ? accountNamed(s, last.account)!.name
-    : s.accounts.find((a) => a.kind === "bank")?.name ?? s.accounts.find((a) => a.kind === "cash")?.name ?? "Bank";
-}
+const defaultIncomeAccount = (s: ReturnType<typeof useTally>) => (s.accounts.length ? likelyAccount(s, s.incomes.map((x) => x.account)) : "Bank");
 const toDateInput = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 /** Add or edit one income entry. */
