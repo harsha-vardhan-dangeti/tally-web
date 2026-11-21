@@ -368,4 +368,7 @@ export const ta: Record<string, string> = {
   "Pick what to move": "மாற்ற வேண்டியவற்றைத் தேர்வுசெய்யவும்",
   "Already in {name}'s balance": "{name} இருப்பில் ஏற்கனவே உள்ளது",
   "It's dated before you entered {name}'s balance on {date}. Turn this on if that balance already includes it, so it isn't counted twice.": "இதன் தேதி நீங்கள் {name} இருப்பை உள்ளிட்ட {date}க்கு முந்தையது. அந்த இருப்பில் இது ஏற்கனவே இருந்தால், இருமுறை கணக்கிடப்படாமல் இருக்க இதை இயக்கவும்.",
+  "Expense": "செலவு",
+  "Add income": "வருமானம் சேர்க்கவும்",
+  "What are you adding?": "நீங்கள் எதைச் சேர்க்கிறீர்கள்?",
 };

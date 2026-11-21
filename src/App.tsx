@@ -8,6 +8,7 @@ import { Reports } from "./screens/Reports";
 import { Accounts } from "./screens/Accounts";
 import { QuickAdd, SmartAdd } from "./screens/AddSheets";
 import { Detail } from "./screens/Detail";
+import { IncomeEditor } from "./screens/Calendar";
 import { Plan } from "./screens/Plan";
 import { Inbox, Recap, Search, Settings } from "./screens/More";
 import { Welcome } from "./screens/Welcome";
@@ -25,7 +26,7 @@ type Tab = "home" | "activity" | "reports" | "plan" | "people" | "accounts" | "i
 // Read once at startup, before the tab effect rewrites the URL.
 const INITIAL_SEARCH = typeof location !== "undefined" ? location.search : "";
 let urlHandled = false;
-type SheetName = "quickAdd" | "smartAdd" | "search" | "recap" | "recapShare" | "settings" | "feedback" | null;
+type SheetName = "quickAdd" | "smartAdd" | "income" | "search" | "recap" | "recapShare" | "settings" | "feedback" | null;
 
 /** `phone`: shown in the phone's tab bar too. Accounts is reached from Home's net worth card there. */
 const TABS: { id: Tab; label: string; icon: string; phone: boolean }[] = [
@@ -118,6 +119,8 @@ export function App() {
     openRecapShare: (m: RecapMonth) => { setRecapMonth(m); setSheet("recapShare"); },
   }), []);
   const close = useCallback(() => setSheet(null), []);
+  // A new value each time the form opens, and only then: a fresh object on every render would clear what's typed.
+  const incomeValue = useMemo(() => (sheet === "income" ? { income: null, day: addDate ?? new Date() } : null), [sheet]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Keyboard shortcuts for desktop.
   useEffect(() => {
@@ -126,6 +129,7 @@ export function App() {
       if (sheet || detailId || e.metaKey || e.ctrlKey || e.altKey || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName)) return;
       if (e.key === "n" || e.key === "N") { e.preventDefault(); setSheet("quickAdd"); }
       if (e.key === "s" || e.key === "S") { e.preventDefault(); setSheet("smartAdd"); }
+      if (e.key === "i" || e.key === "I") { e.preventDefault(); setSheet("income"); }
       if (e.key === "/") { e.preventDefault(); setSheet("search"); }
     };
     window.addEventListener("keydown", onKey);
@@ -151,7 +155,7 @@ export function App() {
   return (
     <ShellContext.Provider value={shell}>
     <div className="shell">
-      <Sidebar current={tab} onSelect={(id) => setTab(id as Tab)} onAdd={() => setSheet("quickAdd")} onSmart={() => setSheet("smartAdd")}
+      <Sidebar current={tab} onSelect={(id) => setTab(id as Tab)} onAdd={() => setSheet("quickAdd")} onIncome={() => setSheet("income")} onSmart={() => setSheet("smartAdd")}
         items={tabs.map((x) => ({ id: x.id, label: t(x.label), icon: x.icon, badge: x.id === "inbox" ? pending : undefined }))} />
 
       <main className="main">
@@ -186,7 +190,9 @@ export function App() {
         ))}
       </nav>
 
-      <QuickAdd open={sheet === "quickAdd"} initialDate={addDate} onClose={() => { setAddDate(null); close(); }} onSmart={() => setSheet("smartAdd")} />
+      <QuickAdd open={sheet === "quickAdd"} initialDate={addDate} onClose={() => { setAddDate(null); close(); }} onSmart={() => setSheet("smartAdd")}
+        onIncome={() => setSheet("income")} />
+      <IncomeEditor value={incomeValue} onClose={() => { setAddDate(null); close(); }} />
       <SmartAdd open={sheet === "smartAdd"} onClose={close} />
       <Search open={sheet === "search"} onClose={close} onOpen={(e) => { setSheet(null); setDetailId(e.id); }} />
       <Recap open={sheet === "recap"} onClose={close} onShare={() => { setRecapMonth("this"); setSheet("recapShare"); }} />

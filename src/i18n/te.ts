@@ -368,4 +368,7 @@ export const te: Record<string, string> = {
   "Pick what to move": "మార్చాల్సినవి ఎంచుకోండి",
   "Already in {name}'s balance": "{name} బ్యాలెన్స్‌లో ఇప్పటికే ఉంది",
   "It's dated before you entered {name}'s balance on {date}. Turn this on if that balance already includes it, so it isn't counted twice.": "దీని తేదీ మీరు {name} బ్యాలెన్స్ నమోదు చేసిన {date} కంటే ముందుది. ఆ బ్యాలెన్స్‌లో ఇది ఇప్పటికే ఉంటే దీన్ని ఆన్ చేయండి, రెండుసార్లు లెక్కించకుండా ఉండేందుకు.",
+  "Expense": "ఖర్చు",
+  "Add income": "ఆదాయం జోడించండి",
+  "What are you adding?": "మీరు ఏమి జోడిస్తున్నారు?",
 };

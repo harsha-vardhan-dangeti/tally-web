@@ -368,4 +368,7 @@ export const hi: Record<string, string> = {
   "Pick what to move": "ले जाने के लिए चुनें",
   "Already in {name}'s balance": "{name} के बैलेंस में पहले से है",
   "It's dated before you entered {name}'s balance on {date}. Turn this on if that balance already includes it, so it isn't counted twice.": "इसकी तारीख़ {date} से पहले की है, जब आपने {name} का बैलेंस डाला था। अगर वह बैलेंस इसे पहले से शामिल करता है तो इसे चालू करें, ताकि यह दो बार न गिना जाए।",
+  "Expense": "खर्च",
+  "Add income": "आय जोड़ें",
+  "What are you adding?": "आप क्या जोड़ रहे हैं?",
 };

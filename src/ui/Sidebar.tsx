@@ -17,8 +17,8 @@ export interface NavItem { id: string; label: string; icon: string; badge?: numb
  * The desktop side bar. Drag its edge to make it wider or narrower (or press ← → on the edge), and
  * fold it down to icons with the button at the bottom or ⌘/Ctrl + \. Both are remembered per browser.
  */
-export function Sidebar({ items, current, onSelect, onAdd, onSmart }: {
-  items: NavItem[]; current: string; onSelect: (id: string) => void; onAdd: () => void; onSmart: () => void;
+export function Sidebar({ items, current, onSelect, onAdd, onIncome, onSmart }: {
+  items: NavItem[]; current: string; onSelect: (id: string) => void; onAdd: () => void; onIncome: () => void; onSmart: () => void;
 }) {
   const [collapsed, setCollapsed] = useState(() => read("tally:navCollapsed", false, (v) => v === "1"));
   const savedWidth = () => read("tally:navWidth", DEFAULT, (v) => { const n = Number(v); return n >= MIN && n <= MAX ? n : null; });
@@ -81,14 +81,19 @@ export function Sidebar({ items, current, onSelect, onAdd, onSmart }: {
           {!!t.badge && <span className="badge">{t.badge}</span>}
         </button>
       ))}
-      <button className="btn primary add" onClick={onAdd} title={collapsed ? "Add expense (N)" : undefined} aria-label={collapsed ? "Add expense" : undefined}>
-        <Icon name="plus" size={18} /><span className="nav-label">{t("Add expense")}</span>
-      </button>
+      <div className="add-pair">
+        <button className="btn primary add" onClick={onAdd} title={`${t("Add expense")} (N)`} aria-label={t("Add expense")}>
+          <Icon name="plus" size={18} /><span className="nav-label">{t("Expense")}</span>
+        </button>
+        <button className="btn add income" onClick={onIncome} title={`${t("Add income")} (I)`} aria-label={t("Add income")}>
+          <Icon name="plus" size={18} /><span className="nav-label">{t("Income")}</span>
+        </button>
+      </div>
       <button className="btn smart" onClick={onSmart} title={collapsed ? "Smart add (S)" : undefined} aria-label={collapsed ? "Smart add" : undefined}>
         <Icon name="sparkle" size={18} /><span className="nav-label">{t("Smart add")}</span>
       </button>
       <div className="foot">
-        <p className="hint nav-label"><span className="kbd">N</span> add · <span className="kbd">S</span> smart · <span className="kbd">/</span> search</p>
+        <p className="hint nav-label"><span className="kbd">N</span> expense · <span className="kbd">I</span> income · <span className="kbd">S</span> smart · <span className="kbd">/</span> search</p>
         <p className="hint nav-label"><a href="/">{t("About Tally")}</a> · <a href="/privacy">{t("Privacy")}</a></p>
         <button className="nav fold" onClick={() => fold(!collapsed)} aria-expanded={!collapsed}
           title={collapsed ? "Expand side bar (⌘ \\)" : "Collapse side bar (⌘ \\)"} aria-label={collapsed ? "Expand side bar" : "Collapse side bar"}>
