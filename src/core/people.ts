@@ -35,6 +35,10 @@ export interface PersonItem {
   entryId?: string;
   /** For money lent, borrowed or paid back: the account it left or came into. */
   account?: string;
+  /** Part of this item that paid off earlier ones (a pay-back, or lending to someone you owed). */
+  settles?: number;
+  /** Of what this item left owing, how much has been paid back since. */
+  paidBack?: number;
 }
 
 export interface Person {
@@ -89,8 +93,42 @@ export function people(expenses: SplitExpense[], ledger: LedgerLine[]): Person[]
     if (!l.amount) continue;
     add(l.person, { key: `l-${l.id}`, kind: l.kind, amount: l.amount, title: l.note, at: l.occurredAt, entryId: l.id, ...(l.account ? { account: l.account } : {}) });
   }
-  for (const p of map.values()) p.items.sort((a, b) => b.at - a.at);
+  for (const p of map.values()) {
+    matchPayBacks(p.items);
+    p.items.sort((a, b) => b.at - a.at);
+  }
   return [...map.values()].sort((a, b) => (Math.abs(b.balance) > 0 ? 1 : 0) - (Math.abs(a.balance) > 0 ? 1 : 0) || b.lastAt - a.lastAt);
+}
+
+/**
+ * Matches money going one way against what's still owed the other way, oldest first: a ₹2,000 pay-back
+ * on a ₹5,000 loan leaves ₹3,000 of that loan open. Sets `settles` and `paidBack` on the items.
+ */
+function matchPayBacks(items: PersonItem[]) {
+  const open = { owedToYou: [] as { item: PersonItem; left: number }[], youOwe: [] as { item: PersonItem; left: number }[] };
+  for (const item of [...items].sort((a, b) => a.at - b.at)) {
+    const against = item.amount > 0 ? open.youOwe : open.owedToYou;
+    let rest = Math.abs(item.amount);
+    while (rest > 0 && against.length) {
+      const first = against[0];
+      const take = Math.min(first.left, rest);
+      first.left -= take;
+      first.item.paidBack = (first.item.paidBack ?? 0) + take;
+      rest -= take;
+      if (first.left === 0) against.shift();
+    }
+    const settled = Math.abs(item.amount) - rest;
+    if (settled) item.settles = settled;
+    if (rest > 0) (item.amount > 0 ? open.owedToYou : open.youOwe).push({ item, left: rest });
+  }
+}
+
+/** What an item left owing and how much of that is paid back; null when it only paid off earlier ones. */
+export function payBackProgress(item: PersonItem): { owed: number; paid: number; left: number } | null {
+  const owed = Math.abs(item.amount) - (item.settles ?? 0);
+  if (owed <= 0) return null;
+  const paid = item.paidBack ?? 0;
+  return { owed, paid, left: owed - paid };
 }
 
 export function peopleTotals(list: Person[]): { owedToYou: number; youOwe: number } {

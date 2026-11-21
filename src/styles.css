@@ -668,3 +668,7 @@ button.sched-item:hover { background: var(--fill); }
 .list-row[aria-current="page"] .t-strong { color: var(--accent); }
 .badge-inline { min-width: 20px; height: 20px; border-radius: 10px; background: var(--danger); color: #fff; font-size: 12px; font-weight: 700;
   display: inline-grid; place-items: center; padding: 0 6px; }
+
+/* People: how much of a loan is paid back. */
+.payback-track { display: block; height: 4px; border-radius: 2px; background: var(--fill); overflow: hidden; max-width: 180px; }
+.payback-track > span { display: block; height: 100%; background: var(--good); border-radius: 2px; }

@@ -6,7 +6,7 @@ import { guessMe, parseSplitwise, planBalances, planSplitwise, type SplitwiseFil
 import { AccountHint, AccountNote, AccountSelect } from "../ui/AccountSelect";
 import { useCloud } from "../data/cloud";
 import { track } from "../data/telemetry";
-import { isUpiId, payLink, people, peopleTotals, unpaidTitles, type Person, type PersonItem } from "../core/people";
+import { isUpiId, payBackProgress, payLink, people, peopleTotals, unpaidTitles, type Person, type PersonItem } from "../core/people";
 import { currencySymbol, formatMoney, parsePaise } from "../core/money";
 import { dateLocale, t } from "../i18n";
 import { Icon } from "../ui/icons";
@@ -204,6 +204,7 @@ function PersonSheet({ person: p, onClose, onAdd }: { person: Person | null; onC
               <span className="grow col" style={{ minWidth: 0 }}>
                 <span className="small ellipsis">{itemLabel(i, p.name)}</span>
                 <span className="tiny t-muted">{day(i.at)}{i.account ? ` · ${i.amount > 0 ? t("from {account}", { account: i.account }) : t("into {account}", { account: i.account })}` : ""}{i.entryId?.startsWith("sw-") ? " · Splitwise" : ""}</span>
+                <PayBackLine item={i} />
               </span>
               <span className={`num small t-strong ${i.amount > 0 ? "in" : "owe"}`}>{i.amount > 0 ? "+" : "−"}{formatMoney(Math.abs(i.amount))}</span>
               {i.entryId && (
@@ -245,7 +246,10 @@ function EntrySheet({ value, known, onClose }: { value: EntryRequest | null; kno
     }
   }
   const p = parsePaise(amount);
+  const amountRef = useRef<HTMLInputElement>(null);
   const kind = value?.kind ?? "lent";
+  // For a pay-back: what's owed right now, either way.
+  const owedNow = Math.abs(value?.amount ?? 0);
   // + when the money leaves you: you lent it, or you paid them back.
   const sign = kind === "lent" || (kind === "settled" && (value?.amount ?? 0) > 0) ? 1 : -1;
   const leaves = sign > 0;
@@ -267,7 +271,13 @@ function EntrySheet({ value, known, onClose }: { value: EntryRequest | null; kno
     };
     saveLedgerEntry(entry);
     const undo = () => deleteLedgerEntry(entry.id, false);
-    if (kind === "settled") showToast(t("Recorded {amount} with {name}", { amount: formatMoney(p), name }), undo);
+    if (kind === "settled") {
+      const left = owedNow - p;
+      showToast(left > 0
+        ? (leaves ? t("Paid {name} {amount} · {left} still to pay", { name, amount: formatMoney(p), left: formatMoney(left) })
+          : t("{name} paid {amount} · {left} still to come", { name, amount: formatMoney(p), left: formatMoney(left) }))
+        : left === 0 ? t("All settled with {name}", { name }) : t("Recorded {amount} with {name}", { amount: formatMoney(p), name }), undo);
+    }
     else showToast(kind === "lent" ? t("{name} owes you {amount}", { name, amount: formatMoney(p) }) : t("You owe {name} {amount}", { name, amount: formatMoney(p) }), undo);
     onClose();
   };
@@ -281,9 +291,15 @@ function EntrySheet({ value, known, onClose }: { value: EntryRequest | null; kno
         </Field>
       )}
       <datalist id="people-names">{known.map((n) => <option key={n} value={n} />)}</datalist>
+      {kind === "settled" && owedNow > 0 && (
+        <div className="view-switch" role="group" aria-label={t("How much?")}>
+          <button aria-pressed={p === owedNow} onClick={() => setAmount(String(owedNow / 100))}>{t("All {amount}", { amount: formatMoney(owedNow) })}</button>
+          <button aria-pressed={p !== owedNow} onClick={() => { setAmount(""); amountRef.current?.focus(); }}>{t("Part of it")}</button>
+        </div>
+      )}
       <div className="row gap8">
         <Field label={`${t("Amount")} (${currencySymbol()})`}>
-          <input type="text" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus={!!value?.person} />
+          <input ref={amountRef} type="text" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus={!!value?.person} />
         </Field>
         <Field label={t("When")}><input type="date" value={date} max={toDateInput(Date.now())} onChange={(e) => setDate(e.target.value)} /></Field>
       </div>
@@ -296,13 +312,31 @@ function EntrySheet({ value, known, onClose }: { value: EntryRequest | null; kno
         <Toggle checked={alreadyIn} onChange={setAlreadyIn} label={t("Already in {name}'s balance", { name: into.name })}
           hint={t("It's dated before you entered {name}'s balance on {date}. Turn this on if that balance already includes it, so it isn't counted twice.", { name: into.name, date: day(into.updatedAt) })} />
       )}
-      {kind === "settled" && value?.amount && p && p < Math.abs(value.amount) ? (
-        <span className="tiny t-muted">{t("Part of it: {left} will still be open.", { left: formatMoney(Math.abs(value.amount) - p) })}</span>
+      {kind === "settled" && owedNow > 0 && p && p < owedNow ? (
+        <span className="tiny t-muted">{t("Part of it: {left} will still be open.", { left: formatMoney(owedNow - p) })}</span>
+      ) : null}
+      {kind === "settled" && owedNow > 0 && p && p > owedNow ? (
+        <span className="tiny" style={{ color: "var(--warn)" }}>{leaves
+          ? t("That's {extra} more than you owe {name}. They'll then owe you {extra}.", { extra: formatMoney(p - owedNow), name })
+          : t("That's {extra} more than {name} owes you. You'll then owe them {extra}.", { extra: formatMoney(p - owedNow), name })}</span>
       ) : null}
       {kind !== "settled" && <Field label={t("Note (optional)")}><input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder={t("Rent help, concert tickets…")} /></Field>}
       <button className="btn primary block" disabled={!p || !name} onClick={save}>{t("Save")}</button>
       <p className="t-muted tiny" style={{ margin: 0 }}>{t("This doesn't count as spending. It changes what you and they owe each other, and the balance of the account you pick if Tally follows it.")}</p>
     </Sheet>
+  );
+}
+
+/** "₹2,000 of ₹5,000 paid back · ₹3,000 left", or "Paid back", under a loan, a borrowing or a share. */
+function PayBackLine({ item }: { item: PersonItem }) {
+  const pr = payBackProgress(item);
+  if (!pr || pr.paid === 0) return null;
+  if (pr.left === 0) return <span className="tiny" style={{ color: "var(--good)" }}><Icon name="check" size={12} /> {t("Paid back")}</span>;
+  return (
+    <span className="col gap4" style={{ marginTop: 4 }}>
+      <span className="tiny">{t("{paid} of {owed} paid back · {left} left", { paid: formatMoney(pr.paid), owed: formatMoney(pr.owed), left: formatMoney(pr.left) })}</span>
+      <span className="payback-track" aria-hidden="true"><span style={{ width: `${(pr.paid / pr.owed) * 100}%` }} /></span>
+    </span>
   );
 }
 
