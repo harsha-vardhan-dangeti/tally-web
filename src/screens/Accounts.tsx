@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import {
   ACCOUNT_KIND_LABEL, accountsNow, addTransfer, cardLimitUsage, cardStatus, deleteAccount, deleteLedgerEntry, deleteScheduledTransfer, deleteTransfer, homeBalance,
   investmentReturn, investmentsSummary, liveBalance, moneyIn, netInvested, runDueTransfers, saveAccount, saveLedgerEntry, saveScheduledTransfer, setSettings, showToast,
-  sipsInto, uid, unlinkedIncomeRules, unlinkedIncomes, useTally, type Account, type AccountKind, type Expense, type ScheduledTransfer,
+  sipsInto, uid, unlinkedGroups, useTally, type Account, type AccountKind, type Expense, type ScheduledTransfer,
 } from "../data/store";
 import { people } from "../core/people";
 import { monthKey } from "../core/budget";
@@ -16,7 +16,7 @@ import { ChartCard, DataTable, TrendLine } from "../ui/charts";
 import { ProfileButton } from "../ui/ProfileMenu";
 import { CardSheet } from "../ui/CardSheet";
 import { AccountSheet } from "./AccountSheet";
-import { IncomeLinkSheet } from "../ui/IncomeLinkSheet";
+import { LinkAccountsSheet } from "../ui/LinkAccountsSheet";
 
 const GROUPS: { kinds: AccountKind[]; title: string }[] = [
   { kinds: ["bank", "cash"], title: "Cash and bank" },
@@ -30,9 +30,11 @@ export function Accounts({ onOpen }: { onOpen?: (e: Expense) => void } = {}) {
   const [editing, setEditing] = useState<Account | "new" | null>(null);
   const [viewing, setViewing] = useState<string | null>(null);
   const [viewingAccount, setViewingAccount] = useState<string | null>(null);
-  const [linkingIncome, setLinkingIncome] = useState(false);
-  const looseIncome = unlinkedIncomes(s);
-  const looseRules = unlinkedIncomeRules(s);
+  const [linking, setLinking] = useState(false);
+  // Everything logged against "UPI", "Cash", "Credit card" or nothing: no balance moved for it.
+  const loose = useMemo(() => unlinkedGroups(s), [s]);
+  const looseCount = loose.reduce((t, g) => t + g.expenses.length + g.incomes.length + g.ledger.length, 0);
+  const looseRepeats = loose.reduce((t, g) => t + g.bills.length + g.loans.length + g.rules.length, 0);
   const hasBank = s.accounts.some((a) => a.kind === "bank" || a.kind === "cash");
   const [moving, setMoving] = useState(false);
   const [sip, setSip] = useState<ScheduledTransfer | "new" | null>(null);
@@ -93,14 +95,15 @@ export function Accounts({ onOpen }: { onOpen?: (e: Expense) => void } = {}) {
             </ChartCard>
           )}
 
-          {hasBank && (looseIncome.length > 0 || looseRules.length > 0) && (
+          {hasBank && (looseCount > 0 || looseRepeats > 0) && (
             <div className="banner span-2" role="status">
               <Icon name="alert" size={20} />
               <span className="grow small">
-                {[looseIncome.length ? `${formatMoney(looseIncome.reduce((t, x) => t + x.amount, 0))} of income` : "",
-                  looseRules.length ? `${looseRules.length === 1 ? "a regular income" : `${looseRules.length} regular incomes`}` : ""].filter(Boolean).join(" and ")} {looseIncome.length + looseRules.length === 1 ? "isn't" : "aren't"} going into any of your accounts, so no balance shows {looseIncome.length + looseRules.length === 1 ? "it" : "them"}.
+                {looseCount
+                  ? `${looseCount} ${looseCount === 1 ? "entry isn't" : "entries aren't"} linked to any of your accounts (${loose.slice(0, 3).map((g) => g.label).join(", ")}), so no balance changed for ${looseCount === 1 ? "it" : "them"}.`
+                  : `${looseRepeats} ${looseRepeats === 1 ? "bill or regular income isn't" : "bills and regular incomes aren't"} set to an account, so next time ${looseRepeats === 1 ? "it" : "they"} won't move a balance.`}
               </span>
-              <button className="btn small-btn" onClick={() => setLinkingIncome(true)}>Choose account</button>
+              <button className="btn small-btn" onClick={() => setLinking(true)}>Link them</button>
             </div>
           )}
 
@@ -214,7 +217,7 @@ export function Accounts({ onOpen }: { onOpen?: (e: Expense) => void } = {}) {
 
       <AccountSheet accountId={viewingAccount} onClose={() => setViewingAccount(null)} onOpenExpense={onOpen}
         onEdit={(a) => { setViewingAccount(null); setEditing(a); }} />
-      <IncomeLinkSheet open={linkingIncome} onClose={() => setLinkingIncome(false)} />
+      <LinkAccountsSheet open={linking} onClose={() => setLinking(false)} />
       <CardSheet cardId={viewing} onClose={() => setViewing(null)} onEdit={(a) => { setViewing(null); setEditing(a); }} onOpenExpense={onOpen} />
       <AccountEditor value={editing} onClose={() => setEditing(null)} />
       <TransferSheet open={moving} onClose={() => setMoving(false)} />

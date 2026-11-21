@@ -346,8 +346,6 @@ export const te: Record<string, string> = {
   "{amount} on cards this month": "ఈ నెల కార్డులపై {amount}",
   "{amount} since last month": "గత నెల నుంచి {amount}",
   "{pct}% of limit used": "పరిమితిలో {pct}% వాడారు",
-  "{amount} of income isn't in any of your accounts": "{amount} ఆదాయం మీ ఏ ఖాతాలోనూ లేదు",
-  "Your regular income isn't going into any of your accounts": "మీ క్రమ ఆదాయం మీ ఏ ఖాతాలోకీ వెళ్లడం లేదు",
   "Choose account": "ఖాతాను ఎంచుకోండి",
   "1 entry isn't linked to any of your accounts, so no balance changed for it.": "1 ఎంట్రీ మీ ఏ ఖాతాకూ లింక్ కాలేదు, కాబట్టి ఏ బ్యాలెన్స్ మారలేదు.",
   "{n} entries aren't linked to any of your accounts, so no balance changed for them.": "{n} ఎంట్రీలు మీ ఏ ఖాతాకూ లింక్ కాలేదు, కాబట్టి ఏ బ్యాలెన్స్ మారలేదు.",
@@ -382,4 +380,7 @@ export const te: Record<string, string> = {
   "That's {extra} more than {name} owes you. You'll then owe them {extra}.": "ఇది {name} మీకు ఇవ్వాల్సిన దానికంటే {extra} ఎక్కువ. తర్వాత మీరు వారికి {extra} ఇవ్వాలి.",
   "Paid back": "తిరిగి చెల్లించారు",
   "{paid} of {owed} paid back · {left} left": "{owed}లో {paid} తిరిగి వచ్చింది · {left} మిగిలింది",
+  "1 entry isn't linked to any of your accounts": "1 ఎంట్రీ మీ ఏ ఖాతాకూ లింక్ కాలేదు",
+  "{n} entries aren't linked to any of your accounts": "{n} ఎంట్రీలు మీ ఏ ఖాతాకూ లింక్ కాలేదు",
+  "Link them": "లింక్ చేయండి",
 };

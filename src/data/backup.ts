@@ -3,7 +3,7 @@ import { sanitizeRules } from "../core/rules";
 import { isCurrency } from "../core/money";
 import { isLang } from "../i18n";
 import type { LedgerKind } from "../core/people";
-import { readScheduledTransfers, readSubcategories } from "./store";
+import { readMethodAccounts, readScheduledTransfers, readSubcategories } from "./store";
 import type {
   Account, AccountKind, Bill, CategoryBudget, Chip, Expense, Goal, Income, LedgerEntry, Loan, RecurringIncome, Settings, Source, Transfer,
 } from "./store";
@@ -199,6 +199,7 @@ export function parseBackup(text: string): Backup {
   if (isRow(s.subcategories)) settings.subcategories = readSubcategories(s.subcategories);
   if (Array.isArray(s.scheduledTransfers)) settings.scheduledTransfers = readScheduledTransfers(s.scheduledTransfers);
   if (typeof s.lockAfter === "number" && [0, 1, 5, 15, 60].includes(s.lockAfter)) settings.lockAfter = s.lockAfter;
+  if (isRow(s.methodAccounts)) settings.methodAccounts = readMethodAccounts(s.methodAccounts);
   if (Array.isArray(s.rules)) settings.rules = sanitizeRules(s.rules).filter((r) => known.has(r.category));
   if (Array.isArray(s.dismissedRecurring)) settings.dismissedRecurring = s.dismissedRecurring.filter((k): k is string => typeof k === "string").slice(-200);
   // Only what differs from the built-ins is kept, in the checked form.

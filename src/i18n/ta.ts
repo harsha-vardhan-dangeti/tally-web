@@ -346,8 +346,6 @@ export const ta: Record<string, string> = {
   "{amount} on cards this month": "இந்த மாதம் கார்டுகளில் {amount}",
   "{amount} since last month": "கடந்த மாதத்திலிருந்து {amount}",
   "{pct}% of limit used": "வரம்பில் {pct}% பயன்பாடு",
-  "{amount} of income isn't in any of your accounts": "{amount} வருமானம் உங்கள் எந்தக் கணக்கிலும் இல்லை",
-  "Your regular income isn't going into any of your accounts": "உங்கள் வழக்கமான வருமானம் உங்கள் எந்தக் கணக்கிற்கும் செல்லவில்லை",
   "Choose account": "கணக்கைத் தேர்வுசெய்யவும்",
   "1 entry isn't linked to any of your accounts, so no balance changed for it.": "1 பதிவு உங்கள் எந்தக் கணக்குடனும் இணைக்கப்படவில்லை, அதனால் எந்த இருப்பும் மாறவில்லை.",
   "{n} entries aren't linked to any of your accounts, so no balance changed for them.": "{n} பதிவுகள் உங்கள் எந்தக் கணக்குடனும் இணைக்கப்படவில்லை, அதனால் எந்த இருப்பும் மாறவில்லை.",
@@ -382,4 +380,7 @@ export const ta: Record<string, string> = {
   "That's {extra} more than {name} owes you. You'll then owe them {extra}.": "இது {name} உங்களுக்குத் தர வேண்டியதை விட {extra} அதிகம். பிறகு நீங்கள் அவருக்கு {extra} தர வேண்டும்.",
   "Paid back": "திருப்பிச் செலுத்தப்பட்டது",
   "{paid} of {owed} paid back · {left} left": "{owed}இல் {paid} திருப்பித் தரப்பட்டது · {left} மீதம்",
+  "1 entry isn't linked to any of your accounts": "1 பதிவு உங்கள் எந்தக் கணக்குடனும் இணைக்கப்படவில்லை",
+  "{n} entries aren't linked to any of your accounts": "{n} பதிவுகள் உங்கள் எந்தக் கணக்குடனும் இணைக்கப்படவில்லை",
+  "Link them": "இணைக்கவும்",
 };

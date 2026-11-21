@@ -346,8 +346,6 @@ export const hi: Record<string, string> = {
   "{amount} on cards this month": "इस महीने कार्ड पर {amount}",
   "{amount} since last month": "पिछले महीने से {amount}",
   "{pct}% of limit used": "सीमा का {pct}% इस्तेमाल",
-  "{amount} of income isn't in any of your accounts": "{amount} की आय आपके किसी खाते में नहीं है",
-  "Your regular income isn't going into any of your accounts": "आपकी नियमित आय आपके किसी खाते में नहीं जा रही",
   "Choose account": "खाता चुनें",
   "1 entry isn't linked to any of your accounts, so no balance changed for it.": "1 एंट्री आपके किसी खाते से जुड़ी नहीं है, इसलिए किसी बैलेंस में बदलाव नहीं हुआ।",
   "{n} entries aren't linked to any of your accounts, so no balance changed for them.": "{n} एंट्री आपके किसी खाते से जुड़ी नहीं हैं, इसलिए किसी बैलेंस में बदलाव नहीं हुआ।",
@@ -382,4 +380,7 @@ export const hi: Record<string, string> = {
   "That's {extra} more than {name} owes you. You'll then owe them {extra}.": "यह {name} के देने से {extra} ज़्यादा है। फिर आपको उन्हें {extra} देने होंगे।",
   "Paid back": "चुका दिया",
   "{paid} of {owed} paid back · {left} left": "{owed} में से {paid} लौटाए · {left} बाकी",
+  "1 entry isn't linked to any of your accounts": "1 एंट्री आपके किसी खाते से जुड़ी नहीं है",
+  "{n} entries aren't linked to any of your accounts": "{n} एंट्री आपके किसी खाते से जुड़ी नहीं हैं",
+  "Link them": "जोड़ें",
 };

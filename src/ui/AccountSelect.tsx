@@ -1,4 +1,4 @@
-import { accountNamed, cardLimitUsage, creditLeft, liveBalance, saveAccount, showToast, useTally } from "../data/store";
+import { accountNamed, cardLimitUsage, creditLeft, liveBalance, resolveAccount, saveAccount, showToast, useTally } from "../data/store";
 import { formatMoney } from "../core/money";
 
 const GENERIC = ["UPI", "Cash", "Credit card"];
@@ -73,6 +73,11 @@ export function AccountHint({ account, amount }: { account: string; amount: numb
 export function AccountNote({ name, what, incoming, strict }: { name: string; what: string; incoming?: boolean; strict?: boolean }) {
   const s = useTally();
   const acct = accountNamed(s, name);
+  // A method the user sends to one account ("UPI → HDFC Bank").
+  const via = !acct ? accountNamed(s, resolveAccount(name, s)) : undefined;
+  if (via) {
+    return <p className="t-muted tiny" style={{ margin: "-6px 0 0" }}>“{name}” {incoming ? "goes into" : "comes out of"} {via.name}, as you chose.</p>;
+  }
   if (!acct) {
     // Spending by UPI or card without naming the account is normal; income and money to people should land somewhere.
     if (!(incoming || strict) || !s.accounts.some((a) => a.kind === "bank" || a.kind === "cash")) return null;

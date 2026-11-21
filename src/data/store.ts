@@ -208,6 +208,8 @@ export interface Settings {
   scheduledTransfers: ScheduledTransfer[];
   /** Minutes away before the app lock asks again (0: every time). */
   lockAfter: number;
+  /** A payment method that always comes out of one account: "upi" → the HDFC account's id. */
+  methodAccounts: Record<string, string>;
 }
 export interface ImportLayout { signature: string; columns: ColumnMap; account: string }
 
@@ -232,7 +234,7 @@ export interface State {
 const DEFAULT_SETTINGS: Settings = {
   onboarded: false, monthlyBudget: 0, monthlyIncome: 0, defaultAccount: "UPI", lockCredentialId: null, lastBackupAt: null, categories: [], rules: [], dismissedRecurring: [], importLayouts: [],
   currency: "INR", language: "en", payName: "", upiId: "", fxRates: {},
-  monthStartDay: 1, subcategories: {}, scheduledTransfers: [], lockAfter: 0,
+  monthStartDay: 1, subcategories: {}, scheduledTransfers: [], lockAfter: 0, methodAccounts: {},
 };
 
 let state: State = {
@@ -330,7 +332,14 @@ function readSettings(stored: unknown): Settings {
     subcategories: readSubcategories(v.subcategories),
     scheduledTransfers: readScheduledTransfers(v.scheduledTransfers),
     lockAfter: [0, 1, 5, 15, 60].includes(v.lockAfter) ? v.lockAfter : 0,
+    methodAccounts: readMethodAccounts(v.methodAccounts),
   };
+}
+
+/** Payment method → account id, as stored, with anything malformed dropped. */
+export function readMethodAccounts(v: unknown): Record<string, string> {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return {};
+  return Object.fromEntries(Object.entries(v).filter(([k, id]) => typeof k === "string" && k.trim() && typeof id === "string" && id).slice(0, 50)) as Record<string, string>;
 }
 
 /** Repeating transfers as stored, with anything malformed dropped. */
@@ -926,8 +935,12 @@ const GENERIC_BANK = new Set(["bank", "bank account"]);
  * The account money goes to or comes from: "Credit card" means your card when you have exactly one,
  * and "Bank" your bank account when you have exactly one.
  */
-export function resolveAccount(name: string, s: Pick<State, "accounts"> = state): string {
+export function resolveAccount(name: string, s: Pick<State, "accounts"> & { settings?: Pick<Settings, "methodAccounts"> } = state): string {
   if (accountNamed(s, name)) return name;
+  // "UPI always comes out of HDFC": the account the user chose for this method.
+  const mapped = (s.settings ?? state.settings).methodAccounts?.[nameKey(name)];
+  const to = mapped ? s.accounts.find((a) => a.id === mapped) : undefined;
+  if (to) return to.name;
   const kind = GENERIC_CARD.has(nameKey(name)) ? "card" : GENERIC_BANK.has(nameKey(name)) ? "bank" : null;
   if (!kind) return name;
   const list = s.accounts.filter((a) => a.kind === kind);
@@ -1043,6 +1056,153 @@ export function linkToCard(cardId: string, ids: string[], addEarlier = false): (
 /** What linking would add to a card's balance for expenses recorded before its balance was entered (see linkToCard). */
 export function earlierThanBalance(card: Account, list: Expense[]): number {
   return expensesNotApplying(card, list).reduce((t, e) => t + e.amount, 0);
+}
+
+// ---------- linking everything to accounts ----------
+
+/** Entries that went through the same thing that isn't one of your accounts ("UPI", "Cash", nothing). */
+export interface MoneyGroup {
+  /** The method, lowercased: "upi", "credit card", "" for none. */
+  key: string;
+  label: string;
+  expenses: Expense[];
+  incomes: Income[];
+  ledger: LedgerEntry[];
+  /** What keeps adding to it: bills, EMIs and regular incomes paid through it. */
+  bills: Bill[];
+  loans: Loan[];
+  rules: RecurringIncome[];
+  out: number;
+  in: number;
+}
+
+const notAnAccount = (s: Pick<State, "accounts">, name: string | undefined) => !accountNamed(s, name ?? "");
+
+/**
+ * Everything that moved money through something other than one of your accounts, grouped by that
+ * something, largest first. Splitwise shares and expenses someone else paid aren't money you moved.
+ */
+export function unlinkedGroups(s: State = state): MoneyGroup[] {
+  const groups = new Map<string, MoneyGroup>();
+  const group = (name: string | undefined) => {
+    const key = nameKey(name ?? "");
+    let g = groups.get(key);
+    if (!g) groups.set(key, g = { key, label: (name ?? "").trim() || "No account", expenses: [], incomes: [], ledger: [], bills: [], loans: [], rules: [], out: 0, in: 0 });
+    return g;
+  };
+  for (const e of s.expenses) {
+    if (e.pending || e.paidBy || nameKey(e.account) === "splitwise" || !notAnAccount(s, e.account)) continue;
+    const g = group(e.account); g.expenses.push(e); if (!e.emiLoan) g.out += e.amount;
+  }
+  for (const x of s.incomes) if (notAnAccount(s, x.account)) { const g = group(x.account); g.incomes.push(x); g.in += x.amount; }
+  for (const l of s.ledger) {
+    if (l.id.startsWith("sw-") || !notAnAccount(s, l.account)) continue;
+    const g = group(l.account); g.ledger.push(l);
+    if (l.amount > 0) g.out += l.amount; else g.in -= l.amount;
+  }
+  // Repeating things only need fixing when they wouldn't land anywhere next time either.
+  const lands = (name: string) => !!accountNamed(s, resolveAccount(name, s));
+  for (const b of s.bills) if (!lands(b.account)) group(b.account).bills.push(b);
+  for (const l of s.loans) if (!lands(l.account)) group(l.account).loans.push(l);
+  for (const r of s.recurringIncomes) if (!lands(r.account)) group(r.account).rules.push(r);
+  return [...groups.values()]
+    .filter((g) => g.expenses.length + g.incomes.length + g.ledger.length + g.bills.length + g.loans.length + g.rules.length > 0)
+    .sort((a, b) => b.out + b.in - (a.out + a.in));
+}
+
+const CARD_WORDS = new Set(["credit card", "card", "credit"]);
+const BANK_WORDS = new Set(["upi", "bank", "bank account", "", "net banking", "netbanking", "debit card", "imps", "neft", "gpay", "phonepe", "paytm"]);
+
+/** The account a method most likely is: your card for "Credit card", cash for "Cash", your main bank for UPI and the like. */
+export function suggestAccount(key: string, s: State = state): string {
+  const remembered = s.settings.methodAccounts[key];
+  if (remembered && s.accounts.some((a) => a.id === remembered)) return remembered;
+  const of = (kind: AccountKind) => s.accounts.filter((a) => a.kind === kind);
+  if (CARD_WORDS.has(key)) return of("card").length === 1 ? of("card")[0].id : "";
+  if (key === "cash") return of("cash")[0]?.id ?? "";
+  if (!BANK_WORDS.has(key)) return "";
+  // The bank most of your linked spending already comes out of.
+  const banks = of("bank");
+  const used = (a: Account) => s.expenses.filter((e) => isAccount(a, e.account)).length;
+  return [...banks].sort((a, b) => used(b) - used(a))[0]?.id ?? of("cash")[0]?.id ?? "";
+}
+
+export interface LinkChoice { key: string; accountId: string; remember: boolean }
+
+/** The data as it would be after linking (nothing saved): for the preview, and what linkGroups saves. */
+function linked(s: State, choices: LinkChoice[], addEarlier: boolean) {
+  const groups = new Map(unlinkedGroups(s).map((g) => [g.key, g]));
+  const exp = new Map<string, Expense>(), inc = new Map<string, Income>(), led = new Map<string, LedgerEntry>();
+  const bills: Bill[] = [], loans: Loan[] = [], rules: RecurringIncome[] = [];
+  for (const c of choices) {
+    const g = groups.get(c.key), a = s.accounts.find((x) => x.id === c.accountId);
+    if (!g || !a) continue;
+    // Recorded before the balance was entered: taken to be in it, unless the user says count them too.
+    for (const e of g.expenses) {
+      const next = { ...e, account: a.name };
+      exp.set(e.id, addEarlier && a.tracked && !expenseApplies(a, next) ? { ...next, inBalance: false } : next);
+    }
+    for (const x of g.incomes) {
+      const next = { ...x, account: a.name };
+      inc.set(x.id, addEarlier && a.tracked && !incomeApplies(a, next) ? { ...next, inBalance: false } : next);
+    }
+    for (const l of g.ledger) {
+      const next = { ...l, account: a.name };
+      led.set(l.id, addEarlier && a.tracked && !ledgerApplies(a, next) ? { ...next, inBalance: false } : next);
+    }
+    bills.push(...g.bills.map((b) => ({ ...b, account: a.name })));
+    loans.push(...g.loans.map((l) => ({ ...l, account: a.name })));
+    rules.push(...g.rules.map((r) => ({ ...r, account: a.name })));
+  }
+  return {
+    expenses: s.expenses.map((e) => exp.get(e.id) ?? e), incomes: s.incomes.map((x) => inc.get(x.id) ?? x), ledger: s.ledger.map((l) => led.get(l.id) ?? l),
+    changed: { expenses: [...exp.values()], incomes: [...inc.values()], ledger: [...led.values()], bills, loans, rules },
+  };
+}
+
+/** Each account the choices touch, with its balance now and after linking. */
+export function previewLink(choices: LinkChoice[], addEarlier: boolean, s: State = state): { account: Account; before: number; after: number }[] {
+  const next = linked(s, choices, addEarlier);
+  const ids = [...new Set(choices.filter((c) => c.accountId).map((c) => c.accountId))];
+  return ids.map((id) => s.accounts.find((a) => a.id === id)).filter((a): a is Account => !!a)
+    .map((a) => ({ account: a, before: liveBalance(a, s), after: liveBalance(a, { ...s, ...next }) }));
+}
+
+/** Links the chosen groups to their accounts, remembers the methods asked for, and returns an undo. */
+export function linkGroups(choices: LinkChoice[], addEarlier: boolean): () => void {
+  const before = { expenses: state.expenses, incomes: state.incomes, ledger: state.ledger, bills: state.bills, loans: state.loans, rules: state.recurringIncomes };
+  const methods = state.settings.methodAccounts;
+  const { changed } = linked(state, choices, addEarlier);
+  const old = {
+    expenses: before.expenses.filter((e) => changed.expenses.some((x) => x.id === e.id)),
+    incomes: before.incomes.filter((e) => changed.incomes.some((x) => x.id === e.id)),
+    ledger: before.ledger.filter((e) => changed.ledger.some((x) => x.id === e.id)),
+    bills: before.bills.filter((e) => changed.bills.some((x) => x.id === e.id)),
+    loans: before.loans.filter((e) => changed.loans.some((x) => x.id === e.id)),
+    rules: before.rules.filter((e) => changed.rules.some((x) => x.id === e.id)),
+  };
+  const write = (v: typeof changed) => {
+    void importTransactions(v.expenses, v.incomes);
+    const byId = new Map(v.ledger.map((l) => [l.id, l]));
+    if (byId.size) { set({ ledger: sortLedger(state.ledger.map((l) => byId.get(l.id) ?? l)) }); for (const l of v.ledger) void persist("ledger", l); }
+    for (const b of v.bills) saveBill(b);
+    for (const l of v.loans) saveLoan(l);
+    for (const r of v.rules) putRecurringIncome(r);
+  };
+  write(changed);
+  const remember = choices.filter((c) => c.remember && c.accountId && c.key);
+  if (remember.length) setSettings({ methodAccounts: { ...methods, ...Object.fromEntries(remember.map((c) => [c.key, c.accountId])) } });
+  return () => {
+    write(old);
+    if (remember.length) setSettings({ methodAccounts: methods });
+  };
+}
+
+/** Stops sending a payment method to an account automatically. */
+export function forgetMethod(key: string) {
+  const next = { ...state.settings.methodAccounts };
+  delete next[key];
+  setSettings({ methodAccounts: next });
 }
 
 export interface CardPeriodSpend { start: Date; end: Date; spent: number; paid: number }
