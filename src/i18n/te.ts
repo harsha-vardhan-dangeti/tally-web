@@ -371,4 +371,5 @@ export const te: Record<string, string> = {
   "Expense": "ఖర్చు",
   "Add income": "ఆదాయం జోడించండి",
   "What are you adding?": "మీరు ఏమి జోడిస్తున్నారు?",
+  "More": "మరిన్ని",
 };

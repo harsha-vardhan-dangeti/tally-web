@@ -371,4 +371,5 @@ export const ta: Record<string, string> = {
   "Expense": "செலவு",
   "Add income": "வருமானம் சேர்க்கவும்",
   "What are you adding?": "நீங்கள் எதைச் சேர்க்கிறீர்கள்?",
+  "More": "மேலும்",
 };

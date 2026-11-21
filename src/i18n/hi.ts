@@ -371,4 +371,5 @@ export const hi: Record<string, string> = {
   "Expense": "खर्च",
   "Add income": "आय जोड़ें",
   "What are you adding?": "आप क्या जोड़ रहे हैं?",
+  "More": "और",
 };

@@ -662,3 +662,9 @@ button.sched-item:hover { background: var(--fill); }
 
 /* Quick add: Expense | Income at the top. */
 .kind-switch { align-self: center; }
+
+/* Phone tab bar: two tabs each side of the add button, so it sits in the middle. */
+.tabbar { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.list-row[aria-current="page"] .t-strong { color: var(--accent); }
+.badge-inline { min-width: 20px; height: 20px; border-radius: 10px; background: var(--danger); color: #fff; font-size: 12px; font-weight: 700;
+  display: inline-grid; place-items: center; padding: 0 6px; }

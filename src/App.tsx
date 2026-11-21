@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getState, handleUrlActions, load, runDueBills, runDueIncome, runDueCardPayments, runDueLoans, runDueTransfers, useTally, type Expense } from "./data/store";
 import { Icon } from "./ui/icons";
-import { ToastHost, UpdateBar, useLongPress } from "./ui/components";
+import { Sheet, ToastHost, UpdateBar, useLongPress } from "./ui/components";
 import { Home } from "./screens/Dashboard";
 import { Activity } from "./screens/Activity";
 import { Reports } from "./screens/Reports";
@@ -26,17 +26,18 @@ type Tab = "home" | "activity" | "reports" | "plan" | "people" | "accounts" | "i
 // Read once at startup, before the tab effect rewrites the URL.
 const INITIAL_SEARCH = typeof location !== "undefined" ? location.search : "";
 let urlHandled = false;
-type SheetName = "quickAdd" | "smartAdd" | "income" | "search" | "recap" | "recapShare" | "settings" | "feedback" | null;
+type SheetName = "quickAdd" | "smartAdd" | "income" | "more" | "search" | "recap" | "recapShare" | "settings" | "feedback" | null;
 
 /** `phone`: shown in the phone's tab bar too. Accounts is reached from Home's net worth card there. */
+/** `phone`: in the phone's tab bar, two each side of the add button; the rest are under More. */
 const TABS: { id: Tab; label: string; icon: string; phone: boolean }[] = [
   { id: "home", label: "Home", icon: "home", phone: true },
   { id: "activity", label: "Activity", icon: "inbox", phone: true },
-  { id: "reports", label: "Reports", icon: "chart", phone: true },
-  { id: "plan", label: "Plan", icon: "target", phone: true },
-  { id: "people", label: "People", icon: "split", phone: true },
-  { id: "accounts", label: "Accounts", icon: "card", phone: false },
-  { id: "inbox", label: "Inbox", icon: "check", phone: true },
+  { id: "accounts", label: "Accounts", icon: "card", phone: true },
+  { id: "reports", label: "Reports", icon: "chart", phone: false },
+  { id: "plan", label: "Plan", icon: "target", phone: false },
+  { id: "people", label: "People", icon: "split", phone: false },
+  { id: "inbox", label: "Inbox", icon: "check", phone: false },
 ];
 
 // Links and bookmarks from before the redesign used #finances.
@@ -151,6 +152,7 @@ export function App() {
   // Inbox only matters when an iPhone Shortcut has captured something to review.
   const tabs = TABS.filter((t) => t.id !== "inbox" || pending > 0 || tab === "inbox");
   const phoneTabs = tabs.filter((t) => t.phone);
+  const moreTabs = tabs.filter((t) => !t.phone);
 
   return (
     <ShellContext.Provider value={shell}>
@@ -174,21 +176,41 @@ export function App() {
         {tab === "inbox" && <Inbox onOpen={openDetail} />}
       </main>
 
-      <nav className="tabbar" aria-label="Main" style={{ gridTemplateColumns: `repeat(${phoneTabs.length + 1}, minmax(0, 1fr))` }}>
+      <nav className="tabbar" aria-label="Main">
         {phoneTabs.slice(0, 2).map((x) => (
           <button key={x.id} className="tab" aria-current={tab === x.id ? "page" : undefined} onClick={() => setTab(x.id)}>
             <Icon name={x.icon} />{t(x.label)}
           </button>
         ))}
         <AddFab onTap={() => setSheet("quickAdd")} onLong={() => setSheet("smartAdd")} />
-        {phoneTabs.slice(2).map((x) => (
-          <button key={x.id} className="tab" aria-current={tab === x.id ? "page" : undefined} onClick={() => setTab(x.id)}
-            aria-label={x.id === "inbox" && pending ? `Inbox, ${pending} to review` : undefined}>
+        {phoneTabs.slice(2, 3).map((x) => (
+          <button key={x.id} className="tab" aria-current={tab === x.id ? "page" : undefined} onClick={() => setTab(x.id)}>
             <Icon name={x.icon} />{t(x.label)}
-            {x.id === "inbox" && pending > 0 && <span className="badge">{pending}</span>}
           </button>
         ))}
+        <button className="tab" aria-current={moreTabs.some((x) => x.id === tab) ? "page" : undefined} onClick={() => setSheet("more")}
+          aria-label={pending ? `${t("More")}, ${pending} to review` : t("More")}>
+          <Icon name="grid" />{t("More")}
+          {pending > 0 && <span className="badge">{pending}</span>}
+        </button>
       </nav>
+      <Sheet open={sheet === "more"} onClose={close} title={t("More")}>
+        <div className="card flush divided">
+          {moreTabs.map((x) => (
+            <button key={x.id} className="list-row row-btn" aria-current={tab === x.id ? "page" : undefined} onClick={() => { setTab(x.id); close(); }}>
+              <span className="acct-icon"><Icon name={x.icon} size={18} /></span>
+              <span className="grow t-strong">{t(x.label)}</span>
+              {x.id === "inbox" && pending > 0 && <span className="badge-inline">{pending}</span>}
+              <Icon name="next" size={16} />
+            </button>
+          ))}
+          <button className="list-row row-btn" onClick={() => setSheet("settings")}>
+            <span className="acct-icon"><Icon name="gear" size={18} /></span>
+            <span className="grow t-strong">{t("Settings")}</span>
+            <Icon name="next" size={16} />
+          </button>
+        </div>
+      </Sheet>
 
       <QuickAdd open={sheet === "quickAdd"} initialDate={addDate} onClose={() => { setAddDate(null); close(); }} onSmart={() => setSheet("smartAdd")}
         onIncome={() => setSheet("income")} />
