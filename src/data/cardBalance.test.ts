@@ -73,3 +73,21 @@ describe("a credit card's balance", () => {
     expect(liveBalance(acct("amex"))).toBe(5_000_00);
   });
 });
+
+describe("a monthly bill paid from a bank, like an insurance premium", () => {
+  it("comes out of the bank when logged, unless this month's is already in the balance you entered", async () => {
+    const { logBill, saveBill } = await import("./store");
+    saveAccount({ id: "sbi-ins", name: "SBI", kind: "bank", balance: 40_000_00, order: 9, updatedAt: Date.now() - 1000, tracked: true });
+    const bill = { id: "tata", name: "TATA AIA term insurance", amount: 1_250_00, prevAmount: 1_250_00, day: 5, category: "bills" as const,
+      account: "SBI", isSubscription: false, autoLog: true, lastLoggedMonth: "" };
+    saveBill(bill);
+    logBill(bill, on(16));
+    expect(liveBalance(acct("sbi-ins"))).toBe(38_750_00);
+    expect(getState().expenses.find((e) => e.id.startsWith("bill-tata-"))).toMatchObject({ merchant: "TATA AIA term insurance", account: "SBI", amount: 1_250_00 });
+
+    // Set up again for last month's, marked as already debited from the balance entered.
+    const prev = new Date(today.getFullYear(), today.getMonth() - 1, 16);
+    logBill({ ...bill, id: "tata2" }, prev, { inBalance: true });
+    expect(liveBalance(acct("sbi-ins"))).toBe(38_750_00);
+  });
+});

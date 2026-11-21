@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import {
   billOverdue, billPaid, budgetSpent, deleteBill, deleteBudget, deleteGoal, deleteRecurringIncome, dismissRecurring, logBill, logRecurringIncome, monthSpent, nextDue,
   recurringSuggestions, runDueBills, runDueIncome, saveBill, saveBudget, saveGoal, saveRecurringIncome, showToast, uid, useTally,
-  deleteLoan, emiThisMonth, logEmi, runDueLoans, saveLoan, accountNamed, liveBalance, scheduledFlows, type ScheduledFlow,
+  deleteLoan, emiThisMonth, logEmi, runDueLoans, saveLoan, accountNamed, likelyAccount, liveBalance, scheduledFlows, type ScheduledFlow,
   type Bill, type Goal, type Loan, type RecurringIncome,
 } from "../data/store";
 import { emiFor, loanStatus } from "../core/loans";
@@ -10,7 +10,7 @@ import { currencySymbol } from "../core/money";
 import { dateLocale, t } from "../i18n";
 import { categoryMeta, pickableCategories, type Category } from "../core/categories";
 import { monthKey, type BudgetPeriod } from "../core/budget";
-import { EVERY_LABEL, monthlyEquivalent, periodKey, WEEKDAYS, type Every } from "../core/schedule";
+import { dueInPeriod, EVERY_LABEL, monthlyEquivalent, periodKey, WEEKDAYS, type Every } from "../core/schedule";
 import { formatMoney, parsePaise } from "../core/money";
 import { CategoryIcon, Icon } from "../ui/icons";
 import type { RecurringCharge } from "../core/recurring";
@@ -338,7 +338,8 @@ function BillEditor({ value, onClose }: { value: Bill | "new" | null; onClose: (
   const blank = () => {
     const d = new Date();
     return { name: "", amount: "", every: "month" as Every, day: d.getDate() > 28 ? 1 : d.getDate(), weekday: d.getDay(), month: d.getMonth(),
-      category: "bills" as Category, account: s.settings.defaultAccount, isSubscription: false, autoLog: true, logNow: true };
+      // Bills are usually debited from a bank: start on the account other bills use, not "UPI".
+      category: "bills" as Category, account: likelyAccount(s, s.bills.map((b) => b.account)), isSubscription: false, autoLog: true, logNow: true, alreadyIn: false };
   };
   const [f, setF] = useState(blank);
   const [seen, setSeen] = useState<typeof value>(null);
@@ -346,7 +347,7 @@ function BillEditor({ value, onClose }: { value: Bill | "new" | null; onClose: (
     setSeen(value);
     setF(bill ? { name: bill.name, amount: String(bill.amount / 100), every: bill.every ?? "month", day: bill.day, weekday: bill.weekday ?? 1,
       month: bill.month ?? 0, category: bill.category, account: bill.account || s.settings.defaultAccount, isSubscription: bill.isSubscription,
-      autoLog: bill.autoLog, logNow: false } : blank());
+      autoLog: bill.autoLog, logNow: false, alreadyIn: false } : blank());
   }
   const p = parsePaise(f.amount);
   const now = new Date();
@@ -355,6 +356,9 @@ function BillEditor({ value, onClose }: { value: Bill | "new" | null; onClose: (
   // A new bill whose due date has already come this period: offer to log this period's payment too.
   const draft = { ...repeat, lastLoggedMonth: "" } as Bill;
   const askLogNow = !bill && billOverdue(draft, now);
+  // This period's payment came before the paying account's balance was entered: it may be in that balance already.
+  const payer = accountNamed(s, f.account);
+  const beforeBalance = askLogNow && f.logNow && !!payer?.tracked && Math.min(dueInPeriod(draft, now).getTime(), now.getTime()) <= payer.updatedAt;
   const save = () => {
     if (!p) return;
     const changedRepeat = bill && ((bill.every ?? "month") !== f.every);
@@ -369,7 +373,7 @@ function BillEditor({ value, onClose }: { value: Bill | "new" | null; onClose: (
     };
     saveBill(saved);
     if (askLogNow && f.logNow) {
-      logBill(saved, now);
+      logBill(saved, now, { inBalance: beforeBalance && f.alreadyIn });
       showToast(`Logged ${saved.name} · ${formatMoney(saved.amount)}`);
     } else {
       runDueBills(now);
@@ -425,6 +429,10 @@ function BillEditor({ value, onClose }: { value: Bill | "new" | null; onClose: (
         <Toggle label="Add to expenses on the due date" hint="Each time it falls due, it's added to your spending" checked={f.autoLog} onChange={(v) => setF({ ...f, autoLog: v })} />
         {askLogNow && (
           <Toggle label={`Add ${periodWord} payment now`} hint="The due date has already come" checked={f.logNow} onChange={(v) => setF({ ...f, logNow: v })} />
+        )}
+        {beforeBalance && payer && (
+          <Toggle label={`${periodWord[0].toUpperCase()}${periodWord.slice(1)} is already in ${payer.name}'s balance`} checked={f.alreadyIn} onChange={(v) => setF({ ...f, alreadyIn: v })}
+            hint={`It was due before you entered ${payer.name}'s balance on ${new Date(payer.updatedAt).toLocaleDateString([], { day: "numeric", month: "short" })}. Turn this on if that balance already has it taken out, so it isn't counted twice.`} />
         )}
       </div>
       {bill && (billPaid(bill, now)

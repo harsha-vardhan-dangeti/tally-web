@@ -487,6 +487,8 @@ export interface NewExpense {
   sub?: string; tags?: string[];
   /** For callers that may log the same expense twice, e.g. a bill auto-logged on two devices. */
   id?: string;
+  /** Already in the paying account's balance as entered (see Expense.inBalance). */
+  inBalance?: boolean;
 }
 
 /** The single write path for every way of logging. */
@@ -501,6 +503,7 @@ export function addExpense(input: NewExpense): Expense {
     pending: input.pending ?? false, splitWays: Math.max(input.splitWays ?? 1, 1), splitWith: input.splitWith ?? "",
     exclude: false, recurring: false, ...(input.paidBy ? { paidBy: input.paidBy } : {}),
     ...(input.sub ? { sub: input.sub } : {}), ...(input.tags?.length ? { tags: input.tags } : {}),
+    ...(input.inBalance ? { inBalance: true } : {}),
   };
   set({ expenses: sortExpenses([e, ...state.expenses]) });
   void persist("expenses", e);
@@ -1502,14 +1505,14 @@ export function makeRecurring(e: Expense) {
 }
 
 /** Logs a bill's payment for the period as an expense, once: the expense ID is fixed per bill and period. */
-export function logBill(bill: Bill, now = new Date()): Expense {
+export function logBill(bill: Bill, now = new Date(), opts: { inBalance?: boolean } = {}): Expense {
   const key = periodKey(bill, now);
   const due = dueInPeriod(bill, now);
   const e = addExpense({
     id: `bill-${bill.id}-${key}`,
     amount: bill.amount, category: bill.category, merchant: bill.name, account: bill.account,
     // Paid early: dated today rather than in the future.
-    occurredAt: due.getTime() <= now.getTime() ? due.getTime() : now.getTime(), source: "recurring",
+    occurredAt: due.getTime() <= now.getTime() ? due.getTime() : now.getTime(), source: "recurring", inBalance: opts.inBalance,
   });
   saveBill({ ...state.bills.find((b) => b.id === bill.id) ?? bill, lastLoggedMonth: key });
   return e;
