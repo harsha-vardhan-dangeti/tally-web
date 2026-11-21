@@ -351,9 +351,6 @@ export const ta: Record<string, string> = {
   "Choose account": "கணக்கைத் தேர்வுசெய்யவும்",
   "1 entry isn't linked to any of your accounts, so no balance changed for it.": "1 பதிவு உங்கள் எந்தக் கணக்குடனும் இணைக்கப்படவில்லை, அதனால் எந்த இருப்பும் மாறவில்லை.",
   "{n} entries aren't linked to any of your accounts, so no balance changed for them.": "{n} பதிவுகள் உங்கள் எந்தக் கணக்குடனும் இணைக்கப்படவில்லை, அதனால் எந்த இருப்பும் மாறவில்லை.",
-  "Take it out of {name}'s balance": "{name} இருப்பிலிருந்து கழிக்கவும்",
-  "Add it to {name}'s balance": "{name} இருப்பில் சேர்க்கவும்",
-  "It's dated before you set {name}'s balance on {date}, so Tally takes it to be in that balance already. Turn this on if it isn't.": "இதன் தேதி நீங்கள் {name} இருப்பை உள்ளிட்ட {date}க்கு முந்தையது, அதனால் அது அந்த இருப்பில் ஏற்கனவே உள்ளது என்று Tally கருதுகிறது. இல்லையென்றால் இதை இயக்கவும்.",
   "This money": "இந்தப் பணம்",
   "Lent to {name}": "{name}க்குக் கடன் கொடுத்தீர்கள்",
   "Borrowed from {name}": "{name}இடம் கடன் வாங்கினீர்கள்",
@@ -369,4 +366,6 @@ export const ta: Record<string, string> = {
   "Leave this off if the balance you entered on {date} already includes it.": "{date} அன்று உள்ளிட்ட இருப்பில் இது ஏற்கனவே இருந்தால் இதை அணைத்தே வைக்கவும்.",
   "Move {n} to {name}": "{n} பதிவுகளை {name}க்கு மாற்றவும்",
   "Pick what to move": "மாற்ற வேண்டியவற்றைத் தேர்வுசெய்யவும்",
+  "Already in {name}'s balance": "{name} இருப்பில் ஏற்கனவே உள்ளது",
+  "It's dated before you entered {name}'s balance on {date}. Turn this on if that balance already includes it, so it isn't counted twice.": "இதன் தேதி நீங்கள் {name} இருப்பை உள்ளிட்ட {date}க்கு முந்தையது. அந்த இருப்பில் இது ஏற்கனவே இருந்தால், இருமுறை கணக்கிடப்படாமல் இருக்க இதை இயக்கவும்.",
 };

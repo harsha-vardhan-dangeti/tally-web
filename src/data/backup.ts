@@ -64,6 +64,7 @@ function expense(r: unknown, i: number, category: (v: unknown) => Category): Exp
       ? { fx: { currency: r.fx.currency as string, amount: r.fx.amount as number, rate: r.fx.rate } } : {}),
     ...(str(r.sub).trim() ? { sub: str(r.sub).trim().slice(0, 30) } : {}),
     ...(id(r.emiLoan) ? { emiLoan: r.emiLoan as string } : {}),
+    ...(typeof r.inBalance === "boolean" ? { inBalance: r.inBalance } : {}),
     ...(Array.isArray(r.tags) && r.tags.some((t) => typeof t === "string")
       ? { tags: [...new Set(r.tags.filter((t): t is string => typeof t === "string").map((t) => t.toLowerCase().slice(0, 30)))] } : {}),
   };
@@ -149,7 +150,8 @@ export function parseBackup(text: string): Backup {
   const incomes = optionalRows<Income>(data.incomes, (r) => {
     const rowId = id(r.id), amount = paise(r.amount), receivedAt = time(r.receivedAt);
     if (!rowId || !amount || receivedAt === null) return null;
-    return { id: rowId, amount, receivedAt, source: str(r.source), note: str(r.note), account: str(r.account), createdAt: time(r.createdAt) ?? receivedAt };
+    return { id: rowId, amount, receivedAt, source: str(r.source), note: str(r.note), account: str(r.account), createdAt: time(r.createdAt) ?? receivedAt,
+      ...(r.imported === true ? { imported: true } : {}), ...(typeof r.inBalance === "boolean" ? { inBalance: r.inBalance } : {}) };
   });
 
   const recurringIncomes = optionalRows<RecurringIncome>(data.recurringIncomes, (r) => {
@@ -171,7 +173,8 @@ export function parseBackup(text: string): Backup {
     if (!rowId || !person || !Number.isSafeInteger(r.amount) || r.amount === 0 || occurredAt === null
       || !LEDGER_KINDS.includes(r.kind as LedgerKind)) return null;
     return { id: rowId, person, amount: r.amount as number, kind: r.kind as LedgerKind, note: str(r.note), occurredAt,
-      createdAt: time(r.createdAt) ?? occurredAt, ...(str(r.account).trim() ? { account: str(r.account).trim() } : {}) };
+      createdAt: time(r.createdAt) ?? occurredAt, ...(str(r.account).trim() ? { account: str(r.account).trim() } : {}),
+      ...(typeof r.inBalance === "boolean" ? { inBalance: r.inBalance } : {}) };
   });
 
   const loans = optionalRows<Loan>(data.loans, (r) => {

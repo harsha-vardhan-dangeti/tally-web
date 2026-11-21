@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { cardPeriods } from "../core/cards";
 import {
-  addExpense, addTransfer, cardActivity, cardSpendByMonth, getState, linkToCard, liveBalance, resolveAccount, saveAccount, unlinkedCardExpenses,
+  addExpense, addTransfer, cardActivity, cardSpendByMonth, getState, importTransactions, linkToCard, liveBalance, resolveAccount, saveAccount, unlinkedCardExpenses,
+  type Expense,
 } from "./store";
+
+/** As if the expense had been recorded when it happened. */
+const olderThanBalance = (e: Expense) => { void importTransactions([{ ...e, createdAt: e.occurredAt }], []); return e; };
 
 const card = (id: string) => getState().accounts.find((a) => a.id === id)!;
 
@@ -43,7 +47,8 @@ describe("expenses paid by credit card", () => {
   it("can be moved onto a card, with earlier ones added to the balance only when asked, and undone", () => {
     const now = Date.now();
     saveAccount({ id: "sbi", name: "SBI Card", kind: "card", balance: 5_000_00, order: 2, updatedAt: now - 3_600_000, tracked: true });
-    const before = addExpense({ amount: 2_000_00, category: "fun", merchant: "BookMyShow", account: "Credit card", source: "manual", occurredAt: now - 7_200_000 });
+    // Recorded two hours ago, before the card's balance was entered.
+    const before = olderThanBalance(addExpense({ amount: 2_000_00, category: "fun", merchant: "BookMyShow", account: "Credit card", source: "manual", occurredAt: now - 7_200_000 }));
     const after = addExpense({ amount: 500_00, category: "food", merchant: "Zomato", account: "Credit card", source: "manual", occurredAt: now - 60_000 });
     const sbi = () => liveBalance(card("sbi"));
     expect(sbi()).toBe(5_000_00);

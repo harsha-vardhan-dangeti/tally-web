@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { accountItems, investmentReturn, liveBalance, saveAccount, showToast, useTally, type Account, type Expense, type Income } from "../data/store";
+import {
+  accountItems, deleteLedgerEntry, deleteTransfer, investmentReturn, liveBalance, saveAccount, showToast, useTally, type Account, type AccountItem, type Expense, type Income,
+} from "../data/store";
 import { formatMoney } from "../core/money";
 import { Sheet } from "../ui/components";
 import { Icon } from "../ui/icons";
@@ -21,6 +23,7 @@ export function AccountSheet({ accountId, onClose, onEdit, onOpenExpense }: {
   const [filter, setFilter] = useState<"all" | "in" | "out">("all");
   const [all, setAll] = useState(false);
   const [income, setIncome] = useState<{ income: Income | null; day: Date; account?: string } | null>(null);
+  const [picked, setPicked] = useState<AccountItem | null>(null);
   useEffect(() => { setFilter("all"); setAll(false); }, [accountId]);
   const items = useMemo(() => (a ? accountItems(a, s) : []), [a, s]);
   if (!a) return <Sheet open={false} onClose={onClose} title="">{null}</Sheet>;
@@ -95,7 +98,9 @@ export function AccountSheet({ accountId, onClose, onEdit, onOpenExpense }: {
           ) : (
             <div className="card flush divided">
               {shown.map((x) => {
-                const open = x.income ? () => setIncome({ income: x.income!, day: new Date(x.at) }) : x.expense && onOpenExpense ? () => onOpenExpense(x.expense!) : undefined;
+                const open = x.income ? () => setIncome({ income: x.income!, day: new Date(x.at) })
+                  : x.expense ? (onOpenExpense ? () => onOpenExpense(x.expense!) : undefined)
+                  : () => setPicked(x);
                 const body = (
                   <>
                     <span className="acct-icon"><Icon name={ICON[x.kind]} size={18} /></span>
@@ -120,6 +125,23 @@ export function AccountSheet({ accountId, onClose, onEdit, onOpenExpense }: {
         </section>
       </Sheet>
       <IncomeEditor value={income} onClose={() => setIncome(null)} />
+      <Sheet open={picked !== null} onClose={() => setPicked(null)} title={picked?.title ?? ""}>
+        {picked && (
+          <>
+            <div className="card col gap4" style={{ background: "var(--surface-2)" }}>
+              <span className={`display num${picked.amount > 0 ? " in" : ""}`} style={{ fontSize: 28 }}>{picked.amount > 0 ? "+" : "−"}{formatMoney(Math.abs(picked.amount))}</span>
+              <span className="tiny t-muted">{day(picked.at)}{picked.detail ? ` · ${picked.detail}` : ""}</span>
+              <span className="tiny t-muted">{picked.counted ? `${picked.amount > 0 ? "Added to" : "Taken out of"} ${a.name}'s balance.` : `Already in the balance you entered, so it didn't change ${a.name}'s balance.`}</span>
+            </div>
+            <button className="btn danger block" onClick={() => {
+              if (picked.kind === "transfer") deleteTransfer(picked.key.slice(2));
+              else if (picked.ledger) deleteLedgerEntry(picked.ledger.id);
+              setPicked(null);
+            }}>{picked.kind === "transfer" ? "Remove this transfer" : "Delete this entry"}</button>
+            {picked.counted && <p className="t-muted tiny" style={{ margin: 0 }}>{a.name}'s balance goes back by {formatMoney(Math.abs(picked.amount))}.</p>}
+          </>
+        )}
+      </Sheet>
     </>
   );
 }

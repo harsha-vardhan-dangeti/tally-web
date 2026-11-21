@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { cardUsage } from "../core/cards";
 import {
-  addExpense, cardLimitUsage, convertToEmi, deleteLoan, getState, liveBalance, monthSpent, saveAccount, scheduledFlows, type Account,
+  addExpense, cardLimitUsage, convertToEmi, deleteLoan, getState, importTransactions, liveBalance, monthSpent, saveAccount, scheduledFlows, type Account,
 } from "./store";
 
 describe("card purchases on EMI", () => {
@@ -43,8 +43,11 @@ describe("card purchases on EMI", () => {
 
   it("takes a processing fee and, for a purchase already in the card's balance, lowers that balance", () => {
     const now = new Date();
-    const purchase = addExpense({ amount: 24_000_00, category: "shopping", merchant: "Laptop", account: "Visa", source: "manual",
+    const logged = addExpense({ amount: 24_000_00, category: "shopping", merchant: "Laptop", account: "Visa", source: "manual",
       occurredAt: now.getTime() - 3_600_000 });
+    // Recorded when it happened, an hour ago.
+    const purchase = { ...logged, createdAt: logged.occurredAt };
+    void importTransactions([purchase], []);
     // The balance was set after the purchase, so it already includes it.
     saveAccount({ id: "visa", name: "Visa", kind: "card", balance: 30_000_00, order: 1, updatedAt: now.getTime() - 60_000, tracked: true, limit: 50_000_00 });
     const visa = () => getState().accounts.find((a) => a.id === "visa")!;

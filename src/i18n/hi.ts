@@ -351,9 +351,6 @@ export const hi: Record<string, string> = {
   "Choose account": "खाता चुनें",
   "1 entry isn't linked to any of your accounts, so no balance changed for it.": "1 एंट्री आपके किसी खाते से जुड़ी नहीं है, इसलिए किसी बैलेंस में बदलाव नहीं हुआ।",
   "{n} entries aren't linked to any of your accounts, so no balance changed for them.": "{n} एंट्री आपके किसी खाते से जुड़ी नहीं हैं, इसलिए किसी बैलेंस में बदलाव नहीं हुआ।",
-  "Take it out of {name}'s balance": "{name} के बैलेंस से घटाएँ",
-  "Add it to {name}'s balance": "{name} के बैलेंस में जोड़ें",
-  "It's dated before you set {name}'s balance on {date}, so Tally takes it to be in that balance already. Turn this on if it isn't.": "इसकी तारीख़ {date} से पहले की है, जब आपने {name} का बैलेंस डाला था, इसलिए Tally मानता है कि यह उस बैलेंस में पहले से है। अगर नहीं है तो इसे चालू करें।",
   "This money": "यह पैसा",
   "Lent to {name}": "{name} को उधार दिया",
   "Borrowed from {name}": "{name} से उधार लिया",
@@ -369,4 +366,6 @@ export const hi: Record<string, string> = {
   "Leave this off if the balance you entered on {date} already includes it.": "अगर {date} को डाला गया बैलेंस इसे पहले से शामिल करता है तो इसे बंद रखें।",
   "Move {n} to {name}": "{n} को {name} में ले जाएँ",
   "Pick what to move": "ले जाने के लिए चुनें",
+  "Already in {name}'s balance": "{name} के बैलेंस में पहले से है",
+  "It's dated before you entered {name}'s balance on {date}. Turn this on if that balance already includes it, so it isn't counted twice.": "इसकी तारीख़ {date} से पहले की है, जब आपने {name} का बैलेंस डाला था। अगर वह बैलेंस इसे पहले से शामिल करता है तो इसे चालू करें, ताकि यह दो बार न गिना जाए।",
 };

@@ -351,9 +351,6 @@ export const te: Record<string, string> = {
   "Choose account": "ఖాతాను ఎంచుకోండి",
   "1 entry isn't linked to any of your accounts, so no balance changed for it.": "1 ఎంట్రీ మీ ఏ ఖాతాకూ లింక్ కాలేదు, కాబట్టి ఏ బ్యాలెన్స్ మారలేదు.",
   "{n} entries aren't linked to any of your accounts, so no balance changed for them.": "{n} ఎంట్రీలు మీ ఏ ఖాతాకూ లింక్ కాలేదు, కాబట్టి ఏ బ్యాలెన్స్ మారలేదు.",
-  "Take it out of {name}'s balance": "{name} బ్యాలెన్స్ నుంచి తీసివేయండి",
-  "Add it to {name}'s balance": "{name} బ్యాలెన్స్‌కు జోడించండి",
-  "It's dated before you set {name}'s balance on {date}, so Tally takes it to be in that balance already. Turn this on if it isn't.": "దీని తేదీ మీరు {name} బ్యాలెన్స్ నమోదు చేసిన {date} కంటే ముందుది, కాబట్టి అది ఆ బ్యాలెన్స్‌లో ఇప్పటికే ఉందని Tally భావిస్తుంది. లేకపోతే దీన్ని ఆన్ చేయండి.",
   "This money": "ఈ డబ్బు",
   "Lent to {name}": "{name}కు అప్పు ఇచ్చారు",
   "Borrowed from {name}": "{name} నుంచి అప్పు తీసుకున్నారు",
@@ -369,4 +366,6 @@ export const te: Record<string, string> = {
   "Leave this off if the balance you entered on {date} already includes it.": "{date}న నమోదు చేసిన బ్యాలెన్స్‌లో ఇది ఇప్పటికే ఉంటే దీన్ని ఆఫ్‌లో ఉంచండి.",
   "Move {n} to {name}": "{n}ని {name}కి మార్చండి",
   "Pick what to move": "మార్చాల్సినవి ఎంచుకోండి",
+  "Already in {name}'s balance": "{name} బ్యాలెన్స్‌లో ఇప్పటికే ఉంది",
+  "It's dated before you entered {name}'s balance on {date}. Turn this on if that balance already includes it, so it isn't counted twice.": "దీని తేదీ మీరు {name} బ్యాలెన్స్ నమోదు చేసిన {date} కంటే ముందుది. ఆ బ్యాలెన్స్‌లో ఇది ఇప్పటికే ఉంటే దీన్ని ఆన్ చేయండి, రెండుసార్లు లెక్కించకుండా ఉండేందుకు.",
 };

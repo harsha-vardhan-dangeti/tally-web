@@ -51,6 +51,9 @@ export interface Expense {
   /** A card purchase converted to EMI: the loan that now carries it. It no longer adds to the card's
    *  balance or the budget; each month's EMI does instead. */
   emiLoan?: string;
+  /** true: already in the account's balance as entered, so it doesn't move it; false: moves it even though
+   *  it was recorded before the balance was entered. Missing: the usual rule (see `applies`). */
+  inBalance?: boolean;
 }
 export interface Chip { id: string; title: string; amount: number; category: Category; order: number }
 export interface CategoryBudget {
@@ -137,6 +140,10 @@ export interface Income {
   account: string;
   receivedAt: number; // epoch ms
   createdAt: number;
+  /** From a bank statement import: goes by its date, not when it was added. */
+  imported?: boolean;
+  /** See Expense.inBalance. */
+  inBalance?: boolean;
 }
 /** Money lent to or borrowed from someone, or paid back (see core/people.ts). */
 export interface LedgerEntry {
@@ -153,6 +160,8 @@ export interface LedgerEntry {
    * borrowed, or they paid you back). A tracked account's balance moves with it.
    */
   account?: string;
+  /** See Expense.inBalance. */
+  inBalance?: boolean;
 }
 /** A loan repaid in EMIs (see core/loans.ts). Each month's EMI can be added to expenses on its day. */
 export interface Loan extends LoanTerms {
@@ -589,6 +598,7 @@ const sortTransfers = (list: Transfer[]) => [...list].sort((a, b) => b.occurredA
  * An account after `amount` paise go into it (negative: come out of it). A card's balance is what's
  * owed, so money into a card pays it down and money out of it adds to the debt.
  */
+/** A preview: the account as it would be after `amount` comes in (− goes out). Nothing is saved. */
 export const moneyIn = (a: Account, amount: number): Account =>
   ({ ...a, balance: liveBalance(a) + (a.kind === "card" ? -amount : amount), updatedAt: Date.now() });
 
@@ -607,28 +617,73 @@ export const accountNamed = (s: Pick<State, "accounts">, name: string) => s.acco
 const isAccount = (a: Account, name: string) => !!name && nameKey(name) === nameKey(a.name);
 
 /**
- * What came into an account (income) minus what went out (expenses paid from it) after `since`.
+ * Whether an entry moves an account's balance. The balance you enter is the truth at that moment, so
+ * anything recorded before it is taken to be in it; anything you record after it moves it, whatever date
+ * it carries (a salary from the 1st logged on the 16th still lands). Statement imports go by their date,
+ * since they're usually old. `inBalance` overrides both ways.
+ */
+function applies(a: Account, at: number, createdAt: number, imported: boolean, inBalance: boolean | undefined): boolean {
+  if (inBalance !== undefined) return !inBalance;
+  return at > a.updatedAt || (!imported && createdAt > a.updatedAt);
+}
+export const expenseApplies = (a: Account, e: Expense) => applies(a, e.occurredAt, e.createdAt, e.source === "import", e.inBalance);
+export const incomeApplies = (a: Account, x: Income) => applies(a, x.receivedAt, x.createdAt, !!x.imported, x.inBalance);
+export const ledgerApplies = (a: Account, l: LedgerEntry) => applies(a, l.occurredAt, l.createdAt, false, l.inBalance);
+/** Transfers made before the balance was entered (or, from older versions, already added into it) don't count again. */
+export const transferApplies = (a: Account, t: Transfer) => t.createdAt > a.updatedAt;
+
+/** Spending on an account that counts: you paid, it wasn't moved to an EMI plan, and it isn't waiting for review. */
+const spent = (e: Expense) => !e.pending && !e.paidBy && !e.emiLoan;
+
+/**
+ * Income, expenses and money lent or borrowed through an account that move its balance (see `applies`).
  * Split expenses paid by someone else never left your account.
  */
-function netFlow(a: Account, since: number, s: FlowState = state): { in: number; out: number } {
+function netFlow(a: Account, s: FlowState = state): { in: number; out: number } {
   let inflow = 0, out = 0;
-  // A purchase converted to EMI left the card's balance for the EMI plan; its EMIs are charged instead.
-  for (const e of s.expenses) if (!e.pending && !e.paidBy && !e.emiLoan && e.occurredAt > since && isAccount(a, e.account)) out += e.amount;
-  for (const x of s.incomes) if (x.receivedAt > since && isAccount(a, x.account)) inflow += x.amount;
+  for (const e of s.expenses) if (spent(e) && isAccount(a, e.account) && expenseApplies(a, e)) out += e.amount;
+  for (const x of s.incomes) if (isAccount(a, x.account) && incomeApplies(a, x)) inflow += x.amount;
   // Money lent or paid back left the account; money borrowed or paid back to you came into it.
+  for (const l of s.ledger ?? []) {
+    if (!l.account || !isAccount(a, l.account) || !ledgerApplies(a, l)) continue;
+    if (l.amount > 0) out += l.amount; else inflow -= l.amount;
+  }
+  return { in: inflow, out };
+}
+
+/** Transfers into an account minus transfers out, since its balance was entered. They move every account, followed or not. */
+function transferFlow(a: Account, s: FlowState = state): number {
+  let n = 0;
+  for (const t of s.transfers ?? []) {
+    if (!transferApplies(a, t)) continue;
+    if (t.toId === a.id) n += t.amount; else if (t.fromId === a.id) n -= t.amount;
+  }
+  return n;
+}
+
+/** What went through an account after `since`, by date: for a card's bill, what was charged since the statement. */
+function flowSince(a: Account, since: number, s: FlowState = state): { in: number; out: number } {
+  let inflow = 0, out = 0;
+  for (const e of s.expenses) if (spent(e) && e.occurredAt > since && isAccount(a, e.account)) out += e.amount;
+  for (const x of s.incomes) if (x.receivedAt > since && isAccount(a, x.account)) inflow += x.amount;
   for (const l of s.ledger ?? []) {
     if (l.occurredAt <= since || !l.account || !isAccount(a, l.account)) continue;
     if (l.amount > 0) out += l.amount; else inflow -= l.amount;
   }
   return { in: inflow, out };
 }
-type FlowState = Pick<State, "expenses" | "incomes"> & { ledger?: LedgerEntry[] };
+type FlowState = Pick<State, "expenses" | "incomes"> & { ledger?: LedgerEntry[]; transfers?: Transfer[] };
 
-/** An account's balance now: for one that follows its transactions, everything since it was last set. */
+/**
+ * An account's balance now: what you last entered, plus transfers since, plus — for an account that
+ * follows its transactions — the income, expenses and money to people recorded since.
+ */
 export function liveBalance(a: Account, s: FlowState = state): number {
-  if (!a.tracked || (a.currency && a.currency !== state.settings.currency)) return a.balance;
-  const f = netFlow(a, a.updatedAt, s);
-  return a.balance + (a.kind === "card" ? f.out - f.in : f.in - f.out);
+  const sign = a.kind === "card" ? -1 : 1;
+  const moved = transferFlow(a, s);
+  if (!a.tracked || (a.currency && a.currency !== state.settings.currency)) return a.balance + sign * moved;
+  const f = netFlow(a, s);
+  return a.balance + sign * (f.in - f.out + moved);
 }
 
 /** In the home currency, for net worth: a foreign-currency balance at the saved rate (none: left out). */
@@ -727,7 +782,7 @@ export function convertToEmi(e: Expense, plan: EmiPlan): Loan | null {
     autoLog: true, lastLoggedMonth: "", createdAt: Date.now(), fromExpense: e.id,
   };
   // If the card's balance was set after this purchase, it includes it: take it out, as the bank does.
-  if (card.tracked && e.occurredAt <= card.updatedAt) saveAccount({ ...card, balance: card.balance - e.amount, updatedAt: card.updatedAt });
+  if (card.tracked && !expenseApplies(card, e)) saveAccount({ ...card, balance: card.balance - e.amount, updatedAt: card.updatedAt });
   updateExpense(e.id, { emiLoan: loan.id, exclude: true });
   saveLoan(loan);
   if (plan.fee > 0) {
@@ -747,7 +802,7 @@ export function creditLeft(name: string, s: State = state): { card: Account; usa
 /** After an expense on a card: a heads-up when it pushes the card past 80% or 100% of its limit. */
 function checkCardLimit(e: Expense) {
   const left = creditLeft(e.account);
-  if (!left || !left.card.tracked || e.paidBy || e.occurredAt <= left.card.updatedAt) return;
+  if (!left || !left.card.tracked || e.paidBy || !expenseApplies(left.card, e)) return;
   const after = left.usage.used;
   const pct = crossedThreshold(after - e.amount, after, left.usage.limit);
   if (!pct) return;
@@ -849,7 +904,7 @@ export function cardStatus(a: Account, s: State = state, now = new Date()): Card
     // Everything charged since the statement is still unbilled; payments (transfers in) lower the
     // balance, so what's left of the bill is the balance minus those charges.
     const since = cardCycle(a.statementDay, a.dueDay, now).lastStatement.getTime() - 1;
-    const f = netFlow(a, since, s);
+    const f = flowSince(a, since, s);
     spentSince = Math.max(0, f.out - f.in);
   }
   return cardBill(owed, spentSince, a.statementDay, a.dueDay, now);
@@ -905,46 +960,45 @@ export function likelyAccount(s: Pick<State, "accounts" | "settings">, recent: (
 export const unlinkedLedger = (s: Pick<State, "accounts" | "ledger"> = state) =>
   s.ledger.filter((l) => !l.id.startsWith("sw-") && !(l.account && accountNamed(s, l.account)));
 
-/** What linking would change an account's balance by, for entries from before its balance was set (+ in, − out). */
+/** Entries that, once on this account, still wouldn't move it: recorded before its balance was entered. */
+const ledgerNotApplying = (a: Account, list: LedgerEntry[]) => (a.tracked ? list.filter((l) => !ledgerApplies(a, { ...l, account: a.name })) : []);
+
+/** What linking would change an account's balance by, for entries recorded before its balance was entered (+ in, − out). */
 export function ledgerBeforeBalance(a: Account, list: LedgerEntry[]): number {
-  return a.tracked ? list.filter((l) => l.occurredAt <= a.updatedAt).reduce((t, l) => t - l.amount, 0) : 0;
+  return ledgerNotApplying(a, list).reduce((t, l) => t - l.amount, 0);
 }
 
 /**
- * Puts money lent, borrowed or paid back through one of your accounts. Those after its balance was
- * last set move it; earlier ones are taken to be in that balance already, unless `addEarlier` applies
- * them too. Returns an undo.
+ * Puts money lent, borrowed or paid back through one of your accounts. Those recorded after its balance
+ * was entered move it; earlier ones are taken to be in that balance, unless `addEarlier` marks them to
+ * move it too. Returns an undo.
  */
 export function linkLedger(accountId: string, ids: string[], addEarlier = false): () => void {
   const acct = state.accounts.find((a) => a.id === accountId);
   if (!acct) return () => {};
   const idSet = new Set(ids);
   const before = state.ledger.filter((l) => idSet.has(l.id));
-  const change = addEarlier ? ledgerBeforeBalance(acct, before) : 0;
-  const sign = acct.kind === "card" ? -1 : 1;
+  const older = new Set(addEarlier ? ledgerNotApplying(acct, before).map((l) => l.id) : []);
   const write = (list: LedgerEntry[]) => {
     const byId = new Map(list.map((l) => [l.id, l]));
     set({ ledger: sortLedger(state.ledger.map((l) => byId.get(l.id) ?? l)) });
     for (const l of list) void persist("ledger", l);
   };
-  write(before.map((l) => ({ ...l, account: acct.name })));
-  if (change) saveAccount({ ...acct, balance: acct.balance + sign * change });
-  return () => {
-    write(before);
-    const now = state.accounts.find((a) => a.id === accountId);
-    if (change && now) saveAccount({ ...now, balance: now.balance - sign * change });
-  };
+  write(before.map((l) => ({ ...l, account: acct.name, ...(older.has(l.id) ? { inBalance: false } : {}) })));
+  return () => write(before);
 }
 
-/** What linking would add to an account's balance from before it was last set (see linkIncomes). */
+const incomeNotApplying = (a: Account, list: Income[]) => (a.tracked ? list.filter((x) => !incomeApplies(a, x)) : []);
+
+/** What linking would add to an account's balance for income recorded before its balance was entered (see linkIncomes). */
 export function incomeBeforeBalance(a: Account, list: Income[]): number {
-  return a.tracked ? list.filter((x) => x.receivedAt <= a.updatedAt).reduce((t, x) => t + x.amount, 0) : 0;
+  return incomeNotApplying(a, list).reduce((t, x) => t + x.amount, 0);
 }
 
 /**
- * Puts incomes (and regular incomes, for the months to come) into one of your accounts. On an account
- * that follows its transactions, those after its balance was last set add to it; earlier ones are taken
- * to be in that balance already, unless `addEarlier` adds them too. Returns an undo.
+ * Puts incomes (and regular incomes, for the months to come) into one of your accounts. On an account that
+ * follows its transactions, those recorded after its balance was entered add to it; earlier ones are taken
+ * to be in that balance, unless `addEarlier` marks them to add too. Returns an undo.
  */
 export function linkIncomes(accountId: string, ids: string[], ruleIds: string[], addEarlier = false): () => void {
   const acct = state.accounts.find((a) => a.id === accountId);
@@ -952,16 +1006,12 @@ export function linkIncomes(accountId: string, ids: string[], ruleIds: string[],
   const idSet = new Set(ids), ruleSet = new Set(ruleIds);
   const before = state.incomes.filter((x) => idSet.has(x.id));
   const rules = state.recurringIncomes.filter((r) => ruleSet.has(r.id));
-  const earlier = addEarlier ? incomeBeforeBalance(acct, before) : 0;
-  const sign = acct.kind === "card" ? -1 : 1;
-  void importTransactions([], before.map((x) => ({ ...x, account: acct.name })));
+  const older = new Set(addEarlier ? incomeNotApplying(acct, before).map((x) => x.id) : []);
+  void importTransactions([], before.map((x) => ({ ...x, account: acct.name, ...(older.has(x.id) ? { inBalance: false } : {}) })));
   for (const r of rules) saveRecurringIncome({ ...r, account: acct.name });
-  if (earlier) saveAccount({ ...acct, balance: acct.balance + sign * earlier });
   return () => {
     void importTransactions([], before);
     for (const r of rules) putRecurringIncome(r);
-    const now = state.accounts.find((a) => a.id === accountId);
-    if (earlier && now) saveAccount({ ...now, balance: now.balance - sign * earlier });
   };
 }
 
@@ -969,29 +1019,27 @@ export function linkIncomes(accountId: string, ids: string[], ruleIds: string[],
 export const unlinkedCardExpenses = (s: Pick<State, "accounts" | "expenses"> = state) =>
   s.expenses.filter((e) => !e.paidBy && isGenericCard(e.account, s));
 
+const expensesNotApplying = (card: Account, list: Expense[]) =>
+  (card.tracked ? list.filter((e) => !e.emiLoan && !e.pending && !expenseApplies(card, e)) : []);
+
 /**
- * Moves expenses paid with "Credit card" onto one of your cards. On a card that follows your
- * expenses, those after its balance was last set add to what you owe; earlier ones are taken to be
- * in that balance already, unless `addEarlier` adds them too. Returns an undo.
+ * Moves expenses paid with "Credit card" onto one of your cards. On a card that follows your expenses,
+ * those recorded after its balance was entered add to what you owe; earlier ones are taken to be in that
+ * balance, unless `addEarlier` marks them to add too. Returns an undo.
  */
 export function linkToCard(cardId: string, ids: string[], addEarlier = false): () => void {
   const card = state.accounts.find((a) => a.id === cardId);
   if (!card) return () => {};
   const idSet = new Set(ids);
   const before = state.expenses.filter((e) => idSet.has(e.id));
-  const earlier = earlierThanBalance(card, before);
-  void importTransactions(before.map((e) => ({ ...e, account: card.name })), []);
-  if (addEarlier && earlier) saveAccount({ ...card, balance: card.balance + earlier });
-  return () => {
-    void importTransactions(before, []);
-    const now = state.accounts.find((a) => a.id === cardId);
-    if (addEarlier && earlier && now) saveAccount({ ...now, balance: now.balance - earlier });
-  };
+  const older = new Set(addEarlier ? expensesNotApplying(card, before).map((e) => e.id) : []);
+  void importTransactions(before.map((e) => ({ ...e, account: card.name, ...(older.has(e.id) ? { inBalance: false } : {}) })), []);
+  return () => { void importTransactions(before, []); };
 }
 
-/** What linking would add to a card's balance from before it was last set (see linkToCard). */
+/** What linking would add to a card's balance for expenses recorded before its balance was entered (see linkToCard). */
 export function earlierThanBalance(card: Account, list: Expense[]): number {
-  return card.tracked ? list.filter((e) => e.occurredAt <= card.updatedAt && !e.emiLoan && !e.pending).reduce((t, e) => t + e.amount, 0) : 0;
+  return expensesNotApplying(card, list).reduce((t, e) => t + e.amount, 0);
 }
 
 export interface CardPeriodSpend { start: Date; end: Date; spent: number; paid: number }
@@ -1045,47 +1093,34 @@ export interface AccountItem {
   at: number;
   /** + into the account, − out of it. */
   amount: number;
-  /** False for entries dated before you entered the balance yourself: taken to be in it already. */
+  /** False when it's already in the balance as you entered it (recorded before, or marked so), so it doesn't move it. */
   counted: boolean;
   income?: Income;
   expense?: Expense;
+  ledger?: LedgerEntry;
 }
 
 /**
  * Everything that went into or out of a bank, cash or investment account, newest first: income,
  * expenses paid from it, transfers, and money lent or paid back through it.
  */
-/**
- * When you last entered an account's balance yourself, if known. Older accounts don't record it; for
- * them it's `updatedAt`, unless a transfer has re-set that since.
- */
-export function balanceEnteredAt(a: Account, s: Pick<State, "transfers"> = state): number | null {
-  if (a.balanceSetAt) return a.balanceSetAt;
-  const moved = s.transfers.some((t) => (t.fromId === a.id || t.toId === a.id) && t.createdAt >= a.updatedAt - 2000);
-  return moved ? null : a.updatedAt;
-}
-
 export function accountItems(a: Account, s: State = state): AccountItem[] {
   const follows = !!a.tracked && !(a.currency && a.currency !== s.settings.currency);
-  const entered = balanceEnteredAt(a, s);
-  // Entries dated before you entered the balance are taken to be in it.
-  const counted = (at: number) => follows && (entered === null || at > entered);
   const out: AccountItem[] = [];
   for (const x of s.incomes) if (isAccount(a, x.account)) {
-    out.push({ key: `i-${x.id}`, kind: "income", title: x.source || "Income", detail: x.note, at: x.receivedAt, amount: x.amount, counted: counted(x.receivedAt), income: x });
+    out.push({ key: `i-${x.id}`, kind: "income", title: x.source || "Income", detail: x.note, at: x.receivedAt, amount: x.amount, counted: follows && incomeApplies(a, x), income: x });
   }
   for (const e of s.expenses) if (!e.pending && !e.paidBy && isAccount(a, e.account)) {
-    out.push({ key: `e-${e.id}`, kind: "expense", title: expenseTitle(e), detail: categoryMeta(e.category).title, at: e.occurredAt, amount: -e.amount, counted: counted(e.occurredAt), expense: e });
+    out.push({ key: `e-${e.id}`, kind: "expense", title: expenseTitle(e), detail: categoryMeta(e.category).title, at: e.occurredAt, amount: -e.amount, counted: follows && !e.emiLoan && expenseApplies(a, e), expense: e });
   }
   const name = (id: string, fallback: string) => s.accounts.find((x) => x.id === id)?.name ?? fallback;
-  // Transfers change both balances when they're made, so they always count.
   for (const t of s.transfers) {
-    if (t.toId === a.id) out.push({ key: `t-${t.id}`, kind: "transfer", title: `From ${name(t.fromId, t.fromName)}`, detail: t.note, at: t.occurredAt, amount: t.amount, counted: true });
-    else if (t.fromId === a.id) out.push({ key: `t-${t.id}`, kind: "transfer", title: `To ${name(t.toId, t.toName)}`, detail: t.note, at: t.occurredAt, amount: -t.amount, counted: true });
+    if (t.toId === a.id) out.push({ key: `t-${t.id}`, kind: "transfer", title: `From ${name(t.fromId, t.fromName)}`, detail: t.note, at: t.occurredAt, amount: t.amount, counted: transferApplies(a, t) });
+    else if (t.fromId === a.id) out.push({ key: `t-${t.id}`, kind: "transfer", title: `To ${name(t.toId, t.toName)}`, detail: t.note, at: t.occurredAt, amount: -t.amount, counted: transferApplies(a, t) });
   }
   for (const l of s.ledger) if (l.account && isAccount(a, l.account)) {
     const title = l.kind === "lent" ? `Lent to ${l.person}` : l.kind === "borrowed" ? `Borrowed from ${l.person}` : l.amount > 0 ? `Paid back ${l.person}` : `${l.person} paid you back`;
-    out.push({ key: `l-${l.id}`, kind: "ledger", title, detail: l.note, at: l.occurredAt, amount: -l.amount, counted: counted(l.occurredAt) });
+    out.push({ key: `l-${l.id}`, kind: "ledger", title, detail: l.note, at: l.occurredAt, amount: -l.amount, counted: follows && ledgerApplies(a, l), ledger: l });
   }
   return out.sort((x, y) => y.at - x.at);
 }
@@ -1102,13 +1137,19 @@ export function cardSpendByMonth(s: State = state, months = 6, now = new Date())
   });
 }
 
-function applyTransfer(t: Transfer, undo: boolean) {
-  const n = undo ? -t.amount : t.amount;
-  // An account deleted since the transfer has no balance left to fix.
-  const from = state.accounts.find((a) => a.id === t.fromId);
-  if (from) saveAccount(moneyIn(from, -n));
-  const to = state.accounts.find((a) => a.id === t.toId);
-  if (to) saveAccount(moneyIn(to, n));
+/**
+ * A transfer moves both balances through `liveBalance` while it counts. One that no longer counts — made
+ * before a balance was entered, or added straight into the balance by an older version of Tally — is in
+ * the stored balance, so removing it (or putting it back) has to change that balance directly.
+ */
+function fixStoredBalances(t: Transfer, removing: boolean) {
+  const n = removing ? -t.amount : t.amount;
+  for (const [id, dir] of [[t.fromId, -1], [t.toId, 1]] as const) {
+    const a = state.accounts.find((x) => x.id === id);
+    // An account deleted since has no balance left to fix; a balance you entered after it already has it right.
+    if (!a || transferApplies(a, t) || (a.balanceSetAt && a.balanceSetAt >= t.createdAt)) continue;
+    saveAccount({ ...a, balance: a.balance + (a.kind === "card" ? -1 : 1) * dir * n });
+  }
 }
 
 export function addTransfer(input: { fromId: string; toId: string; amount: number; note: string; occurredAt: number; id?: string }): Transfer | null {
@@ -1118,7 +1159,6 @@ export function addTransfer(input: { fromId: string; toId: string; amount: numbe
   if (input.id && state.transfers.some((x) => x.id === input.id)) return null;
   const { id, ...rest } = input;
   const t: Transfer = { id: id ?? uid(), ...rest, fromName: from.name, toName: to.name, createdAt: Date.now() };
-  applyTransfer(t, false);
   set({ transfers: sortTransfers([t, ...state.transfers]) });
   void persist("transfers", t);
   return t;
@@ -1128,12 +1168,12 @@ export function addTransfer(input: { fromId: string; toId: string; amount: numbe
 export function deleteTransfer(id: string, withUndo = true) {
   const t = state.transfers.find((x) => x.id === id);
   if (!t) return;
-  applyTransfer(t, true);
+  fixStoredBalances(t, true);
   set({ transfers: state.transfers.filter((x) => x.id !== id) });
   void remove("transfers", id);
   if (withUndo) {
     showToast(`Removed transfer · ${formatMoney(t.amount)}`, () => {
-      applyTransfer(t, false);
+      fixStoredBalances(t, false);
       set({ transfers: sortTransfers([t, ...state.transfers]) });
       void persist("transfers", t);
     });
@@ -1251,7 +1291,7 @@ export function deleteLoan(id: string) {
   if (e) {
     updateExpense(e.id, { emiLoan: undefined, exclude: false });
     const card = state.accounts.find((a) => a.kind === "card" && isAccount(a, e.account));
-    if (card?.tracked && e.occurredAt <= card.updatedAt) saveAccount({ ...card, balance: card.balance + e.amount, updatedAt: card.updatedAt });
+    if (card?.tracked && !expenseApplies(card, e)) saveAccount({ ...card, balance: card.balance + e.amount, updatedAt: card.updatedAt });
   }
 }
 
@@ -1417,7 +1457,7 @@ export function deleteRecurringIncome(id: string) {
  * Adds a regular income's payment for the month, once: the income's ID is fixed per rule and month,
  * and an existing entry (perhaps edited, or added on another device) is left as it is.
  */
-export function logRecurringIncome(rule: RecurringIncome, now = new Date()) {
+export function logRecurringIncome(rule: RecurringIncome, now = new Date(), opts: { inBalance?: boolean } = {}) {
   const key = monthKey(now);
   const id = `income-${rule.id}-${key}`;
   if (!state.incomes.some((x) => x.id === id)) {
@@ -1426,6 +1466,7 @@ export function logRecurringIncome(rule: RecurringIncome, now = new Date()) {
       id, amount: rule.amount, source: rule.source, note: rule.note, account: rule.account,
       // Received early: dated today rather than in the future.
       receivedAt: due.getTime() <= now.getTime() ? due.getTime() : now.getTime(), createdAt: Date.now(),
+      ...(opts.inBalance ? { inBalance: true } : {}),
     });
   }
   saveRecurringIncome({ ...state.recurringIncomes.find((r) => r.id === rule.id) ?? rule, lastLoggedMonth: key });

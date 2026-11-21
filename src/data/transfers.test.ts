@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { addTransfer, deleteTransfer, getState, moneyIn, saveAccount, type Account } from "./store";
+import { addTransfer, deleteTransfer, getState, liveBalance, moneyIn, saveAccount, type Account, type Transfer } from "./store";
 
 const account = (over: Partial<Account>): Account => ({ id: "a", name: "HDFC", kind: "bank", balance: 0, order: 0, updatedAt: 0, ...over });
-const balance = (id: string) => getState().accounts.find((a) => a.id === id)!.balance;
+const balance = (id: string) => liveBalance(getState().accounts.find((a) => a.id === id)!);
 
 describe("transfers", () => {
   it("moves money in and out of each kind of account", () => {
@@ -25,6 +25,19 @@ describe("transfers", () => {
     expect(balance("bank")).toBe(5_000_000);
     expect(balance("card")).toBe(800_000);
     expect(getState().transfers.find((x) => x.id === t.id)).toBeUndefined();
+  });
+
+  it("puts a balance back when a transfer that an older version added into it is removed", () => {
+    const now = Date.now();
+    // Older versions changed the stored balance (and its time) when the transfer was made.
+    saveAccount(account({ id: "old-bank", name: "Kotak", balance: 9_500_00, updatedAt: now }));
+    saveAccount(account({ id: "old-cash", name: "Wallet", kind: "cash", balance: 1_500_00, updatedAt: now }));
+    const t: Transfer = { id: "legacy", fromId: "old-bank", toId: "old-cash", fromName: "Kotak", toName: "Wallet", amount: 500_00, note: "", occurredAt: now - 1000, createdAt: now - 1000 };
+    getState().transfers.unshift(t);
+    expect(balance("old-bank")).toBe(9_500_00);
+    deleteTransfer("legacy", false);
+    expect(balance("old-bank")).toBe(10_000_00);
+    expect(balance("old-cash")).toBe(1_000_00);
   });
 
   it("refuses a transfer to the same account or of nothing", () => {

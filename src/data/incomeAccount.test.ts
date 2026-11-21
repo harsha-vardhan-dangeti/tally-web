@@ -9,7 +9,7 @@ describe("income and the account it lands in", () => {
   it("goes into your bank when it says “Bank” and you have one bank account", () => {
     const now = Date.now();
     // No accounts yet: "Bank" stays as it is, and isn't one of your accounts.
-    saveIncome({ id: "old", amount: 50_000_00, source: "Salary", note: "", account: "Bank", receivedAt: now - 7_200_000, createdAt: now });
+    saveIncome({ id: "old", amount: 50_000_00, source: "Salary", note: "", account: "Bank", receivedAt: now - 7_200_000, createdAt: now - 7_200_000 });
     saveIncome({ id: "upi", amount: 2_000_00, source: "Refund", note: "", account: "UPI", receivedAt: now - 60_000, createdAt: now });
     saveRecurringIncome({ id: "salary", source: "Salary", amount: 50_000_00, day: 1, account: "Bank", note: "", autoLog: true, lastLoggedMonth: "" });
     expect(getState().incomes.find((x) => x.id === "old")?.account).toBe("Bank");
@@ -52,7 +52,7 @@ describe("an account's money in and out", () => {
     const now = Date.now();
     saveAccount({ id: "axis", name: "Axis", kind: "bank", balance: 20_000_00, order: 5, updatedAt: now - 3_600_000, balanceSetAt: now - 3_600_000, tracked: true });
     saveAccount({ id: "wallet", name: "Wallet", kind: "cash", balance: 1_000_00, order: 6, updatedAt: now - 3_600_000, tracked: true });
-    saveIncome({ id: "ax-old", amount: 40_000_00, source: "Salary", note: "", account: "Axis", receivedAt: now - 7_200_000, createdAt: now });
+    saveIncome({ id: "ax-old", amount: 40_000_00, source: "Salary", note: "", account: "Axis", receivedAt: now - 7_200_000, createdAt: now - 7_200_000 });
     saveIncome({ id: "ax-new", amount: 3_000_00, source: "Freelance", note: "Logo", account: "Axis", receivedAt: now - 5000, createdAt: now });
     addExpense({ amount: 1_200_00, category: "food", merchant: "Swiggy", account: "Axis", source: "manual", occurredAt: now - 4000 });
     addExpense({ amount: 900_00, category: "food", merchant: "Dinner", account: "Axis", source: "manual", paidBy: "Ravi", occurredAt: now - 3500 });

@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import {
-  accountNamed, deleteLedgerEntry, getState, importSplitwise, likelyAccount, removeSplitwise, saveAccount, saveLedgerEntry, setSettings, showToast, uid, unlinkedLedger, useTally,
+  accountNamed, deleteLedgerEntry, importSplitwise, likelyAccount, removeSplitwise, saveLedgerEntry, setSettings, showToast, uid, unlinkedLedger, useTally,
 } from "../data/store";
 import { guessMe, parseSplitwise, planBalances, planSplitwise, type SplitwiseFile } from "../core/splitwise";
 import { AccountHint, AccountNote, AccountSelect } from "../ui/AccountSelect";
@@ -234,14 +234,14 @@ function EntrySheet({ value, known, onClose }: { value: EntryRequest | null; kno
   const [note, setNote] = useState("");
   const [date, setDate] = useState(toDateInput(Date.now()));
   const [account, setAccount] = useState("");
-  const [apply, setApply] = useState(false);
+  const [alreadyIn, setAlreadyIn] = useState(false);
   const [seen, setSeen] = useState<typeof value>(null);
   if (value !== seen) {
     setSeen(value);
     if (value) {
       setPerson(value.person); setAmount(value.amount ? String(Math.abs(value.amount) / 100) : ""); setNote("");
       setDate(toDateInput(Date.now())); setAccount(likelyAccount(s, s.ledger.map((l) => l.account)));
-      setApply(false);
+      setAlreadyIn(false);
     }
   }
   const p = parsePaise(amount);
@@ -254,7 +254,7 @@ function EntrySheet({ value, known, onClose }: { value: EntryRequest | null; kno
     const [y, m, d] = date.split("-").map(Number);
     return toDateInput(Date.now()) === date ? Date.now() : new Date(y, m - 1, d, 12).getTime();
   };
-  // Dated before the account's balance was set: taken to be in it, unless the user says it isn't.
+  // Dated before the account's balance was entered: it moves the balance unless the user says that balance has it already.
   const into = accountNamed(s, account);
   const beforeBalance = !!into?.tracked && !!date && when() <= into.updatedAt;
   const save = () => {
@@ -263,15 +263,10 @@ function EntrySheet({ value, known, onClose }: { value: EntryRequest | null; kno
       id: uid(), person: name, amount: sign * p, kind, note: note.trim(),
       occurredAt: when(), createdAt: Date.now(),
       ...(account.trim() ? { account: account.trim() } : {}),
+      ...(beforeBalance && alreadyIn ? { inBalance: true } : {}),
     };
     saveLedgerEntry(entry);
-    let restore: (() => void) | null = null;
-    if (beforeBalance && apply && into) {
-      const acct = accountNamed(getState(), into.name)!;
-      saveAccount({ ...acct, balance: acct.balance + (acct.kind === "card" ? sign * p : -sign * p) });
-      restore = () => { const now = accountNamed(getState(), into.name); if (now) saveAccount({ ...now, balance: now.balance - (acct.kind === "card" ? sign * p : -sign * p) }); };
-    }
-    const undo = () => { deleteLedgerEntry(entry.id, false); restore?.(); };
+    const undo = () => deleteLedgerEntry(entry.id, false);
     if (kind === "settled") showToast(t("Recorded {amount} with {name}", { amount: formatMoney(p), name }), undo);
     else showToast(kind === "lent" ? t("{name} owes you {amount}", { name, amount: formatMoney(p) }) : t("You owe {name} {amount}", { name, amount: formatMoney(p) }), undo);
     onClose();
@@ -295,14 +290,11 @@ function EntrySheet({ value, known, onClose }: { value: EntryRequest | null; kno
       <Field label={leaves ? t("Paid from") : t("Received into")}>
         <AccountSelect value={account} onChange={setAccount} label={leaves ? t("Paid from") : t("Received into")} />
       </Field>
-      {beforeBalance && into ? (
-        <Toggle checked={apply} onChange={setApply} label={leaves ? t("Take it out of {name}'s balance", { name: into.name }) : t("Add it to {name}'s balance", { name: into.name })}
-          hint={t("It's dated before you set {name}'s balance on {date}, so Tally takes it to be in that balance already. Turn this on if it isn't.", { name: into.name, date: day(into.updatedAt) })} />
-      ) : (
-        <>
-          <AccountNote name={account} what={t("This money")} incoming={!leaves} strict />
-          {leaves && <AccountHint account={account} amount={p ?? 0} />}
-        </>
+      {!(beforeBalance && alreadyIn) && <AccountNote name={account} what={t("This money")} incoming={!leaves} strict />}
+      {leaves && !(beforeBalance && alreadyIn) && <AccountHint account={account} amount={p ?? 0} />}
+      {beforeBalance && into && (
+        <Toggle checked={alreadyIn} onChange={setAlreadyIn} label={t("Already in {name}'s balance", { name: into.name })}
+          hint={t("It's dated before you entered {name}'s balance on {date}. Turn this on if that balance already includes it, so it isn't counted twice.", { name: into.name, date: day(into.updatedAt) })} />
       )}
       {kind === "settled" && value?.amount && p && p < Math.abs(value.amount) ? (
         <span className="tiny t-muted">{t("Part of it: {left} will still be open.", { left: formatMoney(Math.abs(value.amount) - p) })}</span>

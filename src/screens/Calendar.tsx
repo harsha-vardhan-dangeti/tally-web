@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import {
-  accountNamed, counts, deleteIncome, expenseTitle, getState, likelyAccount, saveAccount, runDueIncome, saveIncome, saveRecurringIncome, share, uid, useTally, type Expense, type Income,
+  accountNamed, counts, deleteIncome, expenseTitle, incomeApplies, likelyAccount, runDueIncome, saveIncome, saveRecurringIncome, share, uid, useTally, type Expense, type Income,
 } from "../data/store";
 import { dayOfMonth, daysInMonth, monthKey, monthLabel, monthRange, sameDay, startOfDay } from "../core/budget";
 import { compactMoney, formatMoney, parsePaise, currencySymbol } from "../core/money";
@@ -169,7 +169,8 @@ export function IncomeEditor({ value, onClose }: { value: { income: Income | nul
   const [date, setDate] = useState("");
   const [note, setNote] = useState("");
   const [repeats, setRepeats] = useState(false);
-  const [addToBalance, setAddToBalance] = useState(false);
+  // null: as Tally decides (see incomeApplies); true/false once the user flips "Already in the balance".
+  const [alreadyIn, setAlreadyIn] = useState<boolean | null>(null);
   const [seen, setSeen] = useState<typeof value>(null);
   if (value !== seen) {
     setSeen(value);
@@ -180,7 +181,7 @@ export function IncomeEditor({ value, onClose }: { value: { income: Income | nul
       setDate(toDateInput(existing ? new Date(existing.receivedAt) : value.day));
       setNote(existing?.note ?? "");
       setRepeats(false);
-      setAddToBalance(false);
+      setAlreadyIn(null);
     }
   }
   // Entries added by a regular income are named "income-<rule>-<month>".
@@ -195,7 +196,10 @@ export function IncomeEditor({ value, onClose }: { value: { income: Income | nul
     return date === toDateInput(new Date()) ? Date.now() : new Date(y, m - 1, d, 12).getTime();
   };
   const into = accountNamed(s, account);
-  const beforeBalance = !!date && !!into?.tracked && !existing && when() <= into.updatedAt;
+  // Dated before the account's balance was entered: you may have counted it in that balance already.
+  const beforeBalance = !!date && !!into?.tracked && when() <= into.updatedAt;
+  const ruleSaysIn = !!into && !!existing && !incomeApplies(into, { ...existing, account: into.name, inBalance: undefined });
+  const inBalanceNow = alreadyIn ?? existing?.inBalance ?? ruleSaysIn;
 
   const save = () => {
     if (!paise || !value) return;
@@ -215,13 +219,10 @@ export function IncomeEditor({ value, onClose }: { value: { income: Income | nul
     saveIncome({
       id, amount: paise, source: source.trim(), note: note.trim(), account: account.trim(),
       receivedAt, createdAt: existing?.createdAt ?? Date.now(),
+      ...(alreadyIn !== null ? { inBalance: alreadyIn } : existing?.inBalance !== undefined ? { inBalance: existing.inBalance } : {}),
     });
     if (repeats && !existing) runDueIncome();
     // The balance was entered without this income in it: raise it (a card's goes down) by the amount.
-    if (beforeBalance && addToBalance && into) {
-      const now = accountNamed(getState(), into.name)!;
-      saveAccount({ ...now, balance: now.balance + (now.kind === "card" ? -paise : paise) });
-    }
     onClose();
   };
 
@@ -248,10 +249,11 @@ export function IncomeEditor({ value, onClose }: { value: { income: Income | nul
           <input type="date" value={date} max={toDateInput(new Date())} onChange={(e) => setDate(e.target.value)} />
         </Field>
       </div>
-      {beforeBalance && into
-        ? <Toggle checked={addToBalance} onChange={setAddToBalance} label={`Add it to ${into.name}'s balance`}
-            hint={`It's dated before you set ${into.name}'s balance on ${new Date(into.updatedAt).toLocaleDateString([], { day: "numeric", month: "short" })}, so Tally takes it to be in that balance already. Turn this on if it isn't.`} />
-        : <AccountNote name={account} what={repeats ? "Each payment" : "This income"} incoming />}
+      {!(beforeBalance && inBalanceNow) && <AccountNote name={account} what={repeats ? "Each payment" : "This income"} incoming />}
+      {beforeBalance && into && (
+        <Toggle checked={inBalanceNow} onChange={setAlreadyIn} label={`Already in ${into.name}'s balance`}
+          hint={`It's dated before you entered ${into.name}'s balance on ${new Date(into.updatedAt).toLocaleDateString([], { day: "numeric", month: "short" })}. Turn this on if that balance already includes it, so it isn't counted twice.`} />
+      )}
       <Field label="Note"><input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional" /></Field>
       {!existing && (
         <Toggle label="Repeats every month" hint="Adds itself on this day each month, like a salary. Manage it in Plan." checked={repeats} onChange={setRepeats} />

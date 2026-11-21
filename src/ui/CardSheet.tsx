@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  cardActivity, cardLimitUsage, cardStatus, earlierThanBalance, expenseTitle, linkToCard, saveAccount, showToast, unlinkedCardExpenses, useTally,
+  cardActivity, cardLimitUsage, cardStatus, earlierThanBalance, expenseApplies, expenseTitle, linkToCard, saveAccount, showToast, unlinkedCardExpenses, useTally,
   type Account,
 } from "../data/store";
 import { categoryMeta } from "../core/categories";
@@ -47,7 +47,7 @@ export function CardSheet({ cardId, onClose, onEdit }: { cardId: string | null; 
 
   const follow = () => {
     const before = a;
-    saveAccount({ ...a, tracked: true, updatedAt: Date.now(), balanceSetAt: Date.now() });
+    saveAccount({ ...a, balance: act.owed, tracked: true, updatedAt: Date.now(), balanceSetAt: Date.now() });
     showToast(`${a.name} now goes up with each expense on it and down with each payment`, () => saveAccount(before));
   };
   const link = () => {
@@ -166,7 +166,7 @@ export function CardSheet({ cardId, onClose, onEdit }: { cardId: string | null; 
                 <CategoryIcon category={e.category} size={32} />
                 <span className="grow col" style={{ minWidth: 0 }}>
                   <span className="small t-strong ellipsis">{expenseTitle(e)}</span>
-                  <span className="tiny t-muted ellipsis">{shortYear(e.occurredAt)}{e.emiLoan ? " · moved to EMI" : ""}{a.tracked && e.occurredAt <= a.updatedAt ? " · in the balance you entered" : ""}</span>
+                  <span className="tiny t-muted ellipsis">{shortYear(e.occurredAt)}{e.emiLoan ? " · moved to EMI" : ""}{a.tracked && !e.emiLoan && !expenseApplies(a, e) ? " · in the balance you entered" : ""}</span>
                 </span>
                 <span className="num small" style={{ textDecoration: e.emiLoan ? "line-through" : undefined }}>{formatMoney(e.amount)}</span>
               </div>

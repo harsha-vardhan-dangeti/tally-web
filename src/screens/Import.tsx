@@ -167,7 +167,7 @@ export function ImportSheet({ open, onClose }: { open: boolean; onClose: () => v
       occurredAt: t.date.getTime(), createdAt: now, source: "import", pending: false, splitWays: 1, splitWith: "", exclude: false, recurring: false,
     }));
     const incomes: Income[] = chosen.filter((t) => t.direction === "credit").map((t) => ({
-      id: t.id, amount: t.amount, source: t.incomeSource, note: t.description, account: acct, receivedAt: t.date.getTime(), createdAt: now,
+      id: t.id, amount: t.amount, source: t.incomeSource, note: t.description, account: acct, receivedAt: t.date.getTime(), createdAt: now, imported: true,
     }));
     setBusy(true);
     if (table) saveImportLayout({ signature: headerSignature(table.headers), columns: table.columns, account: acct });
