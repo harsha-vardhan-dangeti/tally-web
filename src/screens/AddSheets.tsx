@@ -223,7 +223,10 @@ export function SmartAdd({ open, onClose }: { open: boolean; onClose: () => void
       // Tesseract runs in the browser (WebAssembly); the image never leaves the device.
       const { createWorker } = await import("tesseract.js");
       setScanning("Reading receipt…");
-      const worker = await createWorker("eng");
+      // Every file comes from Tally itself (see vite.config.ts), never a CDN.
+      const worker = await createWorker("eng", 1, {
+        workerPath: `${__OCR_BASE__}/worker.min.js`, corePath: `${__OCR_BASE__}/core`, langPath: `${__OCR_BASE__}/lang`, workerBlobURL: false,
+      });
       const { data } = await worker.recognize(file);
       await worker.terminate();
       const r = parseReceipt(data.text.split("\n"));

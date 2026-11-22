@@ -41,14 +41,52 @@ function serviceWorker(): Plugin {
   };
 }
 
+/**
+ * The receipt scanner's text reader (Tesseract), served from Tally itself instead of a CDN, so the
+ * only code that can run on Tally's pages is code that shipped in this build. The files are large
+ * and used only when someone scans a receipt, so they aren't precached by the service worker.
+ */
+const OCR_VERSION: string = JSON.parse(readFileSync("node_modules/tesseract.js/package.json", "utf8")).version;
+const OCR_BASE = `/ocr/${OCR_VERSION}`;
+const OCR_FILES: Record<string, string> = {
+  "worker.min.js": "node_modules/tesseract.js/dist/worker.min.js",
+  // Tally reads receipts with the LSTM engine only; the worker picks the fastest build this browser supports.
+  "core/tesseract-core-lstm.wasm.js": "node_modules/tesseract.js-core/tesseract-core-lstm.wasm.js",
+  "core/tesseract-core-simd-lstm.wasm.js": "node_modules/tesseract.js-core/tesseract-core-simd-lstm.wasm.js",
+  "core/tesseract-core-relaxedsimd-lstm.wasm.js": "node_modules/tesseract.js-core/tesseract-core-relaxedsimd-lstm.wasm.js",
+  "lang/eng.traineddata.gz": "node_modules/@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz",
+};
+function ocrFiles(): Plugin {
+  return {
+    name: "tally-ocr-files",
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const path = req.url?.split("?")[0] ?? "";
+        const src = path.startsWith(`${OCR_BASE}/`) ? OCR_FILES[path.slice(OCR_BASE.length + 1)] : undefined;
+        if (!src) return next();
+        res.setHeader("content-type", src.endsWith(".js") ? "text/javascript" : "application/octet-stream");
+        res.end(readFileSync(src));
+      });
+    },
+    generateBundle() {
+      for (const [name, src] of Object.entries(OCR_FILES)) {
+        this.emitFile({ type: "asset", fileName: `${OCR_BASE.slice(1)}/${name}`, source: readFileSync(src) });
+      }
+    },
+  };
+}
+
 export default defineConfig({
   appType: "mpa",
   // NEXT_PUBLIC_* are the public Supabase URL and key the Vercel integration provides. Secret keys
   // (service role, Postgres URLs) have other names and are never bundled.
   envPrefix: ["VITE_", "NEXT_PUBLIC_"],
-  plugins: [react(), serviceWorker()],
+  plugins: [react(), ocrFiles(), serviceWorker()],
   // Which build sent a crash report. Vercel sets the commit; local builds say "local".
-  define: { __RELEASE__: JSON.stringify((process.env.VERCEL_GIT_COMMIT_SHA ?? "local").slice(0, 7)) },
+  define: {
+    __RELEASE__: JSON.stringify((process.env.VERCEL_GIT_COMMIT_SHA ?? "local").slice(0, 7)),
+    __OCR_BASE__: JSON.stringify(OCR_BASE),
+  },
   build: {
     target: "es2022",
     sourcemap: false,

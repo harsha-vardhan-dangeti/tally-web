@@ -8,3 +8,6 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_URL?: string;
   readonly VITE_SUPABASE_ANON_KEY?: string;
 }
+
+/** Where the receipt scanner's text reader is served from, e.g. "/ocr/7.0.0" (see vite.config.ts). */
+declare const __OCR_BASE__: string;

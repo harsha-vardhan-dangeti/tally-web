@@ -1,0 +1,39 @@
+# Checks every push and pull request to main. Vercel deploys main on its own; this catches problems
+# Vercel's build doesn't run: the test suite (including the security guardrails) and known-vulnerable
+# dependencies.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Read-only token: this workflow never needs to write to the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # Installs exactly what package-lock.json lists, checking every package's hash; no install scripts.
+      - run: npm ci --ignore-scripts
+      - run: npx tsc --noEmit -p .
+      - run: npx tsc --ignoreConfig --noEmit --strict --target es2022 --lib es2022,dom --module esnext --moduleResolution bundler --skipLibCheck api/collect.ts api/delete-account.ts
+      - run: npx vitest run
+      - run: npm audit --omit=dev --audit-level=high
+      # Builds and runs scripts/check-build.mjs, which fails on secrets or outside scripts in dist/.
+      - run: npm run build

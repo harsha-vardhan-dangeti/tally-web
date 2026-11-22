@@ -40,7 +40,9 @@ A new release installs in the background and waits. `src/data/updates.ts` shows 
 
 ## Security headers
 
-`vercel.json` sets a strict Content-Security-Policy, HSTS, `X-Frame-Options: DENY`, COOP, `nosniff`, `no-referrer` and a Permissions-Policy. The only third-party origin allowed is `cdn.jsdelivr.net`, for the receipt-OCR engine. `vite preview` serves the same headers, so CSP problems show up locally.
+`vercel.json` sets a strict Content-Security-Policy, HSTS, `X-Frame-Options: DENY`, COOP, CORP, `nosniff`, `no-referrer` and a Permissions-Policy. Scripts come only from Tally itself; the receipt reader is served from `/ocr/<version>/` in the build, not a CDN. The only other host allowed is Tally's own Supabase project; if the project changes, update `connect-src`. `vite preview` serves the same headers, so CSP problems show up locally.
+
+The rules every change must keep, the automatic checks that enforce them (`npm test`, and the post-build scan in `npm run build` that blocks a deploy), and the dashboard settings to review are in [SECURITY.md](SECURITY.md).
 
 ## Features
 

@@ -30,3 +30,8 @@
 .pay-pitch h2 { font-size: 20px; letter-spacing: -0.02em; }
 .pay-pitch p { color: var(--ink-2); }
 .pay-note { color: var(--muted); font-size: 13px; }
+/* The name and UPI ID come from whoever made the link: ask the payer to check them in their UPI app. */
+.pay-card .pay-check {
+  margin: 4px 0 0; padding: 10px 12px; border-radius: 14px; font-size: 13px; line-height: 1.45;
+  color: var(--hero-ink); border: 1px solid color-mix(in srgb, var(--hero-ink) 28%, transparent);
+}

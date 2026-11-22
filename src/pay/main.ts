@@ -26,6 +26,10 @@ function render() {
     ($("upi-pay") as HTMLAnchorElement).href = intent;
     $("upi-pay").textContent = `Pay ${amount} with a UPI app`;
     $("upi-id").textContent = r.upi;
+    // The name and amount come from whoever made the link, so the payer checks the name their UPI app shows.
+    $("check").textContent = r.to
+      ? `Before you pay, check that your UPI app shows ${r.to}'s name for ${r.upi}. Anyone can make a link like this, and Tally doesn't check who sent it.`
+      : `Before you pay, check that your UPI app shows the name of the person you mean to pay. Anyone can make a link like this, and Tally doesn't check who sent it.`;
     $("copy").onclick = async () => {
       try { await navigator.clipboard.writeText(r.upi); $("copy").textContent = "Copied"; }
       catch { $("copy").textContent = "Select and copy it"; }
