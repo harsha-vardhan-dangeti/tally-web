@@ -19,6 +19,7 @@ import { ImportSheet } from "./Import";
 import { CategoriesSheet } from "./Categories";
 import { RulesSheet } from "./Rules";
 import { useCloud } from "../data/cloud";
+import { CategorySelect } from "../ui/CategorySelect";
 
 // ---------------- Inbox ----------------
 
@@ -56,9 +57,7 @@ export function Inbox({ onOpen }: { onOpen: (e: Expense) => void }) {
                 <div style={{ padding: "8px 14px 0" }} className="tiny t-muted">{SOURCE_LABEL[e.source]} · {new Date(e.occurredAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</div>
                 <ExpenseRowView e={e} />
                 <div className="row gap8" style={{ padding: "0 14px 12px" }} onPointerDown={(ev) => ev.stopPropagation()} onPointerUp={(ev) => ev.stopPropagation()}>
-                  <select aria-label="Category" value={e.category} onChange={(ev) => updateExpense(e.id, { category: ev.target.value as Category })} style={{ flex: 1 }}>
-                    {pickableCategories(e.category).map((c) => <option key={c} value={c}>{categoryMeta(c).title}</option>)}
-                  </select>
+                  <CategorySelect label="Category" value={e.category} onChange={(category) => updateExpense(e.id, { category })} style={{ flex: 1 }} />
                   <button className="icon-btn" aria-label="Discard" onClick={() => deleteExpense(e.id)}><Icon name="close" size={18} /></button>
                   <button className="btn primary" onClick={() => confirm(e)}>Confirm</button>
                 </div>

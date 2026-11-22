@@ -383,4 +383,6 @@ export const ta: Record<string, string> = {
   "1 entry isn't linked to any of your accounts": "1 பதிவு உங்கள் எந்தக் கணக்குடனும் இணைக்கப்படவில்லை",
   "{n} entries aren't linked to any of your accounts": "{n} பதிவுகள் உங்கள் எந்தக் கணக்குடனும் இணைக்கப்படவில்லை",
   "Link them": "இணைக்கவும்",
+  "New": "புதியது",
+  "+ New category…": "+ புதிய வகை…",
 };

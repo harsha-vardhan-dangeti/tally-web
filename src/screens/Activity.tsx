@@ -6,11 +6,12 @@ import {
 } from "../data/store";
 import { addMonths, monthLabel, sameDay, startOfDay } from "../core/budget";
 import { formatMoney, parsePaise, currencySymbol } from "../core/money";
-import { categoryMeta, pickableCategories, type Category } from "../core/categories";
+import { categoryMeta, type Category } from "../core/categories";
 import { CategoryIcon, Icon } from "../ui/icons";
 import { Empty, Field, Sheet, SwipeRow, useLongPress } from "../ui/components";
 import { DaySheet, IncomeEditor, MonthCalendar } from "./Calendar";
 import { ProfileButton } from "../ui/ProfileMenu";
+import { CategorySelect } from "../ui/CategorySelect";
 
 export function ExpenseRowView({ e }: { e: Expense }) {
   const time = new Date(e.occurredAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
@@ -240,9 +241,7 @@ export function ChipEditor({ chip, open, onClose }: { chip: Chip | null; open: b
       <Field label="Name"><input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Coffee" /></Field>
       <Field label={`Amount (${currencySymbol()})`}><input type="text" inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="180" /></Field>
       <Field label="Category">
-        <select value={category} onChange={(e) => setCategory(e.target.value as Category)}>
-          {pickableCategories(category).map((c) => <option key={c} value={c}>{categoryMeta(c).title}</option>)}
-        </select>
+        <CategorySelect label="Category" value={category} onChange={setCategory} />
       </Field>
       <button className="btn primary block" disabled={!title || !paise} onClick={() => {
         saveChip({ id: chip?.id ?? uid(), title, amount: paise!, category, order: chip?.order ?? s.chips.length });

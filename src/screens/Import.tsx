@@ -5,11 +5,12 @@ import {
   type ColumnMap, type StatementTable, type StatementTxn,
 } from "../core/statement";
 import { pdfRows, type TextItem } from "../core/pdfTable";
-import { categoryMeta, pickableCategories, type Category } from "../core/categories";
+import { categoryMeta, type Category } from "../core/categories";
 import { formatMoney } from "../core/money";
 import { importTransactions, removeImported, resolveAccount, saveImportLayout, saveRule, showToast, uid, useTally, type Expense, type Income } from "../data/store";
 import { Icon } from "../ui/icons";
 import { Empty, Field, Sheet } from "../ui/components";
+import { CategorySelect } from "../ui/CategorySelect";
 
 class NeedsPassword extends Error {
   constructor(readonly wrong: boolean) { super("password"); }
@@ -298,9 +299,7 @@ function ImportRow({ t, day, picked, onToggle, maybeLogged, transfer, category, 
         <span className="tiny t-muted ellipsis" title={t.description}>{day} · {t.description}</span>
         <div className="row gap8 wrap" style={{ marginTop: 4 }}>
           {t.direction === "debit" && (
-            <select className="import-cat" aria-label={`Category for ${t.name}`} value={category} onChange={(e) => onCategory(e.target.value as Category)}>
-              {pickableCategories(category).map((c) => <option key={c} value={c}>{categoryMeta(c).title}</option>)}
-            </select>
+            <CategorySelect className="import-cat" label={`Category for ${t.name}`} value={category} onChange={onCategory} />
           )}
           {t.direction === "debit" && category !== t.category && t.name.length >= 2 && (
             <button className="btn ghost small-btn" onClick={() => onAlways(category)} title={`Always put ${t.name} in ${categoryMeta(category).title}`}>Always</button>

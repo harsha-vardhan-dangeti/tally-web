@@ -12,11 +12,12 @@ import { CURRENCIES, currencySymbol } from "../core/money";
 import { t } from "../i18n";
 import { shareText } from "../ui/share";
 import { AccountHint, AccountSelect } from "../ui/AccountSelect";
-import { categoryMeta, pickableCategories, type Category } from "../core/categories";
+import { categoryMeta, type Category } from "../core/categories";
 import { formatMoney, parsePaise } from "../core/money";
 import { Icon } from "../ui/icons";
 import { CategoryIcon } from "../ui/icons";
 import { Field, Sheet, Toggle } from "../ui/components";
+import { CategorySelect } from "../ui/CategorySelect";
 
 const toInput = (ms: number) => {
   const d = new Date(ms);
@@ -75,13 +76,10 @@ export function Detail({ id, onClose }: { id: string | null; onClose: () => void
 
       <div className="row gap8">
         <Field label="Category">
-          <select value={e.category} onChange={(ev) => {
-            const category = ev.target.value as Category;
+          <CategorySelect label="Category" value={e.category} onChange={(category) => {
             // A subcategory belongs to its category; moving the expense drops one that doesn't exist there.
             set({ category, sub: e.sub && (s.settings.subcategories[category] ?? []).includes(e.sub) ? e.sub : undefined });
-          }}>
-            {pickableCategories(e.category).map((c) => <option key={c} value={c}>{categoryMeta(c).title}</option>)}
-          </select>
+          }} />
         </Field>
         {((s.settings.subcategories[e.category] ?? []).length > 0 || e.sub) && (
           <Field label="Subcategory">

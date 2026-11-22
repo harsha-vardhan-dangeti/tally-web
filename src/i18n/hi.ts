@@ -383,4 +383,6 @@ export const hi: Record<string, string> = {
   "1 entry isn't linked to any of your accounts": "1 एंट्री आपके किसी खाते से जुड़ी नहीं है",
   "{n} entries aren't linked to any of your accounts": "{n} एंट्री आपके किसी खाते से जुड़ी नहीं हैं",
   "Link them": "जोड़ें",
+  "New": "नई",
+  "+ New category…": "+ नई श्रेणी…",
 };

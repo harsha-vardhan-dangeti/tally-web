@@ -8,6 +8,7 @@ import { parseReceipt } from "../core/receiptParser";
 import { CategoryIcon, Icon } from "../ui/icons";
 import { Sheet } from "../ui/components";
 import { t } from "../i18n";
+import { CategoryEditor } from "./Categories";
 
 const toLocalInput = (d: Date) => {
   const p = (n: number) => String(n).padStart(2, "0");
@@ -21,6 +22,7 @@ export function QuickAdd({ open, onClose, onSmart, onIncome, initialDate }: {
   const s = useTally();
   const [digits, setDigits] = useState("");
   const [category, setCategory] = useState<Category>("food");
+  const [addingCategory, setAddingCategory] = useState(false);
   const [sub, setSub] = useState("");
   const subs = s.settings.subcategories[category] ?? [];
   const [account, setAccount] = useState(s.settings.defaultAccount);
@@ -56,7 +58,8 @@ export function QuickAdd({ open, onClose, onSmart, onIncome, initialDate }: {
 
   // Physical keyboard on desktop: digits, Backspace, Enter.
   useEffect(() => {
-    if (!open) return;
+    // While a new category is being made, keys belong to that form, not the amount.
+    if (!open || addingCategory) return;
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       if (target.tagName === "INPUT" || target.tagName === "SELECT" || target.tagName === "TEXTAREA") return;
@@ -129,7 +132,12 @@ export function QuickAdd({ open, onClose, onSmart, onIncome, initialDate }: {
             <Icon name={categoryMeta(c).icon} size={20} />{categoryMeta(c).title}
           </button>
         ))}
+        <button className="cat-btn cat-new" onClick={() => setAddingCategory(true)}>
+          <Icon name="plus" size={20} />{t("New")}
+        </button>
       </div>
+      <CategoryEditor value={addingCategory ? "new" : null} used={0} onClose={() => setAddingCategory(false)}
+        onSaved={(id) => { setCategory(id); setSub(""); }} />
 
       {subs.length > 0 && (
         <div className="chips" role="group" aria-label="Subcategory" style={{ margin: "-4px 0 0" }}>

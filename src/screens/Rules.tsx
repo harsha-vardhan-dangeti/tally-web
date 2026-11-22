@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { deleteRule, saveRule, showToast, uid, useTally } from "../data/store";
-import { categoryMeta, pickableCategories, type Category } from "../core/categories";
+import { categoryMeta, type Category } from "../core/categories";
 import type { Rule } from "../core/rules";
 import { CategoryIcon, Icon } from "../ui/icons";
 import { Empty, Field, Sheet } from "../ui/components";
+import { CategorySelect } from "../ui/CategorySelect";
 
 /** Settings → Rules: "when a payment mentions …, it's …". Used by Smart add, captures and bank imports. */
 export function RulesSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -57,9 +58,7 @@ function RuleEditor({ value, onClose }: { value: Rule | "new" | null; onClose: (
         <input type="text" value={match} maxLength={40} onChange={(e) => setMatch(e.target.value)} placeholder="swiggy" autoFocus />
       </Field>
       <Field label="File it under">
-        <select value={category} onChange={(e) => setCategory(e.target.value)}>
-          {pickableCategories(category).map((c) => <option key={c} value={c}>{categoryMeta(c).title}</option>)}
-        </select>
+        <CategorySelect label="File it under" value={category} onChange={setCategory} />
       </Field>
       <Field label="Show it as (optional)">
         <input type="text" value={rename} maxLength={40} onChange={(e) => setRename(e.target.value)} placeholder="Swiggy" />

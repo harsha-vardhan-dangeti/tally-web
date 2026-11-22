@@ -17,6 +17,7 @@ import type { RecurringCharge } from "../core/recurring";
 import { ProfileButton } from "../ui/ProfileMenu";
 import { AccountNote, AccountSelect } from "../ui/AccountSelect";
 import { Empty, Field, Progress, Sheet, Toggle } from "../ui/components";
+import { CategorySelect } from "../ui/CategorySelect";
 
 export function Plan() {
   const s = useTally();
@@ -417,9 +418,7 @@ function BillEditor({ value, onClose }: { value: Bill | "new" | null; onClose: (
       </div>
       <div className="row gap8">
         <Field label="Category">
-          <select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value as Category })}>
-            {pickableCategories(f.category).map((c) => <option key={c} value={c}>{categoryMeta(c).title}</option>)}
-          </select>
+          <CategorySelect label="Category" value={f.category} onChange={(category) => setF({ ...f, category })} />
         </Field>
         <PaidFrom label="Paid from" value={f.account} onChange={(account) => setF({ ...f, account })} />
       </div>
@@ -666,9 +665,7 @@ function LoanEditor({ value, onClose }: { value: Loan | "new" | null; onClose: (
       )}
       <div className="row gap8">
         <Field label={t("Category")}>
-          <select value={f.category} onChange={(e) => setF({ ...f, category: e.target.value as Category })}>
-            {pickableCategories(f.category).map((c) => <option key={c} value={c}>{categoryMeta(c).title}</option>)}
-          </select>
+          <CategorySelect label="Category" value={f.category} onChange={(category) => setF({ ...f, category })} />
         </Field>
         <PaidFrom label="EMI paid from" value={f.account} onChange={(account) => setF({ ...f, account })} />
       </div>

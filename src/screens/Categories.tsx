@@ -38,7 +38,10 @@ export function CategoriesSheet({ open, onClose }: { open: boolean; onClose: () 
   );
 }
 
-function CategoryEditor({ value, used, onClose }: { value: CategoryDef | "new" | null; used: number; onClose: () => void }) {
+/** Add or edit one category. Also opened from any category picker ("+ New category…"), which gets the new id back. */
+export function CategoryEditor({ value, used, onClose, onSaved }: {
+  value: CategoryDef | "new" | null; used: number; onClose: () => void; onSaved?: (id: string) => void;
+}) {
   const def = value && value !== "new" ? value : null;
   const [title, setTitle] = useState("");
   const [icon, setIcon] = useState("grid");
@@ -72,6 +75,7 @@ function CategoryEditor({ value, used, onClose }: { value: CategoryDef | "new" |
     const { [id]: _old, ...rest } = getState().settings.subcategories;
     setSettings({ subcategories: list.length ? { ...rest, [id]: list } : rest });
     showToast(def ? `Saved ${name}` : `Added ${name}`);
+    onSaved?.(id);
     onClose();
   };
 

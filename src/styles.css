@@ -672,3 +672,5 @@ button.sched-item:hover { background: var(--fill); }
 /* People: how much of a loan is paid back. */
 .payback-track { display: block; height: 4px; border-radius: 2px; background: var(--fill); overflow: hidden; max-width: 180px; }
 .payback-track > span { display: block; height: 100%; background: var(--good); border-radius: 2px; }
+/* "+ New" at the end of the quick-add category grid: quieter than a real category. */
+.cat-btn.cat-new { border-style: dashed; color: var(--muted); background: transparent; }

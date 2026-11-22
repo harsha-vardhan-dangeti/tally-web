@@ -383,4 +383,6 @@ export const te: Record<string, string> = {
   "1 entry isn't linked to any of your accounts": "1 ఎంట్రీ మీ ఏ ఖాతాకూ లింక్ కాలేదు",
   "{n} entries aren't linked to any of your accounts": "{n} ఎంట్రీలు మీ ఏ ఖాతాకూ లింక్ కాలేదు",
   "Link them": "లింక్ చేయండి",
+  "New": "కొత్తది",
+  "+ New category…": "+ కొత్త వర్గం…",
 };
