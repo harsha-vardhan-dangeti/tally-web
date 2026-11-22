@@ -358,7 +358,7 @@ function RateField({ currency }: { currency: string }) {
 /** "flat-302_2026-11-16_export.csv" → "flat 302". */
 const groupFromFile = (name: string) => name.replace(/\.[a-z]+$/i, "").replace(/_\d{4}-\d{2}-\d{2}_export$/i, "").replace(/[_-]+/g, " ").trim();
 
-function SplitwiseSheet({ open, known, onClose }: { open: boolean; known: string[]; onClose: () => void }) {
+export function SplitwiseSheet({ open, known, onClose }: { open: boolean; known: string[]; onClose: () => void }) {
   const s = useTally();
   const cloud = useCloud();
   const fileRef = useRef<HTMLInputElement>(null);

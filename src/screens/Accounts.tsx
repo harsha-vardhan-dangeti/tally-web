@@ -16,6 +16,8 @@ import { ChartCard, DataTable, TrendLine } from "../ui/charts";
 import { ProfileButton } from "../ui/ProfileMenu";
 import { CardSheet } from "../ui/CardSheet";
 import { AccountSheet } from "./AccountSheet";
+import { SplitwiseSheet } from "./People";
+import { splitwiseStanding } from "../core/splitwise";
 import { LinkAccountsSheet } from "../ui/LinkAccountsSheet";
 
 const GROUPS: { kinds: AccountKind[]; title: string }[] = [
@@ -39,6 +41,7 @@ export function Accounts({ onOpen }: { onOpen?: (e: Expense) => void } = {}) {
   const [moving, setMoving] = useState(false);
   const [sip, setSip] = useState<ScheduledTransfer | "new" | null>(null);
   const [allTransfers, setAllTransfers] = useState(false);
+  const [splitwise, setSplitwise] = useState(false);
   const now = new Date();
   const series = useMemo(() => netWorthSeries(accountsNow(s), now, 12, s.loans), [s.accounts, s.loans, s.expenses, s.incomes, s.ledger]); // eslint-disable-line react-hooks/exhaustive-deps
   const latest = series[series.length - 1] ?? { assets: 0, debts: 0, net: 0 };
@@ -59,6 +62,7 @@ export function Accounts({ onOpen }: { onOpen?: (e: Expense) => void } = {}) {
       </header>
       <div className="row gap8 wrap span-2">
         {s.accounts.length >= 1 && <button className="btn" onClick={() => setMoving(true)}><Icon name="transfer" size={16} />Transfer</button>}
+        <button className="btn" onClick={() => setSplitwise(true)}><Icon name="split" size={16} />Splitwise</button>
         <button className="btn primary" onClick={() => setEditing("new")}><Icon name="plus" size={16} />Add account</button>
       </div>
 
@@ -215,11 +219,14 @@ export function Accounts({ onOpen }: { onOpen?: (e: Expense) => void } = {}) {
         </>
       )}
 
+      <SplitwiseSection onImport={() => setSplitwise(true)} />
+
       <AccountSheet accountId={viewingAccount} onClose={() => setViewingAccount(null)} onOpenExpense={onOpen}
         onEdit={(a) => { setViewingAccount(null); setEditing(a); }} />
       <LinkAccountsSheet open={linking} onClose={() => setLinking(false)} />
       <CardSheet cardId={viewing} onClose={() => setViewing(null)} onEdit={(a) => { setViewing(null); setEditing(a); }} onOpenExpense={onOpen} />
-      <AccountEditor value={editing} onClose={() => setEditing(null)} />
+      <AccountEditor value={editing} onClose={() => setEditing(null)} onSplitwise={() => { setEditing(null); setSplitwise(true); }} />
+      <SplitwiseSheet open={splitwise} known={people(s.expenses, s.ledger).map((p) => p.name)} onClose={() => setSplitwise(false)} />
       <TransferSheet open={moving} onClose={() => setMoving(false)} />
       <SipSheet value={sip} onClose={() => setSip(null)} />
     </div>
@@ -533,7 +540,61 @@ function TransferSheet({ open, onClose }: { open: boolean; onClose: () => void }
   );
 }
 
-function AccountEditor({ value, onClose }: { value: Account | "new" | null; onClose: () => void }) {
+/**
+ * Splitwise beside your accounts: what each person owes you (or you owe them) from your imports, your
+ * share of this month's shared spending, and the button to bring in a group's latest export.
+ */
+function SplitwiseSection({ onImport }: { onImport: () => void }) {
+  const s = useTally();
+  const st = useMemo(() => splitwiseStanding(s.ledger), [s.ledger]);
+  const month = monthKey(new Date());
+  const share = s.expenses.filter((e) => e.tags?.includes("splitwise") && monthKey(new Date(e.occurredAt)) === month).reduce((t, e) => t + e.amount, 0);
+  const net = st.owedToYou - st.youOwe;
+  return (
+    <section className="col gap8">
+      <div className="section-title"><span>Splitwise</span>
+        {st.imported && <span className={`num ${net > 0 ? "in" : net < 0 ? "owe" : "t-muted"}`}>{net > 0 ? `you're owed ${formatMoney(net)}` : net < 0 ? `you owe ${formatMoney(-net)}` : "settled up"}</span>}
+      </div>
+      <div className="card flush divided">
+        {!st.imported ? (
+          <div className="list-row">
+            <span className="acct-icon"><Icon name="split" size={18} /></span>
+            <span className="grow col" style={{ minWidth: 0 }}>
+              <span className="t-strong">Add your Splitwise groups</span>
+              <span className="t-muted tiny">Your share of each expense goes into spending, and who owes whom shows here and in People.</span>
+            </span>
+            <button className="btn small-btn" onClick={onImport}>Add</button>
+          </div>
+        ) : (
+          <>
+            {st.people.map((p) => (
+              <div key={p.name} className="list-row">
+                <span className="acct-icon"><Icon name="split" size={18} /></span>
+                <span className="grow col" style={{ minWidth: 0 }}>
+                  <span className="t-strong ellipsis">{p.name}</span>
+                  <span className="t-muted tiny">{p.amount > 0 ? "owes you" : "you owe"}</span>
+                </span>
+                <span className={`t-strong num ${p.amount > 0 ? "in" : "owe"}`}>{formatMoney(Math.abs(p.amount))}</span>
+              </div>
+            ))}
+            {st.people.length === 0 && (
+              <div className="list-row"><span className="acct-icon"><Icon name="split" size={18} /></span><span className="grow small">Everyone's settled up.</span></div>
+            )}
+            <div className="list-row">
+              <span className="grow col" style={{ minWidth: 0 }}>
+                <span className="small">{share ? `Your share this month: ${formatMoney(share)}` : "No shared spending this month"}</span>
+                <span className="t-muted tiny">Last imported {new Date(st.lastImport).toLocaleDateString([], { day: "numeric", month: "short" })}. Import again any time: rows already in Tally are skipped.</span>
+              </span>
+              <button className="btn small-btn" onClick={onImport}>Update</button>
+            </div>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function AccountEditor({ value, onClose, onSplitwise }: { value: Account | "new" | null; onClose: () => void; onSplitwise: () => void }) {
   const s = useTally();
   const acct = value && value !== "new" ? value : null;
   const home = s.settings.currency;
@@ -575,8 +636,9 @@ function AccountEditor({ value, onClose }: { value: Account | "new" | null; onCl
       <Field label="Name"><input type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="HDFC Savings" /></Field>
       <div className="row gap8">
         <Field label="Type">
-          <select value={kind} onChange={(e) => setKind(e.target.value as AccountKind)}>
+          <select value={kind} onChange={(e) => (e.target.value === "splitwise" ? onSplitwise() : setKind(e.target.value as AccountKind))}>
             {(Object.keys(ACCOUNT_KIND_LABEL) as AccountKind[]).map((k) => <option key={k} value={k}>{ACCOUNT_KIND_LABEL[k]}</option>)}
+            {!acct && <option value="splitwise">Splitwise group…</option>}
           </select>
         </Field>
         <Field label="Currency">

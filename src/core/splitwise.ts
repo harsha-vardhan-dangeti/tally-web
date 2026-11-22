@@ -203,3 +203,29 @@ export function guessMe(members: string[], yourNames: string[]): number {
   const firsts = keys.map((k) => k.split(" ")[0]);
   return members.findIndex((m) => firsts.includes(personKey(m).split(" ")[0]));
 }
+
+/**
+ * Where you stand on Splitwise, from what you've imported: each person's net (+ they owe you), the
+ * total, and when you last imported. Entries you add in Tally yourself aren't part of it, so it
+ * matches what Splitwise shows.
+ */
+export function splitwiseStanding(ledger: { id: string; person: string; amount: number; createdAt: number }[]) {
+  const byPerson = new Map<string, { name: string; amount: number }>();
+  let lastImport = 0;
+  for (const l of ledger) {
+    if (!l.id.startsWith("sw-")) continue;
+    const k = personKey(l.person);
+    const cur = byPerson.get(k) ?? { name: l.person, amount: 0 };
+    cur.amount += l.amount;
+    byPerson.set(k, cur);
+    lastImport = Math.max(lastImport, l.createdAt);
+  }
+  const people = [...byPerson.values()].filter((p) => p.amount !== 0).sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+  return {
+    people,
+    owedToYou: people.filter((p) => p.amount > 0).reduce((t, p) => t + p.amount, 0),
+    youOwe: people.filter((p) => p.amount < 0).reduce((t, p) => t - p.amount, 0),
+    imported: byPerson.size > 0,
+    lastImport,
+  };
+}
