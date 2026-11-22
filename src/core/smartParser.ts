@@ -21,6 +21,8 @@ export function tagsIn(text: string): string[] {
 }
 
 export const yourShare = (amount: number, ways: number) => Math.floor(amount / Math.max(ways, 1));
+/** Your part of an expense: the amount set for an unequal split, else an equal share. */
+export const myShareOf = (e: { amount: number; splitWays: number; myShare?: number }) => e.myShare ?? yourShare(e.amount, e.splitWays);
 
 export const titleCase = (s: string) =>
   s.split(" ").filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");

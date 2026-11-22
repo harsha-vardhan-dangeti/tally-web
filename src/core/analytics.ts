@@ -1,5 +1,5 @@
 import type { CategoryBudget, Expense } from "../data/store";
-import { yourShare } from "./smartParser";
+import { myShareOf } from "./smartParser";
 import { addMonths, dayOfMonth, daysInMonth, monthRange, sameDay, startOfDay } from "./budget";
 import { categoryMeta, type Category } from "./categories";
 import { formatMoney } from "./money";
@@ -10,7 +10,7 @@ import { formatMoney } from "./money";
  */
 
 const counted = (e: Expense) => !e.pending && !e.exclude;
-const amount = (e: Expense) => yourShare(e.amount, e.splitWays);
+const amount = (e: Expense) => myShareOf(e);
 
 export function spendIn(expenses: Expense[], start: Date, end: Date): Expense[] {
   const a = start.getTime(), b = end.getTime();

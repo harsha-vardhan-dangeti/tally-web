@@ -1,9 +1,9 @@
 import { dayOfMonth, daysInMonth, monthRange } from "./budget";
-import { yourShare } from "./smartParser";
+import { myShareOf } from "./smartParser";
 
 /** The numbers on a month's shareable recap card. Pure: give it the month's expenses. */
 
-export interface RecapExpense { amount: number; splitWays: number; category: string; occurredAt: number; pending: boolean; exclude: boolean }
+export interface RecapExpense { amount: number; splitWays: number; myShare?: number; category: string; occurredAt: number; pending: boolean; exclude: boolean }
 export interface RecapCategory { id: string; amount: number; share: number }
 export interface RecapData {
   month: Date;
@@ -23,9 +23,9 @@ export function recapData(expenses: RecapExpense[], month: Date, budget: number,
   const complete = now.getTime() >= end.getTime();
   const days = complete ? daysInMonth(month) : Math.max(dayOfMonth(now), 1);
   const list = expenses.filter((e) => !e.pending && !e.exclude && e.occurredAt >= start.getTime() && e.occurredAt < end.getTime());
-  const spent = list.reduce((t, e) => t + yourShare(e.amount, e.splitWays), 0);
+  const spent = list.reduce((t, e) => t + myShareOf(e), 0);
   const byCat = new Map<string, number>();
-  for (const e of list) byCat.set(e.category, (byCat.get(e.category) ?? 0) + yourShare(e.amount, e.splitWays));
+  for (const e of list) byCat.set(e.category, (byCat.get(e.category) ?? 0) + myShareOf(e));
   const sorted = [...byCat.entries()].sort((a, b) => b[1] - a[1]);
   const top: RecapCategory[] = sorted.slice(0, 4).map(([id, amount]) => ({ id, amount, share: spent ? amount / spent : 0 }));
   const rest = sorted.slice(4).reduce((t, [, a]) => t + a, 0);

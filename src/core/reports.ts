@@ -1,6 +1,6 @@
 import { outstandingAt, type LoanTerms } from "./loans";
 import type { Account, Expense, Income } from "../data/store";
-import { yourShare } from "./smartParser";
+import { myShareOf } from "./smartParser";
 import { addMonths, monthKey, startOfDay, weekRange } from "./budget";
 import { categoryMeta, type Category } from "./categories";
 
@@ -43,7 +43,7 @@ export interface ReportFilter {
   tag?: string;
 }
 
-const share = (e: Expense) => yourShare(e.amount, e.splitWays);
+const share = (e: Expense) => myShareOf(e);
 const counted = (e: Expense) => !e.pending && !e.exclude;
 
 export function expensesIn(expenses: Expense[], [start, end]: [Date, Date], filter: ReportFilter = {}): Expense[] {

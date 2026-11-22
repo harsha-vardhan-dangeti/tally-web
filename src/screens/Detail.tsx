@@ -7,7 +7,7 @@ import { cardCycle } from "../core/cards";
 import { emiFor, loanStatus } from "../core/loans";
 import { useCloud } from "../data/cloud";
 import { track } from "../data/telemetry";
-import { payLink, sharePerPerson, splitNames } from "../core/people";
+import { payLink, shareOfPerson, splitNames } from "../core/people";
 import { CURRENCIES, currencySymbol } from "../core/money";
 import { t } from "../i18n";
 import { shareText } from "../ui/share";
@@ -114,11 +114,15 @@ export function Detail({ id, onClose }: { id: string | null; onClose: () => void
         {e.splitWays > 1 && (
           <div className="col gap8" style={{ padding: "12px 0" }}>
             <div className="row between">
-              <span className="small">Split <strong>{e.splitWays}</strong> ways · you pay <strong>{formatMoney(share(e))}</strong></span>
-              <div className="row gap4">
-                <button className="icon-btn" aria-label="Fewer people" onClick={() => set({ splitWays: Math.max(2, e.splitWays - 1) })}>−</button>
-                <button className="icon-btn" aria-label="More people" onClick={() => set({ splitWays: Math.min(20, e.splitWays + 1) })}>+</button>
-              </div>
+              <span className="small">{e.shares ? <>Split unequally</> : <>Split <strong>{e.splitWays}</strong> ways</>} · you pay <strong>{formatMoney(share(e))}</strong></span>
+              {e.shares ? (
+                <button className="btn ghost small-btn" onClick={() => set({ myShare: undefined, shares: undefined })}>Split equally</button>
+              ) : (
+                <div className="row gap4">
+                  <button className="icon-btn" aria-label="Fewer people" onClick={() => set({ splitWays: Math.max(2, e.splitWays - 1) })}>−</button>
+                  <button className="icon-btn" aria-label="More people" onClick={() => set({ splitWays: Math.min(20, e.splitWays + 1) })}>+</button>
+                </div>
+              )}
             </div>
             <input type="text" placeholder={t("With (names, separated by commas)")} aria-label={t("Split with")} value={e.splitWith} onChange={(ev) => set({ splitWith: ev.target.value })} />
             {splitNames(e.splitWith).length > 0 && (
@@ -133,15 +137,15 @@ export function Detail({ id, onClose }: { id: string | null; onClose: () => void
             {splitNames(e.splitWith).length > 0 && (
               <div className="col gap4">
                 {e.paidBy ? (
-                  <span className="small">{t("You owe {name} {amount}", { name: e.paidBy, amount: formatMoney(sharePerPerson(e)) })}</span>
+                  <span className="small">{t("You owe {name} {amount}", { name: e.paidBy, amount: formatMoney(share(e)) })}</span>
                 ) : splitNames(e.splitWith).map((n) => (
                   <div key={n} className="row between gap8">
-                    <span className="small">{t("{name} owes you {amount}", { name: n, amount: formatMoney(sharePerPerson(e)) })}</span>
+                    <span className="small">{t("{name} owes you {amount}", { name: n, amount: formatMoney(shareOfPerson(e, n)) })}</span>
                     <button className="btn ghost small-btn" onClick={async () => {
-                      const link = payLink(location.origin, { to: s.settings.payName || cloud.user?.name || "", amount: sharePerPerson(e),
+                      const link = payLink(location.origin, { to: s.settings.payName || cloud.user?.name || "", amount: shareOfPerson(e, n),
                         currency: s.settings.currency, note: expenseTitle(e), upi: s.settings.upiId });
                       const result = await shareText(t("Hi {name}, your share for {what} comes to {amount}. You can pay here: {link}",
-                        { name: n, what: expenseTitle(e), amount: formatMoney(sharePerPerson(e), { showPaise: true }), link }), t("Payment request"));
+                        { name: n, what: expenseTitle(e), amount: formatMoney(shareOfPerson(e, n), { showPaise: true }), link }), t("Payment request"));
                       if (result === "copied") showToast(t("Message copied. Paste it in any chat."));
                       if (result === "shared" || result === "copied") track("pay_request_shared", { via: result });
                     }}>{t("Ask to pay")}</button>

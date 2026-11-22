@@ -61,6 +61,7 @@ function expense(r: unknown, i: number, category: (v: unknown) => Category): Exp
     exclude: bool(r.exclude), recurring: bool(r.recurring),
     ...(str(r.paidBy).trim() ? { paidBy: str(r.paidBy).trim() } : {}),
     ...(id(r.group) ? { group: r.group as string } : {}),
+    ...readShares(r.myShare, r.shares, amount),
     ...(isRow(r.fx) && isCurrency(r.fx.currency) && paise(r.fx.amount) && typeof r.fx.rate === "number" && r.fx.rate > 0
       ? { fx: { currency: r.fx.currency as string, amount: r.fx.amount as number, rate: r.fx.rate } } : {}),
     ...(str(r.sub).trim() ? { sub: str(r.sub).trim().slice(0, 30) } : {}),
@@ -236,4 +237,12 @@ export function readGroups(list: unknown[]): SplitGroup[] {
       createdAt: time(r.createdAt) ?? 0 });
   }
   return out;
+}
+
+/** An unequal split from a backup, kept only when it adds up to no more than the expense. */
+export function readShares(myShare: unknown, shares: unknown, amount: number): { myShare?: number; shares?: Record<string, number> } {
+  if (!Number.isSafeInteger(myShare) || (myShare as number) < 0 || !isRow(shares)) return {};
+  const list = Object.entries(shares).filter(([n, v]) => n.trim() && Number.isSafeInteger(v) && (v as number) >= 0).slice(0, 50) as [string, number][];
+  if (!list.length || list.reduce((t, [, v]) => t + v, myShare as number) > amount) return {};
+  return { myShare: myShare as number, shares: Object.fromEntries(list.map(([n, v]) => [n.trim().slice(0, 40), v])) };
 }

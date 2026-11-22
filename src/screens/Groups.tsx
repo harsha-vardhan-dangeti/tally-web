@@ -3,8 +3,9 @@ import {
   addExpense, deleteGroup, deleteLedgerEntry, likelyAccount, saveGroup, saveLedgerEntry, showToast, uid, useTally,
   type Expense, type LedgerEntry, type SplitGroup,
 } from "../data/store";
-import { groupStanding, memberNames, planGroupBill } from "../core/groups";
-import { people, personKey, sharePerPerson, type Person } from "../core/people";
+import { groupStanding, memberNames, planGroupBill, unequalShares, type BillPlan, type SplitMode } from "../core/groups";
+import { people, personKey, type Person } from "../core/people";
+import { myShareOf } from "../core/smartParser";
 import { guessCategory, type Category } from "../core/categories";
 import { currencySymbol, formatMoney, parsePaise } from "../core/money";
 import { AccountNote, AccountSelect } from "../ui/AccountSelect";
@@ -160,7 +161,7 @@ function GroupSheet({ group, onClose, onEdit, onOpenExpense }: {
 }
 
 function BillRow({ e, onOpen }: { e: Expense; onOpen?: (e: Expense) => void }) {
-  const share = sharePerPerson(e);
+  const share = myShareOf(e);
   const payer = e.paidBy?.trim();
   const lent = payer ? 0 : e.amount - share;
   const body = (
@@ -168,7 +169,7 @@ function BillRow({ e, onOpen }: { e: Expense; onOpen?: (e: Expense) => void }) {
       <span className="acct-icon"><Icon name="bag" size={18} /></span>
       <span className="grow col" style={{ minWidth: 0 }}>
         <span className="small t-strong ellipsis">{e.merchant || e.note || "Bill"}</span>
-        <span className="tiny t-muted ellipsis">{day(e.occurredAt)} · {payer ? `${payer} paid` : "You paid"} {formatMoney(e.amount)}{e.splitWays > 1 ? ` · ${e.splitWays} ways` : ""}</span>
+        <span className="tiny t-muted ellipsis">{day(e.occurredAt)} · {payer ? `${payer} paid` : "You paid"} {formatMoney(e.amount)}{e.shares ? " · unequal" : e.splitWays > 1 ? ` · ${e.splitWays} ways` : ""}</span>
       </span>
       <span className="col" style={{ alignItems: "flex-end" }}>
         <span className="tiny t-muted">{payer ? "you owe" : lent ? "you lent" : "just you"}</span>
@@ -201,6 +202,8 @@ function BillSheet({ group, onClose }: { group: SplitGroup | null; onClose: () =
   const [amount, setAmount] = useState("");
   const [payer, setPayer] = useState("");
   const [among, setAmong] = useState<string[]>([]);
+  const [mode, setMode] = useState<SplitMode>("equal");
+  const [values, setValues] = useState<Record<string, string>>({});
   const [date, setDate] = useState(toDateInput(Date.now()));
   const [category, setCategory] = useState<Category>("other");
   const [picked, setPicked] = useState(false);
@@ -209,7 +212,7 @@ function BillSheet({ group, onClose }: { group: SplitGroup | null; onClose: () =
   if (group !== seen) {
     setSeen(group);
     if (group) {
-      setWhat(""); setAmount(""); setPayer(""); setAmong(["", ...group.members]); setDate(toDateInput(Date.now()));
+      setWhat(""); setAmount(""); setPayer(""); setAmong(["", ...group.members]); setMode("equal"); setValues({}); setDate(toDateInput(Date.now()));
       setCategory("other"); setPicked(false);
       setAccount(likelyAccount(s, s.expenses.filter((e) => e.group && !e.paidBy).map((e) => e.account)));
     }
@@ -217,23 +220,50 @@ function BillSheet({ group, onClose }: { group: SplitGroup | null; onClose: () =
   if (!group) return <Sheet open={false} onClose={onClose} title="">{null}</Sheet>;
 
   const paise = parsePaise(amount) ?? 0;
-  const plan = planGroupBill(paise, payer, among);
+  const everyone = ["", ...group.members];
   const label = (n: string) => (n === "" ? "You" : n);
+  const unequal = mode === "equal" ? null : unequalShares(paise, mode, everyone.map((n) => ({
+    person: n, value: mode === "exact" ? parsePaise(values[n] ?? "") ?? 0 : Number(values[n]) || 0,
+  })));
+  const plan: BillPlan | null = !unequal ? planGroupBill(paise, payer, among)
+    : unequal.left === 0 && unequal.shares.length ? planGroupBill(paise, payer, [], unequal.shares) : null;
   const others = among.filter((n) => n !== "");
   const toggle = (n: string) => setAmong(among.includes(n) ? among.filter((x) => x !== n) : [...among, n]);
-  const summary = !paise || !among.length ? "" : plan.kind === "none"
+  // Switching to amounts or percentages starts from an equal split of whoever is ticked.
+  const switchTo = (m: SplitMode) => {
+    setMode(m);
+    if (m === "equal" || !among.length) return;
+    const n = among.length;
+    if (m === "exact") {
+      if (!paise) { setValues({}); return; }
+      const base = Math.floor(paise / n), extra = paise - base * n;
+      setValues(Object.fromEntries(among.map((p, i) => [p, String((base + (i < extra ? 1 : 0)) / 100)])));
+    } else {
+      const base = Math.floor(10000 / n) / 100;
+      setValues(Object.fromEntries(among.map((p, i) => [p, String(i === n - 1 ? Math.round((100 - base * (n - 1)) * 100) / 100 : base)])));
+    }
+  };
+  const unit = mode === "percent" ? "%" : currencySymbol(s.settings.currency);
+  const leftText = !unequal || !paise ? "" : unequal.left === 0 ? "" : mode === "percent"
+    ? (unequal.left > 0 ? `${unequal.left}% left to assign` : `${-unequal.left}% too much`)
+    : (unequal.left > 0 ? `${formatMoney(unequal.left)} left to assign` : `${formatMoney(-unequal.left)} too much`);
+  const owers = plan?.kind === "expense" && plan.shares ? Object.entries(plan.shares) : [];
+  const summary = !paise || !plan ? "" : plan.kind === "none"
     ? "This bill doesn't include you, so it doesn't change what anyone owes you or you owe."
-    : plan.kind === "lent" ? `${names(others)} each owe you about ${formatMoney(plan.each)}.`
+    : plan.kind === "lent" ? (unequal ? plan.entries.map((x) => `${x.person} owes you ${formatMoney(x.amount)}`).join(". ") + "." : `${names(others)} each owe you about ${formatMoney(plan.each)}.`)
     : plan.splitWays === 1 ? "Just you: it's added to your spending."
     : payer ? `Your share is ${formatMoney(plan.yourShare)}. You'll owe ${payer} that.`
+    : unequal ? `Your share is ${formatMoney(plan.yourShare)}. ${owers.map(([n, v]) => `${n} owes you ${formatMoney(v)}`).join(", ")}.`
     : `${formatMoney(plan.each)} each. ${names(others)} ${others.length === 1 ? "owes" : "each owe"} you ${formatMoney(plan.each)}.`;
 
   const save = () => {
     const at = fromDateInput(date);
     const title = what.trim() || "Bill";
+    if (!plan) return;
     if (plan.kind === "expense") {
       addExpense({ amount: paise, category, merchant: title, note: group.name, account: payer ? null : account, occurredAt: at, source: "manual",
-        splitWays: plan.splitWays, splitWith: plan.splitWith, ...(plan.paidBy ? { paidBy: plan.paidBy } : {}), group: group.id });
+        splitWays: plan.splitWays, splitWith: plan.splitWith, ...(plan.paidBy ? { paidBy: plan.paidBy } : {}), group: group.id,
+        ...(plan.shares && plan.myShare !== undefined ? { myShare: plan.myShare, shares: plan.shares } : {}) });
     } else if (plan.kind === "lent") {
       const now = Date.now();
       for (const x of plan.entries) {
@@ -263,14 +293,41 @@ function BillSheet({ group, onClose }: { group: SplitGroup | null; onClose: () =
       </div>
 
       <div className="col gap8">
-        <span className="t-strong small">Split equally between</span>
-        <div className="row gap8 wrap" role="group" aria-label="Split equally between">
-          {["", ...group.members].map((n) => (
-            <button key={n || "you"} className={`chip${among.includes(n) ? " on" : ""}`} aria-pressed={among.includes(n)} onClick={() => toggle(n)}>
-              {among.includes(n) && <Icon name="check" size={14} />}{label(n)}
-            </button>
-          ))}
+        <div className="row between gap8" style={{ alignItems: "center" }}>
+          <span className="t-strong small">Split</span>
+          <div className="view-switch" role="group" aria-label="How to split">
+            {([["equal", "Equally"], ["exact", "Amounts"], ["percent", "Percent"]] as const).map(([m, l]) => (
+              <button key={m} aria-pressed={mode === m} onClick={() => switchTo(m)}>{l}</button>
+            ))}
+          </div>
         </div>
+        {mode === "equal" ? (
+          <div className="row gap8 wrap" role="group" aria-label="Split equally between">
+            {everyone.map((n) => (
+              <button key={n || "you"} className={`chip${among.includes(n) ? " on" : ""}`} aria-pressed={among.includes(n)} onClick={() => toggle(n)}>
+                {among.includes(n) && <Icon name="check" size={14} />}{label(n)}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="col gap8">
+            {everyone.map((n) => (
+              <label key={n || "you"} className="row gap8" style={{ alignItems: "center" }}>
+                <span className="small grow ellipsis">{label(n)}</span>
+                <span className="row gap4" style={{ alignItems: "center", width: 140 }}>
+                  {mode === "exact" && <span className="small t-muted">{unit}</span>}
+                  <input type="text" inputMode="decimal" aria-label={`${n === "" ? "Your" : `${n}'s`} ${mode === "percent" ? "percent" : "amount"}`} placeholder="0"
+                    value={values[n] ?? ""} onChange={(e) => setValues({ ...values, [n]: e.target.value })} />
+                  {mode === "percent" && <span className="small t-muted">%</span>}
+                </span>
+              </label>
+            ))}
+            {leftText && <span className="small" style={{ color: unequal && unequal.left < 0 ? "var(--danger)" : "var(--warn)" }} aria-live="polite">{leftText}</span>}
+            {mode === "percent" && unequal?.left === 0 && paise > 0 && (
+              <span className="tiny t-muted">{unequal.shares.map((x) => `${label(x.person)} ${formatMoney(x.amount)}`).join(" · ")}</span>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="row gap8">
@@ -280,7 +337,7 @@ function BillSheet({ group, onClose }: { group: SplitGroup | null; onClose: () =
         </Field>
       </div>
 
-      {!payer && plan.kind !== "none" && (
+      {!payer && plan && plan.kind !== "none" && (
         <>
           <Field label="Paid from"><AccountSelect value={account} onChange={setAccount} /></Field>
           <AccountNote name={account} what="This bill" />
@@ -288,7 +345,7 @@ function BillSheet({ group, onClose }: { group: SplitGroup | null; onClose: () =
       )}
 
       {summary && <div className="card small" style={{ background: "var(--surface-2)" }} aria-live="polite">{summary}</div>}
-      <button className="btn primary block" disabled={!paise || plan.kind === "none"} onClick={save}>Add bill</button>
+      <button className="btn primary block" disabled={!paise || !plan || plan.kind === "none"} onClick={save}>Add bill</button>
     </Sheet>
   );
 }

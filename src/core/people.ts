@@ -1,4 +1,4 @@
-import { yourShare } from "./smartParser";
+import { myShareOf, yourShare } from "./smartParser";
 
 /**
  * Who owes whom. Balances come from two places:
@@ -11,6 +11,8 @@ import { yourShare } from "./smartParser";
 export interface SplitExpense {
   id: string; amount: number; merchant: string; note: string; occurredAt: number;
   pending: boolean; splitWays: number; splitWith: string; paidBy?: string;
+  /** Unequal split: your part, and each other person's by name. */
+  myShare?: number; shares?: Record<string, number>;
 }
 
 export type LedgerKind = "lent" | "borrowed" | "settled";
@@ -65,6 +67,13 @@ export function splitNames(text: string): string[] {
 /** Each person's share of a split expense (an equal split, as the expense records it). */
 export const sharePerPerson = (e: Pick<SplitExpense, "amount" | "splitWays">) => yourShare(e.amount, e.splitWays);
 
+/** What one person owes on an expense you paid: their amount in an unequal split, else an equal share. */
+export function shareOfPerson(e: Pick<SplitExpense, "amount" | "splitWays" | "shares">, name: string): number {
+  if (!e.shares) return sharePerPerson(e);
+  const k = personKey(name);
+  return Object.entries(e.shares).find(([n]) => personKey(n) === k)?.[1] ?? 0;
+}
+
 export function people(expenses: SplitExpense[], ledger: LedgerLine[]): Person[] {
   const map = new Map<string, Person>();
   const add = (name: string, item: PersonItem) => {
@@ -78,14 +87,15 @@ export function people(expenses: SplitExpense[], ledger: LedgerLine[]): Person[]
   };
   for (const e of expenses) {
     if (e.pending || e.splitWays < 2) continue;
-    const each = sharePerPerson(e);
     const title = e.merchant || e.note || "Shared expense";
     const payer = e.paidBy?.trim();
     if (payer) {
-      add(payer, { key: `x-${e.id}`, kind: "paid-for-you", amount: -each, title, at: e.occurredAt, expenseId: e.id });
+      const mine = myShareOf(e);
+      if (mine) add(payer, { key: `x-${e.id}`, kind: "paid-for-you", amount: -mine, title, at: e.occurredAt, expenseId: e.id });
     } else {
       for (const name of splitNames(e.splitWith)) {
-        add(name, { key: `x-${e.id}-${personKey(name)}`, kind: "split", amount: each, title, at: e.occurredAt, expenseId: e.id });
+        const theirs = shareOfPerson(e, name);
+        if (theirs) add(name, { key: `x-${e.id}-${personKey(name)}`, kind: "split", amount: theirs, title, at: e.occurredAt, expenseId: e.id });
       }
     }
   }

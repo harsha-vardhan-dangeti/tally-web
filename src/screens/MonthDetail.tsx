@@ -9,6 +9,7 @@ import {
 } from "../core/analytics";
 import { CategoryIcon, Icon } from "../ui/icons";
 import { Empty } from "../ui/components";
+import { myShareOf } from "../core/smartParser";
 import {
   BarList, ChartCard, ColumnChart, DataTable, LegendItem, PaceChart, ShareBar, SpendCalendar, StatTile,
 } from "../ui/charts";
@@ -134,7 +135,7 @@ export function MonthDetail() {
               <SpendCalendar month={month} daily={stats.daily} counts={stats.dailyCount} elapsed={stats.elapsed} budget={budget} />
               <p className="viz-foot">
                 {stats.noSpendDays} no-spend day{stats.noSpendDays === 1 ? "" : "s"}
-                {stats.biggest && <> · biggest: {stats.biggest.merchant || stats.biggest.note || categoryMeta(stats.biggest.category).title}, {formatMoney(Math.floor(stats.biggest.amount / stats.biggest.splitWays))}</>}
+                {stats.biggest && <> · biggest: {stats.biggest.merchant || stats.biggest.note || categoryMeta(stats.biggest.category).title}, {formatMoney(myShareOf(stats.biggest))}</>}
               </p>
             </ChartCard>
             <ChartCard title="How you pay" subtitle={`${monthName}, by payment method`}

@@ -9,7 +9,7 @@ import { loanStatus } from "../core/loans";
 import { dateLocale, t } from "../i18n";
 import { categoryMeta, type Category } from "../core/categories";
 import { categoryBreakdown, cumulative, insights, monthStats, spendIn } from "../core/analytics";
-import { yourShare } from "../core/smartParser";
+import { myShareOf } from "../core/smartParser";
 import { netWorthSeries, savingsRate } from "../core/reports";
 import { formatMoney } from "../core/money";
 import { CategoryIcon, Icon } from "../ui/icons";
@@ -63,7 +63,7 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
   const prevByCat = useMemo(() => {
     const [ps] = monthRange(addMonths(now, -1));
     const m = new Map<Category, number>();
-    for (const e of spendIn(s.expenses, ps, new Date(ps.getFullYear(), ps.getMonth(), ps.getDate() + sameDays))) m.set(e.category, (m.get(e.category) ?? 0) + yourShare(e.amount, e.splitWays));
+    for (const e of spendIn(s.expenses, ps, new Date(ps.getFullYear(), ps.getMonth(), ps.getDate() + sameDays))) m.set(e.category, (m.get(e.category) ?? 0) + myShareOf(e));
     return m;
   }, [s.expenses, sameDays]); // eslint-disable-line react-hooks/exhaustive-deps
   const monthly = s.budgets.filter((b) => !b.period || b.period === "month");

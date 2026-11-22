@@ -11,7 +11,7 @@ import { dueInPeriod, nextDueDate, periodKey, type Every } from "../core/schedul
 import { cardBill, cardCycle, cardPeriods, cardUsage, type CardBill, type CardUsage } from "../core/cards";
 import { dueDate as emiDate } from "../core/loans";
 import { formatMoney, isCurrency, setCurrency } from "../core/money";
-import { yourShare } from "../core/smartParser";
+import { myShareOf } from "../core/smartParser";
 import type { PlannedRow } from "../core/splitwise";
 import { emiFor, loanStatus, dueDate, type LoanTerms } from "../core/loans";
 import type { LedgerKind } from "../core/people";
@@ -44,6 +44,9 @@ export interface Expense {
   paidBy?: string;
   /** A bill in one of your groups (Settings.groups id). */
   group?: string;
+  /** Unequal split: your part (what counts as your spending) and each other person's, by name. Missing: equal shares. */
+  myShare?: number;
+  shares?: Record<string, number>;
   /** Paid in another currency: what was paid and the rate used (home currency per unit). */
   fx?: { currency: string; amount: number; rate: number };
   /** A subcategory of `category` (Settings → Categories). */
@@ -387,7 +390,7 @@ async function seedChips() {
 // ---------- selectors ----------
 
 export const counts = (e: Expense) => !e.pending && !e.exclude;
-export const share = (e: Expense) => yourShare(e.amount, e.splitWays);
+export const share = (e: Expense) => myShareOf(e);
 export const expenseTitle = (e: Expense) => e.merchant || e.note || categoryMeta(e.category).title;
 
 export function inMonth(list: Expense[], d: Date) {
@@ -501,7 +504,7 @@ function reportReplaced(before: { store: StoreName; value: unknown }[]) {
 export interface NewExpense {
   amount: number; category: Category; merchant?: string; note?: string; account?: string | null;
   occurredAt?: number; source: Source; pending?: boolean; splitWays?: number; splitWith?: string; paidBy?: string;
-  sub?: string; tags?: string[]; group?: string;
+  sub?: string; tags?: string[]; group?: string; myShare?: number; shares?: Record<string, number>;
   /** For callers that may log the same expense twice, e.g. a bill auto-logged on two devices. */
   id?: string;
   /** Already in the paying account's balance as entered (see Expense.inBalance). */
@@ -521,6 +524,7 @@ export function addExpense(input: NewExpense): Expense {
     exclude: false, recurring: false, ...(input.paidBy ? { paidBy: input.paidBy } : {}),
     ...(input.sub ? { sub: input.sub } : {}), ...(input.tags?.length ? { tags: input.tags } : {}),
     ...(input.inBalance ? { inBalance: true } : {}), ...(input.group ? { group: input.group } : {}),
+    ...(input.myShare !== undefined && input.shares ? { myShare: input.myShare, shares: input.shares } : {}),
   };
   set({ expenses: sortExpenses([e, ...state.expenses]) });
   void persist("expenses", e);
@@ -542,10 +546,24 @@ function checkThreshold(before: number) {
 }
 
 export function updateExpense(id: string, patch: Partial<Expense>) {
-  const list = state.expenses.map((e) => (e.id === id ? { ...e, ...patch } : e));
+  const list = state.expenses.map((e) => (e.id === id ? keepShares(e, { ...e, ...patch }) : e));
   set({ expenses: sortExpenses(list) });
   const updated = list.find((e) => e.id === id);
   if (updated) void persist("expenses", updated);
+}
+
+/**
+ * An unequal split stays consistent through edits: a new amount scales every share (you take the
+ * rounding); changing who it's split with, or how many ways, makes it an equal split again.
+ */
+export function keepShares(before: Expense, after: Expense): Expense {
+  if (!after.shares || after.myShare === undefined) return after;
+  const { myShare: _m, shares: _s, ...equal } = after;
+  if (after.splitWays !== before.splitWays || after.splitWith !== before.splitWith || after.splitWays < 2) return equal;
+  if (after.amount === before.amount || before.amount <= 0) return after;
+  const shares = Object.fromEntries(Object.entries(after.shares).map(([n, v]) => [n, Math.floor((v * after.amount) / before.amount)]));
+  const others = Object.values(shares).reduce((t, v) => t + v, 0);
+  return { ...after, shares, myShare: Math.max(after.amount - others, 0) };
 }
 
 export function deleteExpense(id: string, withUndo = true) {
