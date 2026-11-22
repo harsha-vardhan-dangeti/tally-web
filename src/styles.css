@@ -90,6 +90,9 @@ h1, h2, h3 { margin: 0; letter-spacing: -0.01em; }
   .page { padding-top: 28px; }
 }
 
+/* Laptop widths: Home grows past the phone column, so its cards can sit two across. */
+@container main (min-width: 700px) { .page.dash { max-width: 920px; padding-inline: 24px; } }
+
 /* Wide screens: Reports, Plan and Accounts tile their cards in two columns; Home is a dashboard grid. */
 @container main (min-width: 940px) {
   .page.wide, .page.dash { max-width: 1160px; padding-inline: 32px; display: grid; gap: 20px 24px; align-items: start; }
@@ -100,6 +103,10 @@ h1, h2, h3 { margin: 0; letter-spacing: -0.01em; }
   .page.dash { grid-template-columns: minmax(340px, 400px) minmax(0, 1fr); }
   .page.dash > .page-head { grid-column: 1 / -1; }
   .dash-side { min-width: 0; }
+  /* Top row: today's budget beside this month; everything else uses the full width below. */
+  .page.dash > .dash-month { align-self: stretch; }
+  .page.dash > .dash-grid, .page.dash > .dash-recent { grid-column: 1 / -1; }
+  .page.dash .recent-list > :nth-child(n+5) { display: block; }
 }
 
 .update-bar { display: flex; align-items: center; gap: 12px; max-width: 640px; margin: 12px auto 0; padding: 8px 8px 8px 16px;
@@ -456,16 +463,14 @@ code.inline { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; ba
 .tally-left { stroke: var(--hero-ink); opacity: 0.9; }
 .banner.info { background: var(--brand-soft); color: var(--accent); }
 
-/* Cards in a row share its height, so the grid has no ragged gaps; Recent spans the whole width. */
-.dash-grid { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); align-items: stretch; grid-auto-flow: row dense; }
-.dash-card.wide { grid-column: 1 / -1; }
-.dash-grid { container: dashgrid / inline-size; }
-/* Three across: Recent takes two columns beside the last card, so no row is left half empty. */
-@container dashgrid (min-width: 812px) { .dash-card.wide { grid-column: span 2; } }
+/* Home's cards flow down as many columns as fit (one on phones, up to three), each only as tall as
+   its content, so a short card never leaves a hollow box beside a tall one. */
+.dash-grid { columns: 300px 3; column-gap: 16px; margin-bottom: -16px; }
+.dash-grid > .dash-card { break-inside: avoid; width: 100%; margin-bottom: 16px; }
+.dash-month { container: dashmonth / inline-size; }
 .recent-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); column-gap: 8px; padding: 0 8px 6px; }
 .recent-list > * { border-top: 1px solid var(--line); border-radius: 0; }
-/* One column or two, by the room there is: never squeezed below a readable card width. */
-.dash-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); }
+.recent-list > :nth-child(n+5) { display: none; }
 .dash-card { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .dash-card.flush { gap: 0; }
 .dash-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
@@ -647,7 +652,7 @@ button.sched-item:hover { background: var(--fill); }
 .dash-note.good { background: var(--good-soft); }
 .dash-note.good > svg { color: var(--good); }
 .dash-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; }
-@container dashgrid (min-width: 640px) { .dash-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@container dashmonth (min-width: 600px) { .dash-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 .dash-stat { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .dash-stat-value { font-size: 20px; font-weight: 650; letter-spacing: -0.01em; }
 .dash-breakdown { margin: 0; display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }

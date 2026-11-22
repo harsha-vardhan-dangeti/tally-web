@@ -44,7 +44,8 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
   const received = s.incomes.filter((x) => x.receivedAt >= start.getTime() && x.receivedAt < end.getTime()).reduce((t, x) => t + x.amount, 0);
   const income = received || s.settings.monthlyIncome;
   const rate = savingsRate(income, snap.spent);
-  const recent = s.expenses.filter((e) => !e.pending).slice(0, 4);
+  // Six on wide screens (three rows of two); phones show the first four.
+  const recent = s.expenses.filter((e) => !e.pending).slice(0, 6);
   const found = useMemo(() => recurringSuggestions(s, now.getTime()), [s.expenses, s.bills, s.settings.dismissedRecurring]); // eslint-disable-line react-hooks/exhaustive-deps
   // Insights compare months, so only monthly budgets go in.
   const note = useMemo(() => insights(s.expenses, now, now, s.settings.monthlyBudget, s.budgets.filter((b) => !b.period || b.period === "month"))[0],
@@ -211,8 +212,7 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
       )}
       </div>
 
-      <div className="dash-grid">
-        <DashCard wide title={t("This month")} sub={monthLabel(now, dateLocale())} action={t("Reports")} onAction={() => go("reports")}>
+      <DashCard className="dash-month" title={t("This month")} sub={monthLabel(now, dateLocale())} action={t("Reports")} onAction={() => go("reports")}>
           {note && (
             <div className={`dash-note ${note.tone}`}>
               <Icon name={note.tone === "warn" ? "alert" : note.tone === "good" ? "check" : "info"} size={16} />
@@ -246,6 +246,8 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
           )}
         </DashCard>
 
+      {/* The rest fill columns as tightly as they fit: no card is stretched to match another. */}
+      <div className="dash-grid">
         <DashCard title={t("Where it went")} sub={prevStats.total > 0 ? t("Against the same days last month") : undefined} action={t("Reports")} onAction={() => go("reports")}>
           {where.length === 0 ? (
             <p className="t-muted small" style={{ margin: 0 }}>{t("Nothing spent this month yet.")}</p>
@@ -371,7 +373,9 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
           )}
         </DashCard>
 
-        <DashCard title={t("Recent")} action={t("All activity")} onAction={() => go("activity")} flush wide>
+      </div>
+
+      <DashCard className="dash-recent" title={t("Recent")} action={t("All activity")} onAction={() => go("activity")} flush>
           {recent.length === 0 ? (
             <div style={{ padding: "4px 16px 16px" }}>
               <p className="t-muted small" style={{ margin: "0 0 12px" }}>{t("Nothing logged yet. Tap a repeat above, press + or N, or type a sentence with Smart add.")}</p>
@@ -383,7 +387,6 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
             </div>
           )}
         </DashCard>
-      </div>
 
       <ChipEditor chip={chipMenu} open={chipMenu !== null || newChip} onClose={() => { setChipMenu(null); setNewChip(false); }} />
       <CardSheet cardId={cardOpen} onClose={() => setCardOpen(null)} onOpenExpense={onOpen} />
@@ -392,11 +395,11 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
   );
 }
 
-function DashCard({ title, sub, action, onAction, flush, wide, children }: {
-  title: string; sub?: string; action?: string; onAction?: () => void; flush?: boolean; wide?: boolean; children: ReactNode;
+function DashCard({ title, sub, action, onAction, flush, className, children }: {
+  title: string; sub?: string; action?: string; onAction?: () => void; flush?: boolean; className?: string; children: ReactNode;
 }) {
   return (
-    <section className={`card dash-card${flush ? " flush" : ""}${wide ? " wide" : ""}`}>
+    <section className={`card dash-card${flush ? " flush" : ""}${className ? ` ${className}` : ""}`}>
       <header className="dash-card-head">
         <div className="col">
           <h2>{title}</h2>
