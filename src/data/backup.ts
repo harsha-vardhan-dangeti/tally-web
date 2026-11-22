@@ -5,7 +5,7 @@ import { isLang } from "../i18n";
 import type { LedgerKind } from "../core/people";
 import { readMethodAccounts, readScheduledTransfers, readSubcategories } from "./store";
 import type {
-  Account, AccountKind, Bill, CategoryBudget, Chip, Expense, Goal, Income, LedgerEntry, Loan, RecurringIncome, Settings, Source, Transfer,
+  Account, AccountKind, Bill, CategoryBudget, Chip, Expense, Goal, Income, LedgerEntry, Loan, RecurringIncome, Settings, Source, SplitGroup, Transfer,
 } from "./store";
 
 /** Checks a backup file completely before anything on the device is replaced. Pure: no storage access. */
@@ -60,6 +60,7 @@ function expense(r: unknown, i: number, category: (v: unknown) => Category): Exp
     pending: bool(r.pending), splitWays: Math.max(int(r.splitWays, 1), 1), splitWith: str(r.splitWith),
     exclude: bool(r.exclude), recurring: bool(r.recurring),
     ...(str(r.paidBy).trim() ? { paidBy: str(r.paidBy).trim() } : {}),
+    ...(id(r.group) ? { group: r.group as string } : {}),
     ...(isRow(r.fx) && isCurrency(r.fx.currency) && paise(r.fx.amount) && typeof r.fx.rate === "number" && r.fx.rate > 0
       ? { fx: { currency: r.fx.currency as string, amount: r.fx.amount as number, rate: r.fx.rate } } : {}),
     ...(str(r.sub).trim() ? { sub: str(r.sub).trim().slice(0, 30) } : {}),
@@ -174,7 +175,7 @@ export function parseBackup(text: string): Backup {
       || !LEDGER_KINDS.includes(r.kind as LedgerKind)) return null;
     return { id: rowId, person, amount: r.amount as number, kind: r.kind as LedgerKind, note: str(r.note), occurredAt,
       createdAt: time(r.createdAt) ?? occurredAt, ...(str(r.account).trim() ? { account: str(r.account).trim() } : {}),
-      ...(typeof r.inBalance === "boolean" ? { inBalance: r.inBalance } : {}) };
+      ...(typeof r.inBalance === "boolean" ? { inBalance: r.inBalance } : {}), ...(id(r.group) ? { group: r.group as string } : {}) };
   });
 
   const loans = optionalRows<Loan>(data.loans, (r) => {
@@ -200,6 +201,7 @@ export function parseBackup(text: string): Backup {
   if (Array.isArray(s.scheduledTransfers)) settings.scheduledTransfers = readScheduledTransfers(s.scheduledTransfers);
   if (typeof s.lockAfter === "number" && [0, 1, 5, 15, 60].includes(s.lockAfter)) settings.lockAfter = s.lockAfter;
   if (isRow(s.methodAccounts)) settings.methodAccounts = readMethodAccounts(s.methodAccounts);
+  if (Array.isArray(s.groups)) settings.groups = readGroups(s.groups);
   if (Array.isArray(s.rules)) settings.rules = sanitizeRules(s.rules).filter((r) => known.has(r.category));
   if (Array.isArray(s.dismissedRecurring)) settings.dismissedRecurring = s.dismissedRecurring.filter((k): k is string => typeof k === "string").slice(-200);
   // Only what differs from the built-ins is kept, in the checked form.
@@ -222,4 +224,16 @@ export function parseBackup(text: string): Backup {
     skipped: chips.skipped + budgets.skipped + bills.skipped + accounts.skipped + goals.skipped + incomes.skipped + recurringIncomes.skipped
       + transfers.skipped + ledger.skipped + loans.skipped,
   };
+}
+
+/** Groups from a backup: each needs an ID and a name; members are trimmed, de-duplicated names. */
+export function readGroups(list: unknown[]): SplitGroup[] {
+  const out: SplitGroup[] = [];
+  for (const r of list.slice(0, 100)) {
+    if (!isRow(r) || !id(r.id) || !str(r.name).trim() || out.some((g) => g.id === r.id)) continue;
+    const members = Array.isArray(r.members) ? r.members.filter((m): m is string => typeof m === "string").map((m) => m.trim().slice(0, 40)).filter(Boolean) : [];
+    out.push({ id: r.id as string, name: str(r.name).trim().slice(0, 40), members: members.filter((m, i) => members.findIndex((x) => x.toLowerCase() === m.toLowerCase()) === i).slice(0, 50),
+      createdAt: time(r.createdAt) ?? 0 });
+  }
+  return out;
 }

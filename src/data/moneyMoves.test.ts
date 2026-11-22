@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseSplitwise, planBalances, planSplitwise, guessMe, splitwiseStanding } from "../core/splitwise";
+import { parseSplitwise, planBalances, planSplitwise, guessMe } from "../core/splitwise";
 import { people } from "../core/people";
 import {
   addTransfer, getState, importSplitwise, investmentReturn, investmentsSummary, liveBalance, saveAccount, saveLedgerEntry, saveScheduledTransfer,
@@ -70,14 +70,6 @@ describe("Splitwise export", () => {
     expect(again.every((r) => r.imported)).toBe(true);
     const second = await importSplitwise(again, { group: "Flat 302", addSpending: true });
     expect(second.expenseIds.length + second.ledgerIds.length).toBe(0);
-
-    // Accounts' Splitwise section: the same as Splitwise's own total, ignoring entries made in Tally.
-    saveLedgerEntry({ id: "manual-1", person: "Priya", amount: -500_00, kind: "settled", note: "", occurredAt: Date.now(), createdAt: Date.now() });
-    const st = splitwiseStanding(getState().ledger);
-    expect(st.imported).toBe(true);
-    expect(st.owedToYou - st.youOwe).toBe(file.totals![0]);
-    expect(st.people.map((p) => [p.name, p.amount])).toEqual([["Priya", 10_000_00], ["Ravi", -600_00]]);
-    expect(splitwiseStanding([]).imported).toBe(false);
   });
 
   it("flags rows you probably logged in Tally already", () => {

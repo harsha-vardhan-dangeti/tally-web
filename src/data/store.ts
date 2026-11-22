@@ -42,6 +42,8 @@ export interface Expense {
   recurring: boolean;
   /** Split, and someone else paid: their name. Empty or missing: you paid. */
   paidBy?: string;
+  /** A bill in one of your groups (Settings.groups id). */
+  group?: string;
   /** Paid in another currency: what was paid and the rate used (home currency per unit). */
   fx?: { currency: string; amount: number; rate: number };
   /** A subcategory of `category` (Settings → Categories). */
@@ -162,6 +164,8 @@ export interface LedgerEntry {
   account?: string;
   /** See Expense.inBalance. */
   inBalance?: boolean;
+  /** A payment or share in one of your groups (Settings.groups id). */
+  group?: string;
 }
 /** A loan repaid in EMIs (see core/loans.ts). Each month's EMI can be added to expenses on its day. */
 export interface Loan extends LoanTerms {
@@ -210,7 +214,11 @@ export interface Settings {
   lockAfter: number;
   /** A payment method that always comes out of one account: "upi" → the HDFC account's id. */
   methodAccounts: Record<string, string>;
+  /** Splitwise-style groups: a flat, a trip. Their bills are split expenses with `group` set. */
+  groups: SplitGroup[];
 }
+/** People you share bills with. Members are names as in People; you aren't in the list. */
+export interface SplitGroup { id: string; name: string; members: string[]; createdAt: number }
 export interface ImportLayout { signature: string; columns: ColumnMap; account: string }
 
 export interface State {
@@ -234,7 +242,7 @@ export interface State {
 const DEFAULT_SETTINGS: Settings = {
   onboarded: false, monthlyBudget: 0, monthlyIncome: 0, defaultAccount: "UPI", lockCredentialId: null, lastBackupAt: null, categories: [], rules: [], dismissedRecurring: [], importLayouts: [],
   currency: "INR", language: "en", payName: "", upiId: "", fxRates: {},
-  monthStartDay: 1, subcategories: {}, scheduledTransfers: [], lockAfter: 0, methodAccounts: {},
+  monthStartDay: 1, subcategories: {}, scheduledTransfers: [], lockAfter: 0, methodAccounts: {}, groups: [],
 };
 
 let state: State = {
@@ -493,7 +501,7 @@ function reportReplaced(before: { store: StoreName; value: unknown }[]) {
 export interface NewExpense {
   amount: number; category: Category; merchant?: string; note?: string; account?: string | null;
   occurredAt?: number; source: Source; pending?: boolean; splitWays?: number; splitWith?: string; paidBy?: string;
-  sub?: string; tags?: string[];
+  sub?: string; tags?: string[]; group?: string;
   /** For callers that may log the same expense twice, e.g. a bill auto-logged on two devices. */
   id?: string;
   /** Already in the paying account's balance as entered (see Expense.inBalance). */
@@ -512,7 +520,7 @@ export function addExpense(input: NewExpense): Expense {
     pending: input.pending ?? false, splitWays: Math.max(input.splitWays ?? 1, 1), splitWith: input.splitWith ?? "",
     exclude: false, recurring: false, ...(input.paidBy ? { paidBy: input.paidBy } : {}),
     ...(input.sub ? { sub: input.sub } : {}), ...(input.tags?.length ? { tags: input.tags } : {}),
-    ...(input.inBalance ? { inBalance: true } : {}),
+    ...(input.inBalance ? { inBalance: true } : {}), ...(input.group ? { group: input.group } : {}),
   };
   set({ expenses: sortExpenses([e, ...state.expenses]) });
   void persist("expenses", e);
@@ -1383,6 +1391,17 @@ export function saveLedgerEntry(input: LedgerEntry) {
   set({ ledger: sortLedger([entry, ...state.ledger.filter((x) => x.id !== entry.id)]) });
   void persist("ledger", entry);
   if (isNew) track("ledger_added", { kind: entry.kind });
+}
+
+// ---------- groups ----------
+
+export function saveGroup(group: SplitGroup) {
+  setSettings({ groups: [...state.settings.groups.filter((g) => g.id !== group.id), group].sort((a, b) => a.createdAt - b.createdAt) });
+}
+
+/** Removes the group. Its bills and payments stay, as ordinary splits with each person in People. */
+export function deleteGroup(id: string) {
+  setSettings({ groups: state.settings.groups.filter((g) => g.id !== id) });
 }
 
 export function deleteLedgerEntry(id: string, withUndo = true) {
