@@ -121,6 +121,7 @@ export function parseBackup(text: string): Backup {
       ...(r.every === "week" || r.every === "year" ? { every: r.every } : {}),
       ...(Number.isInteger(r.weekday) && (r.weekday as number) >= 0 && (r.weekday as number) <= 6 ? { weekday: r.weekday as number } : {}),
       ...(Number.isInteger(r.month) && (r.month as number) >= 0 && (r.month as number) <= 11 ? { month: r.month as number } : {}),
+      ...(time(r.cancelledAt) ? { cancelledAt: time(r.cancelledAt)! } : {}),
     };
   });
   const accounts = optionalRows<Account>(data.accounts, (r) => {

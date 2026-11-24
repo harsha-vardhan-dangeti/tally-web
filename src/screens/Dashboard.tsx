@@ -109,7 +109,7 @@ export function Home({ onOpen, onAdd, onSearch, onRecap, onInbox, onSettings, go
   // Bills and found subscriptions due in the next 14 days.
   const horizon = now.getTime() + 14 * 86_400_000;
   const upcoming = [
-    ...s.bills.map((b) => ({ key: b.id, name: b.name, amount: b.amount, at: nextDue(b, now).getTime(), category: b.category, found: false })),
+    ...s.bills.filter((b) => !b.cancelledAt).map((b) => ({ key: b.id, name: b.name, amount: b.amount, at: nextDue(b, now).getTime(), category: b.category, found: false })),
     ...found.filter((r) => !r.maybeStopped).map((r) => ({ key: r.key, name: r.name, amount: r.amount, at: r.nextAt, category: r.category, found: true })),
     ...s.loans.flatMap((l) => {
       const next = loanStatus(l, now.getTime()).nextDue;

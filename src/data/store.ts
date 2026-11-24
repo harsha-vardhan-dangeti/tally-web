@@ -76,6 +76,8 @@ export interface Bill {
   every?: Every;
   weekday?: number;
   month?: number;
+  /** When it was cancelled: no payments are due after this, and it's out of reminders and totals. */
+  cancelledAt?: number;
 }
 export type AccountKind = "bank" | "card" | "cash" | "investment";
 export const ACCOUNT_KIND_LABEL: Record<AccountKind, string> = { bank: "Bank", card: "Credit card", cash: "Cash", investment: "Investment" };
@@ -891,6 +893,7 @@ export function scheduledFlows(s: State = state, now = new Date(), days = 30): S
   const out: ScheduledFlow[] = [];
   const name = (id: string) => s.accounts.find((a) => a.id === id)?.name ?? "";
   for (const b of s.bills) {
+    if (b.cancelledAt) continue;
     for (let d = nextDueDate(b, now), n = 0; d <= end && n < 6; d = nextDueDate(b, new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)), n++) {
       if (periodKey(b, d) === b.lastLoggedMonth) continue; // this period's payment is already in
       out.push({ key: `bill-${b.id}-${d.getTime()}`, account: b.account, label: b.name, amount: b.amount, at: d.getTime(), direction: "out", kind: "bill", ref: b.id });
@@ -1128,7 +1131,7 @@ export function unlinkedGroups(s: State = state): MoneyGroup[] {
   }
   // Repeating things only need fixing when they wouldn't land anywhere next time either.
   const lands = (name: string) => !!accountNamed(s, resolveAccount(name, s));
-  for (const b of s.bills) if (!lands(b.account)) group(b.account).bills.push(b);
+  for (const b of s.bills) if (!b.cancelledAt && !lands(b.account)) group(b.account).bills.push(b);
   for (const l of s.loans) if (!lands(l.account)) group(l.account).loans.push(l);
   for (const r of s.recurringIncomes) if (!lands(r.account)) group(r.account).rules.push(r);
   return [...groups.values()]
@@ -1701,6 +1704,44 @@ export function makeRecurring(e: Expense) {
   });
 }
 
+/**
+ * Cancels a bill or subscription from `at`: nothing more is due, reminded or added to expenses.
+ * Its past payments stay in spending.
+ */
+export function cancelBill(bill: Bill, at = Date.now()) {
+  saveBill({ ...bill, cancelledAt: at });
+}
+
+/**
+ * Starts a cancelled bill again from its next due date. A due date that passed while it was
+ * cancelled isn't owed, so this period counts as handled.
+ */
+export function restartBill(bill: Bill, now = new Date()) {
+  const { cancelledAt: _c, ...rest } = bill;
+  saveBill({ ...rest, lastLoggedMonth: billOverdue(rest, now) ? periodKey(rest, now) : rest.lastLoggedMonth });
+}
+
+/** What cancelling has saved so far: each due date since the cancellation, at the bill's amount. */
+export function cancelledSavings(bill: Bill, now = new Date()): { payments: number; saved: number } {
+  if (!bill.cancelledAt) return { payments: 0, saved: 0 };
+  let payments = 0;
+  for (let d = nextDueDate(bill, new Date(bill.cancelledAt + 86_400_000)); d.getTime() <= now.getTime() && payments < 520;
+    d = nextDueDate(bill, new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1))) payments++;
+  return { payments, saved: payments * bill.amount };
+}
+
+/**
+ * Charges from a cancelled subscription's merchant after it was cancelled (a day's grace): the
+ * cancellation may not have gone through.
+ */
+export function chargedAfterCancel(bill: Bill, s: Pick<State, "expenses"> = state): Expense[] {
+  if (!bill.cancelledAt) return [];
+  const key = merchantKey(bill.name);
+  // Tally's own logged payments for the bill aren't charges from the merchant.
+  return s.expenses.filter((e) => !e.pending && !e.id.startsWith(`bill-${bill.id}-`) && e.occurredAt > bill.cancelledAt! + 86_400_000
+    && merchantKey(expenseTitle(e)) === key);
+}
+
 /** Logs a bill's payment for the period as an expense, once: the expense ID is fixed per bill and period. */
 export function logBill(bill: Bill, now = new Date(), opts: { inBalance?: boolean } = {}): Expense {
   const key = periodKey(bill, now);
@@ -1718,7 +1759,7 @@ export function logBill(bill: Bill, now = new Date(), opts: { inBalance?: boolea
 /** Bills set to log automatically whose due date has come this period and that aren't logged yet. */
 export function runDueBills(now = new Date()) {
   for (const bill of state.bills) {
-    if (bill.autoLog && billOverdue(bill, now)) logBill(bill, now);
+    if (bill.autoLog && !bill.cancelledAt && billOverdue(bill, now)) logBill(bill, now);
   }
 }
 

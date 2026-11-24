@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import {
-  billOverdue, billPaid, budgetSpent, deleteBill, deleteBudget, deleteGoal, deleteRecurringIncome, dismissRecurring, logBill, logRecurringIncome, monthSpent, nextDue,
+  billOverdue, billPaid, budgetSpent, cancelBill, cancelledSavings, chargedAfterCancel, deleteBill, restartBill, deleteBudget, deleteGoal, deleteRecurringIncome, dismissRecurring, logBill, logRecurringIncome, monthSpent, nextDue,
   recurringSuggestions, runDueBills, runDueIncome, saveBill, saveBudget, saveGoal, saveRecurringIncome, showToast, uid, useTally,
   deleteLoan, emiThisMonth, logEmi, runDueLoans, saveLoan, accountNamed, likelyAccount, liveBalance, scheduledFlows, type ScheduledFlow,
   type Bill, type Goal, type Loan, type RecurringIncome,
@@ -31,8 +31,11 @@ export function Plan() {
   const isCardEmi = (name: string) => accountNamed(s, name)?.kind === "card";
 
 
-  const upcoming = [...s.bills].sort((a, b) => nextDue(a).getTime() - nextDue(b).getTime());
-  const subsMonthly = s.bills.filter((b) => b.isSubscription).reduce((t, b) => t + monthlyEquivalent(b.amount, b.every), 0);
+  const upcoming = s.bills.filter((b) => !b.cancelledAt).sort((a, b) => nextDue(a).getTime() - nextDue(b).getTime());
+  const cancelled = s.bills.filter((b) => b.cancelledAt).sort((a, b) => b.cancelledAt! - a.cancelledAt!);
+  const [showCancelled, setShowCancelled] = useState(false);
+  const savingMonthly = cancelled.reduce((t, b) => t + monthlyEquivalent(b.amount, b.every), 0);
+  const subsMonthly = upcoming.filter((b) => b.isSubscription).reduce((t, b) => t + monthlyEquivalent(b.amount, b.every), 0);
   const due14 = upcoming.filter((b) => nextDue(b).getTime() - now.getTime() < 14 * 86_400_000).reduce((t, b) => t + b.amount, 0);
   const overall = s.settings.monthlyBudget;
   const spent = monthSpent(s.expenses, now);
@@ -107,6 +110,18 @@ export function Plan() {
             <Icon name="plus" size={18} /> Add bill or subscription
           </button>
         </div>
+        {cancelled.length > 0 && (
+          <>
+            <button className="btn ghost small-btn" style={{ alignSelf: "flex-start" }} aria-expanded={showCancelled} onClick={() => setShowCancelled(!showCancelled)}>
+              {showCancelled ? "Hide cancelled" : `Cancelled (${cancelled.length}) · saving ${formatMoney(savingMonthly)} a month`}
+            </button>
+            {showCancelled && (
+              <div className="card flush divided">
+                {cancelled.map((b) => <CancelledRow key={b.id} bill={b} onOpen={() => setBill(b)} />)}
+              </div>
+            )}
+          </>
+        )}
         {subsMonthly > 0 && (
           <p className="t-muted tiny" style={{ margin: "0 4px" }}>
             Subscriptions cost {formatMoney(subsMonthly)} a month — {formatMoney(subsMonthly * 12)} a year.
@@ -333,6 +348,27 @@ function BudgetEditor({ category, onClose }: { category: Category | null; onClos
 
 const MONTHS = Array.from({ length: 12 }, (_, m) => new Date(2026, m, 1).toLocaleDateString([], { month: "long" }));
 
+function CancelledRow({ bill, onOpen }: { bill: Bill; onOpen: () => void }) {
+  const s = useTally();
+  const { saved } = cancelledSavings(bill);
+  const late = chargedAfterCancel(bill, s);
+  const when = (t: number) => new Date(t).toLocaleDateString([], { day: "numeric", month: "short" });
+  return (
+    <button className="list-row" style={{ width: "100%", border: 0, background: "none", textAlign: "left" }} onClick={onOpen}>
+      <span className="acct-icon"><Icon name="close" size={18} /></span>
+      <span className="grow col" style={{ minWidth: 0 }}>
+        <span className="t-strong ellipsis">{bill.name}</span>
+        {late.length ? (
+          <span className="tiny" style={{ color: "var(--warn)" }}>Charged {formatMoney(late[0].amount)} on {when(late[0].occurredAt)} after you cancelled</span>
+        ) : (
+          <span className="tiny t-muted">Cancelled {when(bill.cancelledAt!)}{saved ? ` · saved ${formatMoney(saved)} so far` : ""}</span>
+        )}
+      </span>
+      <span className="num t-muted" style={{ textDecoration: "line-through" }}>{formatMoney(bill.amount)}</span>
+    </button>
+  );
+}
+
 function BillEditor({ value, onClose }: { value: Bill | "new" | null; onClose: () => void }) {
   const s = useTally();
   const bill = value && value !== "new" ? value : null;
@@ -343,9 +379,13 @@ function BillEditor({ value, onClose }: { value: Bill | "new" | null; onClose: (
       category: "bills" as Category, account: likelyAccount(s, s.bills.map((b) => b.account)), isSubscription: false, autoLog: true, logNow: true, alreadyIn: false };
   };
   const [f, setF] = useState(blank);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelDate, setCancelDate] = useState("");
   const [seen, setSeen] = useState<typeof value>(null);
   if (value !== seen) {
     setSeen(value);
+    setCancelling(false);
+    setCancelDate(new Date().toLocaleDateString("en-CA"));
     setF(bill ? { name: bill.name, amount: String(bill.amount / 100), every: bill.every ?? "month", day: bill.day, weekday: bill.weekday ?? 1,
       month: bill.month ?? 0, category: bill.category, account: bill.account || s.settings.defaultAccount, isSubscription: bill.isSubscription,
       autoLog: bill.autoLog, logNow: false, alreadyIn: false } : blank());
@@ -369,6 +409,7 @@ function BillEditor({ value, onClose }: { value: Bill | "new" | null; onClose: (
       ...(f.every !== "month" ? { every: f.every } : {}),
       ...(f.every === "week" ? { weekday: f.weekday } : {}),
       ...(f.every === "year" ? { month: f.month } : {}),
+      ...(bill?.cancelledAt ? { cancelledAt: bill.cancelledAt } : {}),
       // A new (or re-scheduled) bill already due this period counts as paid unless "log now" is on; then it's logged below.
       lastLoggedMonth: bill && !changedRepeat ? bill.lastLoggedMonth : (askLogNow && f.logNow) || !billOverdue(draft, now) ? "" : periodKey(repeat, now),
     };
@@ -434,7 +475,7 @@ function BillEditor({ value, onClose }: { value: Bill | "new" | null; onClose: (
             hint={`It was due before you entered ${payer.name}'s balance on ${new Date(payer.updatedAt).toLocaleDateString([], { day: "numeric", month: "short" })}. Turn this on if that balance already has it taken out, so it isn't counted twice.`} />
         )}
       </div>
-      {bill && (billPaid(bill, now)
+      {bill && !bill.cancelledAt && (billPaid(bill, now)
         ? <p className="t-muted small" style={{ margin: 0 }}><Icon name="check" size={14} /> This {bill.every ?? "month"}'s payment is in your expenses.</p>
         : billOverdue(bill, now) && (
           <button className="btn block" onClick={() => {
@@ -444,8 +485,65 @@ function BillEditor({ value, onClose }: { value: Bill | "new" | null; onClose: (
           }}>Add this {bill.every ?? "month"}'s payment to expenses</button>
         ))}
       <button className="btn primary block" disabled={!f.name || !p} onClick={save}>Save</button>
+      {bill && <CancelBlock bill={bill} cancelling={cancelling} setCancelling={setCancelling} date={cancelDate} setDate={setCancelDate} onDone={onClose} />}
       {bill && <button className="btn danger block" onClick={() => { deleteBill(bill.id); onClose(); }}>Delete</button>}
     </Sheet>
+  );
+}
+
+/**
+ * Cancel a bill or subscription (from today or the day you cancelled it), or restart a cancelled one.
+ * A cancelled one shows what it has saved, and any charge from it since.
+ */
+function CancelBlock({ bill, cancelling, setCancelling, date, setDate, onDone }: {
+  bill: Bill; cancelling: boolean; setCancelling: (v: boolean) => void; date: string; setDate: (v: string) => void; onDone: () => void;
+}) {
+  const s = useTally();
+  const what = bill.isSubscription ? "subscription" : "bill";
+  const monthly = monthlyEquivalent(bill.amount, bill.every);
+  const today = new Date().toLocaleDateString("en-CA");
+  const when = (t: number) => new Date(t).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
+  if (bill.cancelledAt) {
+    const { payments, saved } = cancelledSavings(bill);
+    const late = chargedAfterCancel(bill, s);
+    return (
+      <div className="card col gap8" style={{ background: "var(--surface-2)" }}>
+        <span className="small t-strong">Cancelled on {when(bill.cancelledAt)}</span>
+        <span className="small t-muted">{payments
+          ? `${payments} payment${payments === 1 ? "" : "s"} skipped so far: ${formatMoney(saved)} saved.`
+          : `It won't be due again. That's ${formatMoney(monthly)} a month you keep.`}</span>
+        {late.length > 0 && (
+          <span className="small" style={{ color: "var(--warn)" }}>
+            {late.length === 1 ? "1 charge" : `${late.length} charges`} from {bill.name} since then ({late.map((e) => `${formatMoney(e.amount)} on ${new Date(e.occurredAt).toLocaleDateString([], { day: "numeric", month: "short" })}`).join(", ")}). Check that the cancellation went through.
+          </span>
+        )}
+        <button className="btn" onClick={() => { restartBill(bill); showToast(`Restarted ${bill.name}`, () => saveBill(bill)); onDone(); }}>Restart this {what}</button>
+      </div>
+    );
+  }
+  if (!cancelling) {
+    return <button className="btn block" onClick={() => setCancelling(true)}><Icon name="close" size={16} />Cancel this {what}</button>;
+  }
+  const at = () => {
+    if (date >= today) return Date.now();
+    const [y, m, d] = date.split("-").map(Number);
+    return new Date(y, m - 1, d, 12).getTime();
+  };
+  return (
+    <div className="card col gap8" style={{ background: "var(--surface-2)" }} role="group" aria-label={`Cancel ${bill.name}`}>
+      <span className="small t-strong">Cancel {bill.name}?</span>
+      <span className="small t-muted">It won't be due again, won't be added to your expenses, and leaves your reminders and totals. Payments already made stay in your spending.</span>
+      <span className="small">You'll keep {formatMoney(monthly)} a month, {formatMoney(monthly * 12)} a year.</span>
+      <Field label="Cancelled on"><input type="date" value={date} max={today} onChange={(e) => setDate(e.target.value || today)} /></Field>
+      <div className="row gap8">
+        <button className="btn danger" onClick={() => {
+          cancelBill(bill, at());
+          showToast(`Cancelled ${bill.name} · keeping ${formatMoney(monthly)} a month`, () => saveBill(bill));
+          onDone();
+        }}>Cancel {what}</button>
+        <button className="btn" onClick={() => setCancelling(false)}>Keep it</button>
+      </div>
+    </div>
   );
 }
 
