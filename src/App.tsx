@@ -7,6 +7,7 @@ import { Activity } from "./screens/Activity";
 import { Reports } from "./screens/Reports";
 import { Accounts } from "./screens/Accounts";
 import { QuickAdd, SmartAdd } from "./screens/AddSheets";
+import { GroupBillAdd } from "./screens/Groups";
 import { Detail } from "./screens/Detail";
 import { IncomeEditor } from "./screens/Calendar";
 import { Plan } from "./screens/Plan";
@@ -26,7 +27,7 @@ type Tab = "home" | "activity" | "reports" | "plan" | "people" | "accounts" | "i
 // Read once at startup, before the tab effect rewrites the URL.
 const INITIAL_SEARCH = typeof location !== "undefined" ? location.search : "";
 let urlHandled = false;
-type SheetName = "quickAdd" | "smartAdd" | "income" | "more" | "search" | "recap" | "recapShare" | "settings" | "feedback" | null;
+type SheetName = "quickAdd" | "smartAdd" | "income" | "groupBill" | "more" | "search" | "recap" | "recapShare" | "settings" | "feedback" | null;
 
 /** `phone`: shown in the phone's tab bar too. Accounts is reached from Home's net worth card there. */
 /** `phone`: in the phone's tab bar, two each side of the add button; the rest are under More. */
@@ -131,6 +132,7 @@ export function App() {
       if (e.key === "n" || e.key === "N") { e.preventDefault(); setSheet("quickAdd"); }
       if (e.key === "s" || e.key === "S") { e.preventDefault(); setSheet("smartAdd"); }
       if (e.key === "i" || e.key === "I") { e.preventDefault(); setSheet("income"); }
+      if (e.key === "g" || e.key === "G") { e.preventDefault(); setSheet("groupBill"); }
       if (e.key === "/") { e.preventDefault(); setSheet("search"); }
     };
     window.addEventListener("keydown", onKey);
@@ -213,7 +215,8 @@ export function App() {
       </Sheet>
 
       <QuickAdd open={sheet === "quickAdd"} initialDate={addDate} onClose={() => { setAddDate(null); close(); }} onSmart={() => setSheet("smartAdd")}
-        onIncome={() => setSheet("income")} />
+        onIncome={() => setSheet("income")} onGroupBill={() => setSheet("groupBill")} />
+      <GroupBillAdd open={sheet === "groupBill"} onClose={close} />
       <IncomeEditor value={incomeValue} onClose={() => { setAddDate(null); close(); }} />
       <SmartAdd open={sheet === "smartAdd"} onClose={close} />
       <Search open={sheet === "search"} onClose={close} onOpen={(e) => { setSheet(null); setDetailId(e.id); }} />

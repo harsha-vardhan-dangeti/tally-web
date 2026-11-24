@@ -93,7 +93,7 @@ export function Sidebar({ items, current, onSelect, onAdd, onIncome, onSmart }: 
         <Icon name="sparkle" size={18} /><span className="nav-label">{t("Smart add")}</span>
       </button>
       <div className="foot">
-        <p className="hint nav-label"><span className="kbd">N</span> expense · <span className="kbd">I</span> income · <span className="kbd">S</span> smart · <span className="kbd">/</span> search</p>
+        <p className="hint nav-label"><span className="kbd">N</span> expense · <span className="kbd">I</span> income · <span className="kbd">G</span> group bill · <span className="kbd">S</span> smart · <span className="kbd">/</span> search</p>
         <p className="hint nav-label"><a href="/">{t("About Tally")}</a> · <a href="/privacy">{t("Privacy")}</a></p>
         <button className="nav fold" onClick={() => fold(!collapsed)} aria-expanded={!collapsed}
           title={collapsed ? "Expand side bar (⌘ \\)" : "Collapse side bar (⌘ \\)"} aria-label={collapsed ? "Expand side bar" : "Collapse side bar"}>

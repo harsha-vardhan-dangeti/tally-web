@@ -16,8 +16,8 @@ const toLocalInput = (d: Date) => {
 };
 
 /** `initialDate` pre-fills the date, e.g. when adding from a day in the calendar. */
-export function QuickAdd({ open, onClose, onSmart, onIncome, initialDate }: {
-  open: boolean; onClose: () => void; onSmart: () => void; onIncome?: () => void; initialDate?: Date | null;
+export function QuickAdd({ open, onClose, onSmart, onIncome, onGroupBill, initialDate }: {
+  open: boolean; onClose: () => void; onSmart: () => void; onIncome?: () => void; onGroupBill?: () => void; initialDate?: Date | null;
 }) {
   const s = useTally();
   const [digits, setDigits] = useState("");
@@ -113,10 +113,11 @@ export function QuickAdd({ open, onClose, onSmart, onIncome, initialDate }: {
   return (
     <Sheet open={open} onClose={onClose} title={t("Quick add")}
       actions={<button className="btn ghost" onClick={onSmart}>{t("Type, speak or scan")}</button>}>
-      {onIncome && (
+      {(onIncome || onGroupBill) && (
         <div className="view-switch kind-switch" role="group" aria-label={t("What are you adding?")}>
           <button aria-pressed="true">{t("Expense")}</button>
-          <button aria-pressed="false" onClick={onIncome}>{t("Income")}</button>
+          {onIncome && <button aria-pressed="false" onClick={onIncome}>{t("Income")}</button>}
+          {onGroupBill && <button aria-pressed="false" onClick={onGroupBill}>Group bill</button>}
         </div>
       )}
       <div className="amount-display" onPointerDown={amtDown} onPointerUp={amtUp}>

@@ -196,7 +196,42 @@ function PaymentRow({ l }: { l: LedgerEntry }) {
 }
 
 /** Add a bill: what it was, how much, who paid, and who it's split between (equally). */
-function BillSheet({ group, onClose }: { group: SplitGroup | null; onClose: () => void }) {
+/** Add a group bill from Quick add: picks up the group you last added to, or offers to make one. */
+export function GroupBillAdd({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const s = useTally();
+  const groups = s.settings.groups;
+  const [groupId, setGroupId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [wasOpen, setWasOpen] = useState(false);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      const last = [...s.expenses].filter((e) => e.group).sort((a, b) => b.createdAt - a.createdAt)[0]?.group;
+      setGroupId(groups.some((g) => g.id === last) ? last! : groups[0]?.id ?? null);
+      setCreating(false);
+    }
+  }
+  const group = open ? groups.find((g) => g.id === groupId) ?? null : null;
+
+  return (
+    <>
+      <BillSheet group={group} onClose={onClose} choices={groups} onPick={(g) => setGroupId(g.id)} />
+      <Sheet open={open && !group && !creating} onClose={onClose} title="New group bill">
+        <div className="col gap8">
+          <span className="t-strong">Make a group first</span>
+          <span className="t-muted small">A group is the people you split with, like your flat or a trip. Make one, then add its bills here.</span>
+        </div>
+        <button className="btn primary block" onClick={() => setCreating(true)}>New group</button>
+      </Sheet>
+      <GroupEditor value={open && creating ? "new" : null} onClose={() => setCreating(false)}
+        onSaved={(g) => { setGroupId(g.id); setCreating(false); }} onDeleted={() => {}} />
+    </>
+  );
+}
+
+function BillSheet({ group, onClose, choices, onPick }: {
+  group: SplitGroup | null; onClose: () => void; choices?: SplitGroup[]; onPick?: (g: SplitGroup) => void;
+}) {
   const s = useTally();
   const [what, setWhat] = useState("");
   const [amount, setAmount] = useState("");
@@ -211,7 +246,10 @@ function BillSheet({ group, onClose }: { group: SplitGroup | null; onClose: () =
   const [seen, setSeen] = useState<SplitGroup | null>(null);
   if (group !== seen) {
     setSeen(group);
-    if (group) {
+    if (group && seen && choices) {
+      // Switched group in Quick add: keep what you typed, start the split over with the new members.
+      setPayer(""); setAmong(["", ...group.members]); setMode("equal"); setValues({});
+    } else if (group) {
       setWhat(""); setAmount(""); setPayer(""); setAmong(["", ...group.members]); setMode("equal"); setValues({}); setDate(toDateInput(Date.now()));
       setCategory("other"); setPicked(false);
       setAccount(likelyAccount(s, s.expenses.filter((e) => e.group && !e.paidBy).map((e) => e.account)));
@@ -275,7 +313,14 @@ function BillSheet({ group, onClose }: { group: SplitGroup | null; onClose: () =
   };
 
   return (
-    <Sheet open onClose={onClose} title={`New bill in ${group.name}`}>
+    <Sheet open onClose={onClose} title={choices ? "New group bill" : `New bill in ${group.name}`}>
+      {choices && (
+        <Field label="Group">
+          <select value={group.id} onChange={(e) => { const g = choices.find((x) => x.id === e.target.value); if (g) onPick?.(g); }}>
+            {choices.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+        </Field>
+      )}
       <Field label="What was it?">
         <input type="text" value={what} maxLength={60} placeholder="Groceries, Rent, Dinner…"
           onChange={(e) => { setWhat(e.target.value); if (!picked) setCategory(guessCategory(e.target.value)); }} />
