@@ -98,13 +98,19 @@ export function Detail({ id, onClose }: { id: string | null; onClose: () => void
         }}>Always put {e.merchant.trim()} in {categoryMeta(e.category).title}</button>
       )}
       <div className="row gap8">
-        <Field label="Paid from"><AccountSelect value={e.account} onChange={(account) => set({ account })} /></Field>
+        {e.paidBy ? (
+          <Field label="Paid by"><input type="text" value={e.paidBy} readOnly aria-describedby="paid-by-note" /></Field>
+        ) : (
+          <Field label="Paid from"><AccountSelect value={e.account} onChange={(account) => set({ account })} /></Field>
+        )}
         <Field label="When">
           <input type="datetime-local" value={toInput(e.occurredAt)}
             onChange={(ev) => { const t = new Date(ev.target.value).getTime(); if (!Number.isNaN(t)) set({ occurredAt: t }); }} />
         </Field>
       </div>
-      <AccountHint account={e.account} amount={0} />
+      {e.paidBy
+        ? <span id="paid-by-note" className="tiny t-muted" style={{ marginTop: -6 }}>{e.paidBy} paid this, so it doesn't come out of any of your accounts.</span>
+        : <AccountHint account={e.account} amount={0} />}
       <Field label="Note"><textarea rows={2} value={e.note} onChange={(ev) => set({ note: ev.target.value })} /></Field>
       <TagsField tags={e.tags ?? []} onChange={(tags) => set({ tags: tags.length ? tags : undefined })} />
 
@@ -128,7 +134,7 @@ export function Detail({ id, onClose }: { id: string | null; onClose: () => void
             {splitNames(e.splitWith).length > 0 && (
               <label className="field">
                 <span>{t("Who paid?")}</span>
-                <select value={e.paidBy ?? ""} onChange={(ev) => set({ paidBy: ev.target.value || undefined })}>
+                <select value={e.paidBy ?? ""} onChange={(ev) => set({ paidBy: ev.target.value || undefined, ...(ev.target.value ? { account: "" } : e.account ? {} : { account: s.settings.defaultAccount }) })}>
                   <option value="">{t("You")}</option>
                   {splitNames(e.splitWith).map((n) => <option key={n} value={n}>{n}</option>)}
                 </select>

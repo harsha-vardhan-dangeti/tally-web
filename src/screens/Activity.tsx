@@ -21,7 +21,7 @@ export function ExpenseRowView({ e }: { e: Expense }) {
       <div className="grow col gap4">
         <span className="t-strong ellipsis">{expenseTitle(e)}</span>
         <span className="t-muted tiny ellipsis">
-          {categoryMeta(e.category).title}{e.sub ? ` · ${e.sub}` : ""} · {e.account} · {time}{e.exclude ? " · not in budget" : ""}
+          {categoryMeta(e.category).title}{e.sub ? ` · ${e.sub}` : ""} · {e.paidBy ? `${e.paidBy} paid` : e.account} · {time}{e.exclude ? " · not in budget" : ""}
           {e.tags?.length ? ` · ${e.tags.map((x) => `#${x}`).join(" ")}` : ""}
         </span>
       </div>

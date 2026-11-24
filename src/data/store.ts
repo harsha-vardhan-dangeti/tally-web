@@ -520,7 +520,7 @@ export function addExpense(input: NewExpense): Expense {
   const before = monthSpent(state.expenses, new Date());
   const e: Expense = {
     id: input.id ?? uid(), amount: input.amount, merchant: input.merchant ?? "", note: input.note ?? "",
-    category: toCategory(input.category), account: resolveAccount(input.account || state.settings.defaultAccount),
+    category: toCategory(input.category), account: input.paidBy && !input.account ? "" : resolveAccount(input.account || state.settings.defaultAccount),
     occurredAt: input.occurredAt ?? Date.now(), createdAt: Date.now(), source: input.source,
     pending: input.pending ?? false, splitWays: Math.max(input.splitWays ?? 1, 1), splitWith: input.splitWith ?? "",
     exclude: false, recurring: false, ...(input.paidBy ? { paidBy: input.paidBy } : {}),

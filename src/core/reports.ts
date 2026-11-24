@@ -86,8 +86,8 @@ export function groupSpending(list: Expense[], by: GroupBy): GroupRow[] {
       add(e, `${e.category}:${e.sub ?? ""}`, e.sub ? `${title} · ${e.sub}` : title);
       continue;
     }
-    const key = by === "category" ? e.category : by === "account" ? e.account || "Other" : placeOf(e).toLowerCase();
-    const label = by === "category" ? categoryMeta(e.category).title : by === "account" ? e.account || "Other" : placeOf(e);
+    const key = by === "category" ? e.category : by === "account" ? e.account || (e.paidBy ? "Paid by others" : "Other") : placeOf(e).toLowerCase();
+    const label = by === "category" ? categoryMeta(e.category).title : by === "account" ? e.account || (e.paidBy ? "Paid by others" : "Other") : placeOf(e);
     add(e, key, label);
   }
   const total = [...map.values()].reduce((t, r) => t + r.total, 0);
