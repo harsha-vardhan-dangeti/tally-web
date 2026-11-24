@@ -16,6 +16,16 @@ describe("group bills", () => {
   it("someone else paid and you're in it: you owe them your share", () => {
     expect(planGroupBill(1200_00, "Ravi", ["", "Ravi", "Priya", "Arjun"])).toMatchObject({ kind: "expense", splitWays: 4, paidBy: "Ravi", yourShare: 300_00 });
   });
+  it("someone else paid all of it for you: your expense, and you owe them all of it", () => {
+    const plan = planGroupBill(500_00, "Ravi", [""]);
+    expect(plan).toEqual({ kind: "expense", splitWays: 1, splitWith: "", paidBy: "Ravi", yourShare: 500_00, each: 500_00 });
+    // The same when typed as amounts: you 500, nobody else.
+    expect(planGroupBill(500_00, "Ravi", [], [{ person: "", amount: 500_00 }])).toMatchObject({ kind: "expense", splitWays: 1, paidBy: "Ravi" });
+    const bill = exp({ id: "all", amount: 500_00, splitWays: 1, paidBy: "Ravi", group: "g1" });
+    expect(myShareOf(bill)).toBe(500_00);
+    expect(people([bill], []).find((p) => p.name === "Ravi")?.balance).toBe(-500_00);
+    expect(groupStanding({ id: "g1", members: ["Ravi"] }, [bill], []).youOwe).toBe(500_00);
+  });
   it("you paid for others only: lent to each, adding up exactly", () => {
     const plan = planGroupBill(100_01, "", ["Ravi", "Priya"]);
     expect(plan).toEqual({ kind: "lent", each: 50_00, entries: [{ person: "Ravi", amount: 50_01 }, { person: "Priya", amount: 50_00 }] });

@@ -99,7 +99,13 @@ export function Detail({ id, onClose }: { id: string | null; onClose: () => void
       )}
       <div className="row gap8">
         {e.paidBy ? (
-          <Field label="Paid by"><input type="text" value={e.paidBy} readOnly aria-describedby="paid-by-note" /></Field>
+          <Field label="Paid by">
+            <select value={e.paidBy} aria-describedby="paid-by-note"
+              onChange={(ev) => set({ paidBy: ev.target.value || undefined, ...(ev.target.value ? { account: "" } : { account: e.account || s.settings.defaultAccount }) })}>
+              <option value="">{t("You")}</option>
+              {[...new Set([e.paidBy, ...splitNames(e.splitWith)])].map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </Field>
         ) : (
           <Field label="Paid from"><AccountSelect value={e.account} onChange={(account) => set({ account })} /></Field>
         )}

@@ -289,7 +289,7 @@ function BillSheet({ group, onClose, choices, onPick }: {
   const summary = !paise || !plan ? "" : plan.kind === "none"
     ? "This bill doesn't include you, so it doesn't change what anyone owes you or you owe."
     : plan.kind === "lent" ? (unequal ? plan.entries.map((x) => `${x.person} owes you ${formatMoney(x.amount)}`).join(". ") + "." : `${names(others)} each owe you about ${formatMoney(plan.each)}.`)
-    : plan.splitWays === 1 ? "Just you: it's added to your spending."
+    : plan.splitWays === 1 ? (payer ? `It was all for you: ${formatMoney(paise)} goes to your spending, and you owe ${payer} ${formatMoney(paise)}.` : "Just you: it's added to your spending.")
     : payer ? `Your share is ${formatMoney(plan.yourShare)}. You'll owe ${payer} that.`
     : unequal ? `Your share is ${formatMoney(plan.yourShare)}. ${owers.map(([n, v]) => `${n} owes you ${formatMoney(v)}`).join(", ")}.`
     : `${formatMoney(plan.each)} each. ${names(others)} ${others.length === 1 ? "owes" : "each owe"} you ${formatMoney(plan.each)}.`;

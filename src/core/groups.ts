@@ -5,7 +5,8 @@ import { yourShare } from "./smartParser";
  * Splitwise-style groups, from your side: a bill only matters to you when you paid it or you're in
  * the split. It's stored the way Tally already stores splits, so People and your spending follow:
  *  - you paid and you're in it → one split expense (amount, ways, who it's split with);
- *  - someone else paid and you're in it → a split expense with `paidBy`: you owe them your share;
+ *  - someone else paid and you're in it → a split expense with `paidBy`: you owe them your share
+ *    (all of it when it was only for you);
  *  - you paid for others only → money lent to each of them;
  *  - someone else paid and you're not in it → nothing changes between you and anyone.
  */
@@ -54,7 +55,7 @@ export function planGroupBill(amount: number, paidBy: string, among: string[], s
     const each = yourShare(amount, list.length);
     return { kind: "expense", splitWays: list.length, splitWith: others.join(", "), ...(payer ? { paidBy: payer } : {}), yourShare: each, each };
   }
-  if (you) return payer ? { kind: "none" } : { kind: "expense", splitWays: 1, splitWith: "", yourShare: amount, each: amount };
+  if (you) return { kind: "expense", splitWays: 1, splitWith: "", ...(payer ? { paidBy: payer } : {}), yourShare: amount, each: amount };
   if (payer) return { kind: "none" };
   // Shares that add up exactly: the first ones take the leftover paise.
   const base = Math.floor(amount / others.length), extra = amount - base * others.length;
@@ -88,7 +89,7 @@ function planUnequal(amount: number, payer: string, shares: Share[]): BillPlan {
     return { kind: "expense", splitWays: list.length, splitWith: others.map((x) => x.person).join(", "), ...(payer ? { paidBy: payer } : {}),
       yourShare: mine, each: mine, myShare: mine, shares: Object.fromEntries(others.map((x) => [x.person, x.amount])) };
   }
-  if (mine > 0) return payer ? { kind: "none" } : { kind: "expense", splitWays: 1, splitWith: "", yourShare: amount, each: amount };
+  if (mine > 0) return { kind: "expense", splitWays: 1, splitWith: "", ...(payer ? { paidBy: payer } : {}), yourShare: amount, each: amount };
   if (payer) return { kind: "none" };
   return { kind: "lent", entries: others, each: 0 };
 }

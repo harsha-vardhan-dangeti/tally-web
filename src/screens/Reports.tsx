@@ -45,7 +45,7 @@ export function Reports() {
   const rate = savingsRate(totalIn, spendingTotal);
   const months = useMemo(() => monthlyCashFlow(s.expenses, tag ? [] : s.incomes, range, filter), [s.expenses, s.incomes, range, category, account, tag]); // eslint-disable-line react-hooks/exhaustive-deps
   const days = Math.max(1, Math.round((Math.min(range[1].getTime(), Date.now()) - range[0].getTime()) / 86_400_000));
-  const accounts = useMemo(() => [...new Set([...s.expenses.map((e) => e.account), ...s.incomes.map((x) => x.account)].filter(Boolean))].sort(), [s.expenses, s.incomes]);
+  const accounts = useMemo(() => [...new Set([...s.expenses.filter((e) => !e.paidBy).map((e) => e.account), ...s.incomes.map((x) => x.account)].filter(Boolean))].sort(), [s.expenses, s.incomes]);
   const rangeText = `${range[0].toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })} – ${new Date(range[1].getTime() - 1).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })}`;
 
   // The flow: income sources in, spending groups and savings out. Small groups fold into "Other".

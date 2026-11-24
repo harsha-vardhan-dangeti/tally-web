@@ -86,7 +86,8 @@ export function people(expenses: SplitExpense[], ledger: LedgerLine[]): Person[]
     map.set(key, p);
   };
   for (const e of expenses) {
-    if (e.pending || e.splitWays < 2) continue;
+    // Someone who paid the whole thing for you is owed all of it, even though it isn't split.
+    if (e.pending || (e.splitWays < 2 && !e.paidBy?.trim())) continue;
     const title = e.merchant || e.note || "Shared expense";
     const payer = e.paidBy?.trim();
     if (payer) {

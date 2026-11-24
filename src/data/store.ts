@@ -314,6 +314,7 @@ export async function load() {
     restorePointAt: restorePoint?.savedAt ?? null,
   });
   if (chips.length === 0) await seedChips();
+  clearPaidByAccounts();
   runDueBills();
   runDueIncome();
   runDueLoans();
@@ -321,6 +322,19 @@ export async function load() {
   runDueCardPayments();
   // Ask the browser not to evict our data under storage pressure.
   navigator.storage?.persist?.().catch(() => {});
+}
+
+/**
+ * A bill someone else paid doesn't come out of any of your accounts. Older versions saved your
+ * default account on it anyway; this clears that (and syncs it) so Reports group it right.
+ */
+export function clearPaidByAccounts() {
+  const stale = state.expenses.filter((e) => e.paidBy?.trim() && e.account);
+  if (!stale.length) return 0;
+  const fixed = new Map(stale.map((e) => [e.id, { ...e, account: "" }]));
+  set({ expenses: state.expenses.map((e) => fixed.get(e.id) ?? e) });
+  for (const e of fixed.values()) void persist("expenses", e);
+  return fixed.size;
 }
 
 /** Settings as stored (perhaps by another device or an older version), with every list made safe to use. */
@@ -520,7 +534,7 @@ export function addExpense(input: NewExpense): Expense {
   const before = monthSpent(state.expenses, new Date());
   const e: Expense = {
     id: input.id ?? uid(), amount: input.amount, merchant: input.merchant ?? "", note: input.note ?? "",
-    category: toCategory(input.category), account: input.paidBy && !input.account ? "" : resolveAccount(input.account || state.settings.defaultAccount),
+    category: toCategory(input.category), account: input.paidBy?.trim() ? "" : resolveAccount(input.account || state.settings.defaultAccount),
     occurredAt: input.occurredAt ?? Date.now(), createdAt: Date.now(), source: input.source,
     pending: input.pending ?? false, splitWays: Math.max(input.splitWays ?? 1, 1), splitWith: input.splitWith ?? "",
     exclude: false, recurring: false, ...(input.paidBy ? { paidBy: input.paidBy } : {}),

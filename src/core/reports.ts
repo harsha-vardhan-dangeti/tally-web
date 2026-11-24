@@ -50,7 +50,7 @@ export function expensesIn(expenses: Expense[], [start, end]: [Date, Date], filt
   const a = start.getTime(), b = end.getTime();
   return expenses.filter((e) => counted(e) && e.occurredAt >= a && e.occurredAt < b
     && (!filter.categories?.length || filter.categories.includes(e.category))
-    && (!filter.accounts?.length || filter.accounts.includes(e.account))
+    && (!filter.accounts?.length || (!e.paidBy && filter.accounts.includes(e.account)))
     && (!filter.tag || (e.tags ?? []).includes(filter.tag)));
 }
 
@@ -86,8 +86,8 @@ export function groupSpending(list: Expense[], by: GroupBy): GroupRow[] {
       add(e, `${e.category}:${e.sub ?? ""}`, e.sub ? `${title} · ${e.sub}` : title);
       continue;
     }
-    const key = by === "category" ? e.category : by === "account" ? e.account || (e.paidBy ? "Paid by others" : "Other") : placeOf(e).toLowerCase();
-    const label = by === "category" ? categoryMeta(e.category).title : by === "account" ? e.account || (e.paidBy ? "Paid by others" : "Other") : placeOf(e);
+    const key = by === "category" ? e.category : by === "account" ? (e.paidBy ? "Paid by others" : e.account || "Other") : placeOf(e).toLowerCase();
+    const label = by === "category" ? categoryMeta(e.category).title : by === "account" ? (e.paidBy ? "Paid by others" : e.account || "Other") : placeOf(e);
     add(e, key, label);
   }
   const total = [...map.values()].reduce((t, r) => t + r.total, 0);
