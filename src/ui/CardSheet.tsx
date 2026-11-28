@@ -71,11 +71,14 @@ export function CardSheet({ cardId, onClose, onEdit, onOpenExpense }: {
         </div>
         {bill && (
           <dl className="networth-split">
-            <div><dt>{bill.due ? `Due ${short(bill.due.date)}` : "Bill"}</dt><dd className="num">{bill.due ? money(bill.due.amount) : "Nothing due"}</dd></div>
+            <div>
+              <dt style={bill.overdue ? { color: "var(--danger)" } : undefined}>{bill.overdue ? `Overdue · was due ${short(bill.overdue.date)}` : bill.due ? `Pay by ${short(bill.due.date)}` : "Bill"}</dt>
+              <dd className="num" style={bill.overdue ? { color: "var(--danger)" } : undefined}>{bill.overdue ? money(bill.overdue.amount) : bill.due ? money(bill.due.amount) : "Nothing due"}</dd>
+            </div>
             <div><dt>Since the statement</dt><dd className="num">{bill.unbilled === null ? "—" : money(bill.unbilled)}</dd></div>
           </dl>
         )}
-        {bill && <span className="tiny t-muted">Next statement {short(bill.nextStatement)}{a.autoPay && a.payFrom ? ` · bill paid from ${s.accounts.find((x) => x.id === a.payFrom)?.name ?? "another account"}` : ""}</span>}
+        {bill && <span className="tiny t-muted">Next statement {short(bill.nextStatement)}, to pay by {short(bill.nextDue)}{a.autoPay && a.payFrom ? ` · bill paid from ${s.accounts.find((x) => x.id === a.payFrom)?.name ?? "another account"}` : ""}</span>}
         {usage && (
           <div className="col gap4">
             <Progress value={usage.share} tone={usage.tone === "over" ? "over" : usage.tone === "near" ? "warn" : "ok"} />

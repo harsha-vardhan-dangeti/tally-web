@@ -123,6 +123,7 @@ export function Accounts({ onOpen }: { onOpen?: (e: Expense) => void } = {}) {
                       <span className="grow col">
                         <span className="t-strong">{acct.name}</span>
                         <span className="t-muted tiny">{ACCOUNT_KIND_LABEL[acct.kind]} · {acct.kind === "investment" ? `value as of ${new Date(acct.updatedAt).toLocaleDateString([], { day: "numeric", month: "short" })}` : acct.tracked ? "follows your expenses and income" : `balance you entered ${new Date(acct.updatedAt).toLocaleDateString([], { day: "numeric", month: "short" })} · doesn't follow transactions`}</span>
+                        <CardDue acct={acct} />
                         <CardLine acct={acct} />
                         <InvestLine acct={acct} />
                       </span>
@@ -248,13 +249,46 @@ function AccountBalance({ acct }: { acct: Account }) {
 }
 
 /** A credit card's bill: what's due and when, and what's been spent since the statement. */
+/** "today", "tomorrow", "in 4 days" until a date; "3 days ago" after it. */
+function whenText(date: Date, now = new Date()): string {
+  const days = Math.round((new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime() - new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) / 86_400_000);
+  if (days === 0) return "today";
+  if (days === 1) return "tomorrow";
+  if (days === -1) return "yesterday";
+  return days > 0 ? `in ${days} days` : `${-days} days ago`;
+}
+const dueDay = (d: Date) => d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
+
+/** A card's bill, said plainly: how much to pay and the last day to pay it. */
+function CardDue({ acct }: { acct: Account }) {
+  const s = useTally();
+  if (acct.kind !== "card") return null;
+  const bill = cardStatus(acct, s);
+  if (!bill) return <span className="tiny t-muted">Add its statement and due days to see each bill and when to pay it</span>;
+  const payer = acct.autoPay && acct.payFrom ? s.accounts.find((a) => a.id === acct.payFrom)?.name : null;
+  if (bill.overdue) {
+    return (
+      <span className="card-due over small">
+        <Icon name="alert" size={14} />{formatMoney(bill.overdue.amount)} overdue · was due {dueDay(bill.overdue.date)} ({whenText(bill.overdue.date)})
+      </span>
+    );
+  }
+  if (bill.due) {
+    const soon = bill.due.date.getTime() - Date.now() < 4 * 86_400_000;
+    return (
+      <span className={`card-due small${soon ? " soon" : ""}`}>
+        Pay {formatMoney(bill.due.amount)} by {dueDay(bill.due.date)} · {whenText(bill.due.date)}{payer ? ` · paid automatically from ${payer}` : ""}
+      </span>
+    );
+  }
+  return <span className="tiny t-muted">Nothing due now · next statement {shortDate(bill.nextStatement)}, to pay by {shortDate(bill.nextDue)}</span>;
+}
+
 function CardLine({ acct }: { acct: Account }) {
   const s = useTally();
   const bill = cardStatus(acct, s);
   const usage = cardLimitUsage(acct, s);
   if (!bill && !usage) return null;
-  const soon = bill?.due && bill.due.date.getTime() - Date.now() < 4 * 86_400_000;
-  const payer = acct.autoPay && acct.payFrom ? s.accounts.find((a) => a.id === acct.payFrom)?.name : null;
   return (
     <>
       {usage && (
@@ -267,12 +301,7 @@ function CardLine({ acct }: { acct: Account }) {
           </span>
         </span>
       )}
-      {bill && (
-        <span className="tiny" style={{ color: soon ? "var(--warn)" : "var(--muted)" }}>
-          {bill.due ? `${formatMoney(bill.due.amount)} due ${shortDate(bill.due.date)}${payer ? `, paid from ${payer}` : ""}` : `Next statement ${shortDate(bill.nextStatement)}`}
-          {bill.unbilled ? ` · ${formatMoney(bill.unbilled)} spent since the statement` : ""}
-        </span>
-      )}
+      {bill?.unbilled ? <span className="tiny t-muted">{formatMoney(bill.unbilled)} spent since the statement, on the next bill</span> : null}
     </>
   );
 }
@@ -307,6 +336,14 @@ function investSummary(s: ReturnType<typeof useTally>): string {
 
 /** "₹14,000 of ₹1,50,000 used" across the cards that have a limit. */
 function cardsSummary(cards: Account[], s: ReturnType<typeof useTally>): string {
+  // What's to pay first: the total billed and the earliest last day to pay it.
+  const bills = cards.map((c) => cardStatus(c, s)).flatMap((b) => (b?.overdue ? [b.overdue] : b?.due ? [b.due] : []));
+  const late = cards.map((c) => cardStatus(c, s)?.overdue).filter((b): b is NonNullable<typeof b> => !!b);
+  if (late.length) return `${formatMoney(late.reduce((t, b) => t + b.amount, 0))} overdue`;
+  if (bills.length) {
+    const first = bills.reduce((a, b) => (b.date < a.date ? b : a));
+    return `${formatMoney(bills.reduce((t, b) => t + b.amount, 0))} to pay · first by ${shortDate(first.date)}`;
+  }
   const usages = cards.map((c) => cardLimitUsage(c, s)).filter((u): u is NonNullable<typeof u> => !!u);
   if (!usages.length) return "";
   const used = usages.reduce((t, u) => t + u.used, 0), limit = usages.reduce((t, u) => t + u.limit, 0);

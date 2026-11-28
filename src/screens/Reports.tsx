@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { useTally } from "../data/store";
+import { billPayments, expenseTitle, share, useTally, type Bill, type Expense } from "../data/store";
+import { EVERY_LABEL, nextDueDate, WEEKDAYS } from "../core/schedule";
 import { allCategories, categoryMeta, type Category } from "../core/categories";
 import {
   expensesIn, GROUP_LABEL, groupSpending, incomeBySource, incomesIn, monthlyCashFlow, PERIOD_LABEL, periodRange, savingsRate,
@@ -18,11 +19,23 @@ const GROUP_PLURAL: Record<GroupBy, string> = { category: "Categories", sub: "Su
 const TABS: [Tab, string][] = [["flow", "Cash flow"], ["spending", "Spending"], ["month", "Month in detail"]];
 
 const isoDay = (d: Date) => d.toLocaleDateString("en-CA");
+const ordinal = (n: number) => `${n}${n % 10 === 1 && n !== 11 ? "st" : n % 10 === 2 && n !== 12 ? "nd" : n % 10 === 3 && n !== 13 ? "rd" : "th"}`;
+const dayMonth = (d: Date | number) => new Date(d).toLocaleDateString([], { day: "numeric", month: "short" });
+const ROWS = 15;
+
+/** "Every month on the 25th", "Every Monday", "Every year on 3 Mar". */
+function billSchedule(b: Bill): string {
+  const every = b.every ?? "month";
+  if (every === "week") return `Every ${WEEKDAYS[b.weekday ?? 1]}`;
+  if (every === "year") return `${EVERY_LABEL.year} on ${dayMonth(new Date(2026, b.month ?? 0, b.day))}`;
+  return `${EVERY_LABEL.month} on the ${ordinal(b.day)}`;
+}
 const fromIso = (s: string) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); };
 
 /** Reports: income and spending over any period, grouped and filtered the way you ask. */
-export function Reports() {
+export function Reports({ onOpen }: { onOpen?: (e: Expense) => void }) {
   const s = useTally();
+  const [allRows, setAllRows] = useState(false);
   const [tab, setTab] = useState<Tab>("flow");
   const [period, setPeriod] = useState<Period>("this-month");
   const now = new Date();
@@ -46,6 +59,9 @@ export function Reports() {
   const months = useMemo(() => monthlyCashFlow(s.expenses, tag ? [] : s.incomes, range, filter), [s.expenses, s.incomes, range, category, account, tag]); // eslint-disable-line react-hooks/exhaustive-deps
   const days = Math.max(1, Math.round((Math.min(range[1].getTime(), Date.now()) - range[0].getTime()) / 86_400_000));
   const accounts = useMemo(() => [...new Set([...s.expenses.filter((e) => !e.paidBy).map((e) => e.account), ...s.incomes.map((x) => x.account)].filter(Boolean))].sort(), [s.expenses, s.incomes]);
+  const billsHere = useMemo(() => (category ? s.bills.filter((b) => b.category === category) : []), [s.bills, category]);
+  const rows = useMemo(() => [...spent].sort((a, b) => b.occurredAt - a.occurredAt), [spent]);
+  const title = category ? categoryMeta(category).title : "";
   const rangeText = `${range[0].toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })} – ${new Date(range[1].getTime() - 1).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" })}`;
 
   // The flow: income sources in, spending groups and savings out. Small groups fold into "Other".
@@ -103,7 +119,12 @@ export function Reports() {
               </select>
             </label>
             <label className="field"><span>Category</span>
-              <select value={category} onChange={(e) => setCategory(e.target.value)}>
+              <select value={category} onChange={(e) => {
+                setCategory(e.target.value as Category | "");
+                setAllRows(false);
+                // One category grouped by category is a single bar: show it by subcategory or place instead.
+                if (e.target.value && groupBy === "category") setGroupBy((s.settings.subcategories[e.target.value] ?? []).length ? "sub" : "merchant");
+              }}>
                 <option value="">All categories</option>
                 {allCategories().map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
               </select>
@@ -172,6 +193,7 @@ export function Reports() {
               )}
             </>
           ) : (
+            <>
             <ChartCard className="span-2" title={`Spending by ${GROUP_LABEL[groupBy].toLowerCase()}`} subtitle={`${formatMoney(spendingTotal)} across ${groups.length} · ${rangeText}`}
               legend={<button className="btn ghost small-btn" onClick={exportCsv}><Icon name="download" size={16} />Export CSV</button>}
               table={<DataTable head={[GROUP_LABEL[groupBy], "Spent", "Share", "Expenses", "Average"]}
@@ -183,6 +205,75 @@ export function Reports() {
               }))} />
               {groups.length > 25 && <p className="viz-foot">The rest ({groups.length - 25} more) are in the table and the export.</p>}
             </ChartCard>
+
+            {category && (
+              <section className="col gap8 span-2" aria-label={`Bills in ${title}`}>
+                <div className="section-title"><span>Bills and subscriptions in {title}</span>
+                  {billsHere.length > 0 && (() => {
+                    const paid = billsHere.reduce((t, b) => t + billPayments(b, spent).reduce((u, e) => u + share(e), 0), 0);
+                    return <span className="t-muted small num">{paid ? `${formatMoney(paid)} paid in this period` : "None paid in this period"}</span>;
+                  })()}
+                </div>
+                {billsHere.length === 0 ? (
+                  <div className="card"><p className="t-muted small" style={{ margin: 0 }}>No bills or subscriptions in {title}. Ones you add in Plan with this category show up here, with what each cost in the period.</p></div>
+                ) : (
+                  <div className="card flush divided">
+                    {billsHere.map((b) => {
+                      const paid = billPayments(b, spent);
+                      const paidTotal = paid.reduce((t, e) => t + share(e), 0);
+                      return (
+                        <div key={b.id} className="list-row">
+                          <CategoryIcon category={b.category} size={32} />
+                          <span className="grow col" style={{ minWidth: 0 }}>
+                            <span className="t-strong ellipsis">{b.name}{b.isSubscription ? <span className="t-muted tiny"> · subscription</span> : null}</span>
+                            <span className="tiny t-muted ellipsis">
+                              {formatMoney(b.amount)} · {billSchedule(b)} · {b.cancelledAt ? `cancelled ${dayMonth(b.cancelledAt)}` : `next due ${dayMonth(nextDueDate(b))}`}
+                            </span>
+                          </span>
+                          <span className="col" style={{ alignItems: "flex-end" }}>
+                            <span className="t-strong num">{paid.length ? formatMoney(paidTotal) : "—"}</span>
+                            <span className="tiny t-muted">{paid.length ? `paid ${paid.length === 1 ? "once" : `${paid.length} times`}` : "not paid in this period"}</span>
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            )}
+
+            <section className="col gap8 span-2" aria-label="Expenses in this report">
+              <div className="section-title"><span>{category ? `Every ${title} expense` : "Every expense"}</span>
+                <span className="t-muted small num">{rows.length} · {formatMoney(spendingTotal)}</span>
+              </div>
+              <div className="card flush divided">
+                {(allRows ? rows : rows.slice(0, ROWS)).map((e) => {
+                  const isBill = billsHere.some((b) => billPayments(b, [e]).length > 0) || e.id.startsWith("bill-");
+                  const body = (
+                    <>
+                      <CategoryIcon category={e.category} size={32} />
+                      <span className="grow col" style={{ minWidth: 0 }}>
+                        <span className="t-strong ellipsis">{expenseTitle(e)}</span>
+                        <span className="tiny t-muted ellipsis">
+                          {[dayMonth(e.occurredAt), category ? e.sub : categoryMeta(e.category).title, isBill ? "bill" : "", e.paidBy ? `${e.paidBy} paid` : e.account].filter(Boolean).join(" · ")}
+                        </span>
+                      </span>
+                      <span className="col" style={{ alignItems: "flex-end" }}>
+                        <span className="t-strong num">{formatMoney(share(e))}</span>
+                        {e.splitWays > 1 && <span className="tiny t-muted num">of {formatMoney(e.amount)}</span>}
+                      </span>
+                    </>
+                  );
+                  return onOpen
+                    ? <button key={e.id} className="list-row row-btn" onClick={() => onOpen(e)} aria-label={`Open ${expenseTitle(e)}`}>{body}</button>
+                    : <div key={e.id} className="list-row">{body}</div>;
+                })}
+              </div>
+              {rows.length > ROWS && (
+                <button className="btn ghost" style={{ alignSelf: "center" }} onClick={() => setAllRows(!allRows)}>{allRows ? "Show fewer" : `Show all ${rows.length}`}</button>
+              )}
+            </section>
+            </>
           )}
         </>
       )}

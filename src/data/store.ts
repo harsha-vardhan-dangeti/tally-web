@@ -1756,6 +1756,12 @@ export function chargedAfterCancel(bill: Bill, s: Pick<State, "expenses"> = stat
     && merchantKey(expenseTitle(e)) === key);
 }
 
+/** A bill's payments among these expenses: the ones Tally logged for it, and ones you logged under its name. */
+export function billPayments(bill: Bill, list: Expense[]): Expense[] {
+  const key = merchantKey(bill.name);
+  return list.filter((e) => !e.pending && (e.id.startsWith(`bill-${bill.id}-`) || (!!key && merchantKey(expenseTitle(e)) === key)));
+}
+
 /** Logs a bill's payment for the period as an expense, once: the expense ID is fixed per bill and period. */
 export function logBill(bill: Bill, now = new Date(), opts: { inBalance?: boolean } = {}): Expense {
   const key = periodKey(bill, now);

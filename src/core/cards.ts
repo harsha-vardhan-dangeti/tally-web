@@ -35,6 +35,13 @@ export function cardCycle(statementDay: number, dueDay: number, now = new Date()
 export interface CardBill {
   /** Billed on the last statement and still owed, or null when the due date has passed. */
   due: { amount: number; date: Date } | null;
+  /**
+   * Billed on the last statement, its due date passed, and still not paid. Only known when Tally
+   * follows the card's transactions (payments to it are transfers); otherwise null.
+   */
+  overdue: { amount: number; date: Date } | null;
+  /** When the bill being built now (the next statement's) will be due. */
+  nextDue: Date;
   /** Spent since the last statement (known only when the card follows its transactions). */
   unbilled: number | null;
   nextStatement: Date;
@@ -50,6 +57,8 @@ export function cardBill(owed: number, spentSince: number | null, statementDay: 
   const billed = Math.max(0, owed - (spentSince ?? 0));
   return {
     due: billed > 0 && c.dueDate >= today ? { amount: billed, date: c.dueDate } : null,
+    overdue: billed > 0 && spentSince !== null && c.dueDate < today ? { amount: billed, date: c.dueDate } : null,
+    nextDue: c.nextDueDate,
     unbilled: spentSince,
     nextStatement: c.nextStatement,
   };

@@ -1,10 +1,12 @@
 import { t } from "../i18n";
 import { useMemo, useRef, useState } from "react";
 import {
-  addExpense, counts, deleteChip, deleteExpense, expenseTitle, inMonth, makeRecurring, saveChip, share,
+  addExpense, counts, deleteChip, deleteExpense, expenseTitle, makeRecurring, saveChip, share,
   showToast, uid, updateExpense, useTally, type Chip, type Expense, type Income,
 } from "../data/store";
-import { addMonths, monthLabel, sameDay, startOfDay } from "../core/budget";
+import { addMonths, monthLabel, monthRange, sameDay, startOfDay } from "../core/budget";
+import { activityItems, type ActivityItem } from "../data/activity";
+import { IncomeRowView, MoveRowView, MoveSheet, type MoveItem } from "./ActivityRows";
 import { formatMoney, parsePaise, currencySymbol } from "../core/money";
 import { categoryMeta, type Category } from "../core/categories";
 import { CategoryIcon, Icon } from "../ui/icons";
@@ -74,11 +76,18 @@ export function ChipButton({ chip, onEdit }: { chip: Chip; onEdit: (c: Chip) => 
   );
 }
 
-/** Every expense, month by month, as a list or a calendar, filtered by category. */
+/** What the Activity list is narrowed to: a category of expenses, or one kind of money movement. */
+type Filter = Category | "@income" | "@transfer" | "@people";
+const KIND_CHIPS: [Filter, ActivityItem["kind"], string][] = [["@income", "income", "Income"], ["@transfer", "transfer", "Transfers"], ["@people", "people", "With people"]];
+const isKind = (f: Filter | null): f is "@income" | "@transfer" | "@people" => !!f && f.startsWith("@");
+
+/** Everything that happened, month by month, as a list or a calendar: expenses, income, transfers and money with people. */
 export function Activity({ onOpen, onAdd, onSearch }: { onOpen: (e: Expense) => void; onAdd: (day?: Date) => void; onSearch: () => void }) {
   const s = useTally();
   const [offset, setOffset] = useState(0);
-  const [cat, setCat] = useState<Category | null>(null);
+  const [filter, setFilter] = useState<Filter | null>(null);
+  const cat = isKind(filter) ? null : filter;
+  const [moving, setMoving] = useState<MoveItem | null>(null);
   const [view, setView] = useState<"list" | "calendar">(() => {
     try { return localStorage.getItem("tally:homeView") === "calendar" ? "calendar" : "list"; } catch { return "list"; }
   });
@@ -95,11 +104,16 @@ export function Activity({ onOpen, onAdd, onSearch }: { onOpen: (e: Expense) => 
   const monthDate = addMonths(now, offset);
   const isCurrent = offset === 0;
 
-  const all = useMemo(() => inMonth(s.expenses, monthDate).filter((e) => !e.pending), [s.expenses, offset]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [mStart, mEnd] = monthRange(monthDate).map((d) => d.getTime());
+  const feed = useMemo(() => activityItems(s, mStart, mEnd), [s.expenses, s.incomes, s.transfers, s.ledger, s.accounts, mStart, mEnd]); // eslint-disable-line react-hooks/exhaustive-deps
+  const all = useMemo(() => feed.flatMap((x) => (x.kind === "expense" ? [x.expense] : [])), [feed]);
   const month = cat ? all.filter((e) => e.category === cat) : all;
+  const shown = filter === null ? feed
+    : isKind(filter) ? feed.filter((x) => x.kind === KIND_CHIPS.find(([f]) => f === filter)![1])
+    : feed.filter((x) => x.kind === "expense" && x.expense.category === filter);
   const spent = month.filter(counts).reduce((t, e) => t + share(e), 0);
-  const [mStart, mEnd] = [monthDate.getTime(), addMonths(monthDate, 1).getTime()];
-  const received = cat ? 0 : s.incomes.filter((x) => x.receivedAt >= mStart && x.receivedAt < mEnd).reduce((t, x) => t + x.amount, 0);
+  const received = cat ? 0 : feed.reduce((t, x) => t + (x.kind === "income" ? x.amount : 0), 0);
+  const kinds = KIND_CHIPS.filter(([, k]) => feed.some((x) => x.kind === k));
   // Filter chips: the categories this month actually has, biggest first.
   const used = useMemo(() => {
     const m = new Map<Category, number>();
@@ -108,13 +122,16 @@ export function Activity({ onOpen, onAdd, onSearch }: { onOpen: (e: Expense) => 
   }, [all]);
 
   const groups = useMemo(() => {
-    const map = new Map<number, Expense[]>();
-    for (const e of month) {
-      const k = startOfDay(new Date(e.occurredAt)).getTime();
-      map.set(k, [...(map.get(k) ?? []), e]);
+    const map = new Map<number, ActivityItem[]>();
+    for (const x of shown) {
+      const k = startOfDay(new Date(x.at)).getTime();
+      map.set(k, [...(map.get(k) ?? []), x]);
     }
     return [...map.entries()].sort((a, b) => b[0] - a[0]);
-  }, [month]);
+  }, [shown]);
+  const daySpent = (items: ActivityItem[]) => items.reduce((t, x) => t + (x.kind === "expense" && counts(x.expense) ? share(x.expense) : 0), 0);
+  const label = filter === null ? "Expenses" : isKind(filter) ? KIND_CHIPS.find(([f]) => f === filter)![2] : categoryMeta(filter).title;
+  const count = filter === null ? all.length : shown.length;
 
   const dayTitle = (t: number) => {
     const d = new Date(t);
@@ -152,7 +169,7 @@ export function Activity({ onOpen, onAdd, onSearch }: { onOpen: (e: Expense) => 
         <dl className="activity-sum">
           <div><dt>Spent</dt><dd className="num">{formatMoney(spent)}</dd></div>
           {!cat && <div><dt>Received</dt><dd className="num in">{received ? `+${formatMoney(received)}` : "—"}</dd></div>}
-          <div><dt>{cat ? categoryMeta(cat).title : "Expenses"}</dt><dd className="num">{month.length}</dd></div>
+          <div><dt>{label}</dt><dd className="num">{count}</dd></div>
         </dl>
       </div>
 
@@ -162,11 +179,16 @@ export function Activity({ onOpen, onAdd, onSearch }: { onOpen: (e: Expense) => 
           <button aria-pressed={view === "calendar"} onClick={() => changeView("calendar")}><Icon name="grid" size={16} />Calendar</button>
         </div>
       </div>
-      {view === "list" && used.length > 1 && (
-        <div className="chips" role="group" aria-label="Filter by category">
-          <button className={`chip${cat === null ? " on" : ""}`} aria-pressed={cat === null} onClick={() => setCat(null)}>All</button>
+      {view === "list" && used.length + kinds.length > 1 && (
+        <div className="chips" role="group" aria-label="Filter">
+          <button className={`chip${filter === null ? " on" : ""}`} aria-pressed={filter === null} onClick={() => setFilter(null)}>All</button>
+          {kinds.map(([f, , l]) => (
+            <button key={f} className={`chip${filter === f ? " on" : ""}`} aria-pressed={filter === f} onClick={() => setFilter(filter === f ? null : f)}>
+              <Icon name={f === "@income" ? "download" : f === "@transfer" ? "transfer" : "split"} size={14} />{l}
+            </button>
+          ))}
           {used.map((c) => (
-            <button key={c} className={`chip${cat === c ? " on" : ""}`} aria-pressed={cat === c} onClick={() => setCat(cat === c ? null : c)}>{categoryMeta(c).title}</button>
+            <button key={c} className={`chip${filter === c ? " on" : ""}`} aria-pressed={filter === c} onClick={() => setFilter(filter === c ? null : c)}>{categoryMeta(c).title}</button>
           ))}
         </div>
       )}
@@ -176,28 +198,36 @@ export function Activity({ onOpen, onAdd, onSearch }: { onOpen: (e: Expense) => 
           onNext={offset < 0 ? () => setOffset((o) => o + 1) : undefined} onPickDay={setPickedDay} />
       ) : groups.length === 0 ? (
         <div className="card">
-          <Empty title={cat ? `No ${categoryMeta(cat).title} this month` : isCurrent ? "Nothing logged yet" : "No expenses this month"}
+          <Empty title={filter ? `No ${label.toLowerCase() === "income" ? "income" : label} this month` : isCurrent ? "Nothing logged yet" : "Nothing this month"}
             body="Tap a repeat on Home, press + or N, or type a sentence with Smart add."
-            action={isCurrent && !cat ? <button className="btn primary" onClick={() => onAdd()}>Log an expense</button> : undefined} />
+            action={isCurrent && !filter ? <button className="btn primary" onClick={() => onAdd()}>Log an expense</button> : undefined} />
         </div>
       ) : (
         groups.map(([day, items]) => (
           <section key={day} className="col gap8">
             <div className="section-title">
               <span>{dayTitle(day)}</span>
-              <span className="t-muted num">{formatMoney(items.filter(counts).reduce((t, e) => t + share(e), 0))}</span>
+              <span className="t-muted num">{daySpent(items) || items.some((x) => x.kind === "expense") ? formatMoney(daySpent(items)) : ""}</span>
             </div>
             <div className="card flush">
-              {items.map((e) => <SwipeExpense key={e.id} e={e} onOpen={() => onOpen(e)} />)}
+              {items.map((x) => x.kind === "expense" ? <SwipeExpense key={x.key} e={x.expense} onOpen={() => onOpen(x.expense)} />
+                : x.kind === "income" ? (
+                  <button key={x.key} className="row-btn" onClick={() => setIncomeEdit({ income: x.income, day: new Date(x.at) })} aria-label={`Edit income ${x.income.source || ""}`}>
+                    <IncomeRowView x={x.income} />
+                  </button>
+                ) : (
+                  <button key={x.key} className="row-btn" onClick={() => setMoving(x)}><MoveRowView item={x} /></button>
+                ))}
             </div>
           </section>
         ))
       )}
-      {view === "list" && groups.length > 0 && <p className="t-muted tiny" style={{ textAlign: "center", margin: 0 }}>Swipe a row left to edit or delete, right to split or repeat</p>}
+      {view === "list" && groups.length > 0 && shown.some((x) => x.kind === "expense") && <p className="t-muted tiny" style={{ textAlign: "center", margin: 0 }}>Swipe an expense left to edit or delete, right to split or repeat</p>}
 
       <DaySheet day={pickedDay} onClose={() => setPickedDay(null)} onOpenExpense={onOpen} onAddExpense={(day) => onAdd(day)}
         onEditIncome={setIncomeEdit} />
       <IncomeEditor value={incomeEdit} onClose={() => setIncomeEdit(null)} />
+      <MoveSheet item={moving} onClose={() => setMoving(null)} />
     </div>
   );
 }

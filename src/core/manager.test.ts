@@ -75,6 +75,18 @@ describe("credit card statements", () => {
     // Past the due date the bill is taken as paid.
     expect(cardBill(30_000_00, 0, 15, 5, d(2026, 12, 8)).due).toBeNull();
   });
+  it("says a bill is overdue when it follows the card's payments and the bill is still owed", () => {
+    const late = cardBill(30_000_00, 1_000_00, 15, 5, d(2026, 12, 8));
+    expect(late.overdue?.amount).toBe(29_000_00);
+    expect(ymd(late.overdue!.date)).toBe("2026-12-05");
+    expect(ymd(late.nextDue)).toBe("2027-01-05");
+    // Paid: nothing billed is left, so nothing's overdue.
+    expect(cardBill(1_000_00, 1_000_00, 15, 5, d(2026, 12, 8)).overdue).toBeNull();
+    // A balance you enter yourself doesn't say whether it was paid.
+    expect(cardBill(30_000_00, null, 15, 5, d(2026, 12, 8)).overdue).toBeNull();
+    // Before the due date it's due, not overdue.
+    expect(cardBill(30_000_00, 0, 15, 5, d(2026, 11, 20)).overdue).toBeNull();
+  });
 });
 
 describe("repeating bills", () => {

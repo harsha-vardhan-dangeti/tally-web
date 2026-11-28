@@ -1,7 +1,10 @@
 import { useMemo, useState } from "react";
 import {
   accountNamed, counts, deleteIncome, expenseTitle, incomeApplies, likelyAccount, runDueIncome, saveIncome, saveRecurringIncome, share, uid, useTally, type Expense, type Income,
+  type LedgerEntry, type Transfer,
 } from "../data/store";
+import { activityItems } from "../data/activity";
+import { IncomeRowView, MoveRowView, MoveSheet, type MoveItem } from "./ActivityRows";
 import { dayOfMonth, daysInMonth, monthKey, monthLabel, monthRange, sameDay, startOfDay } from "../core/budget";
 import { compactMoney, formatMoney, parsePaise, currencySymbol } from "../core/money";
 import { Icon } from "../ui/icons";
@@ -9,14 +12,22 @@ import { Empty, Field, Sheet, Toggle } from "../ui/components";
 import { ExpenseRowView } from "./Activity";
 import { AccountNote, AccountSelect } from "../ui/AccountSelect";
 
-/** Spent and received per day of the budget month. Index 0 is its first day. */
-function dayTotals(expenses: Expense[], incomes: Income[], month: Date) {
+/** Spent, received and moved between your accounts per day of the budget month. Index 0 is its first day. */
+function dayTotals(expenses: Expense[], incomes: Income[], month: Date, transfers: Transfer[] = [], ledger: LedgerEntry[] = []) {
   const [start, end] = monthRange(month);
   const days = daysInMonth(month);
   const spent = Array.from({ length: days }, () => 0);
   const received = Array.from({ length: days }, () => 0);
   const entries = Array.from({ length: days }, () => 0);
+  const moved = Array.from({ length: days }, () => 0);
   const inMonth = (t: number) => t >= start.getTime() && t < end.getTime();
+  for (const x of transfers) {
+    if (!inMonth(x.occurredAt)) continue;
+    const i = dayOfMonth(new Date(x.occurredAt)) - 1;
+    entries[i]++;
+    moved[i] += x.amount;
+  }
+  for (const l of ledger) if (l.amount && inMonth(l.occurredAt)) entries[dayOfMonth(new Date(l.occurredAt)) - 1]++;
   for (const e of expenses) {
     if (e.pending || !inMonth(e.occurredAt)) continue;
     const i = dayOfMonth(new Date(e.occurredAt)) - 1;
@@ -29,7 +40,7 @@ function dayTotals(expenses: Expense[], incomes: Income[], month: Date) {
     entries[i]++;
     received[i] += x.amount;
   }
-  return { days, spent, received, entries };
+  return { days, spent, received, entries, moved };
 }
 
 const fullDate = (d: Date) => d.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" });
@@ -43,7 +54,7 @@ export function MonthCalendar({ month, onPrev, onNext, onPickDay }: {
 }) {
   const s = useTally();
   const now = new Date();
-  const t = useMemo(() => dayTotals(s.expenses, s.incomes, month), [s.expenses, s.incomes, month.getFullYear(), month.getMonth()]); // eslint-disable-line react-hooks/exhaustive-deps
+  const t = useMemo(() => dayTotals(s.expenses, s.incomes, month, s.transfers, s.ledger), [s.expenses, s.incomes, s.transfers, s.ledger, month.getFullYear(), month.getMonth()]); // eslint-disable-line react-hooks/exhaustive-deps
   const totalSpent = t.spent.reduce((a, b) => a + b, 0);
   const totalIn = t.received.reduce((a, b) => a + b, 0);
   const net = totalIn - totalSpent;
@@ -74,18 +85,20 @@ export function MonthCalendar({ month, onPrev, onNext, onPickDay }: {
           const future = day.getTime() > today;
           const isToday = day.getTime() === today;
           const received = t.received[i];
-          const label = `${fullDate(day)}: ${spent ? `spent ${formatMoney(spent)}` : "nothing spent"}${received ? `, received ${formatMoney(received)}` : ""}`;
+          const moved = t.moved[i];
+          const label = `${fullDate(day)}: ${spent ? `spent ${formatMoney(spent)}` : "nothing spent"}${received ? `, received ${formatMoney(received)}` : ""}${moved ? `, moved ${formatMoney(moved)} between accounts` : ""}`;
           return (
             <button key={i} className={`month-day${isToday ? " today" : ""}${future ? " future" : ""}${t.entries[i] ? " has" : ""}`}
               disabled={future} onClick={() => onPickDay(day)} aria-label={future ? `${fullDate(day)}: still to come` : label}>
               <span className="month-day-n">{day.getDate()}</span>
               {spent > 0 && <span className="month-day-out num">−{compactMoney(spent)}</span>}
               {received > 0 && <span className="month-day-in num">+{compactMoney(received)}</span>}
+              {moved > 0 && <span className="month-day-move num" aria-hidden="true">⇄{compactMoney(moved)}</span>}
             </button>
           );
         })}
       </div>
-      <p className="month-cal-hint">Click a day to see, add or edit what you spent and received.</p>
+      <p className="month-cal-hint">Click a day to see, add or edit what you spent and received. ⇄ is money moved between your accounts.</p>
     </section>
   );
 }
@@ -98,6 +111,11 @@ export function DaySheet({ day, onClose, onOpenExpense, onAddExpense, onEditInco
   const s = useTally();
   const expenses = day ? s.expenses.filter((e) => !e.pending && sameDay(new Date(e.occurredAt), day)) : [];
   const incomes = day ? s.incomes.filter((x) => sameDay(new Date(x.receivedAt), day)) : [];
+  const [moving, setMoving] = useState<MoveItem | null>(null);
+  const moves = day ? activityItems(s, startOfDay(day).getTime(), startOfDay(day).getTime() + 86_400_000 * 1.5)
+    .filter((x): x is MoveItem => (x.kind === "transfer" || x.kind === "people") && sameDay(new Date(x.at), day)) : [];
+  const transfers = moves.filter((x) => x.kind === "transfer");
+  const withPeople = moves.filter((x) => x.kind === "people");
   const spent = expenses.filter(counts).reduce((t, e) => t + share(e), 0);
   const received = incomes.reduce((t, x) => t + x.amount, 0);
 
@@ -119,14 +137,7 @@ export function DaySheet({ day, onClose, onOpenExpense, onAddExpense, onEditInco
           <div className="card flush divided" style={{ background: "var(--surface-2)" }}>
             {incomes.map((x) => (
               <button key={x.id} className="row-btn" onClick={() => day && onEditIncome({ income: x, day })}>
-                <div className="expense-row">
-                  <span className="cat-icon income-icon" style={{ width: 40, height: 40 }}><Icon name="download" size={20} /></span>
-                  <div className="grow col gap4">
-                    <span className="t-strong ellipsis">{x.source || "Income"}</span>
-                    <span className="t-muted tiny ellipsis">{[x.account, x.note].filter(Boolean).join(" · ") || "Tap to edit"}</span>
-                  </div>
-                  <span className="amt num in">+{formatMoney(x.amount, { showPaise: true })}</span>
-                </div>
+                <IncomeRowView x={x} />
               </button>
             ))}
           </div>
@@ -146,9 +157,19 @@ export function DaySheet({ day, onClose, onOpenExpense, onAddExpense, onEditInco
         </section>
       )}
 
-      {expenses.length === 0 && incomes.length === 0 && (
+      {[["Transfers", transfers, "Between your accounts"], ["With people", withPeople, "Lent, borrowed and settled up"]].map(([title, list, note]) => (list as MoveItem[]).length > 0 && (
+        <section key={title as string} className="col gap8">
+          <div className="section-title"><span>{title as string}</span><span className="t-muted tiny">{note as string}</span></div>
+          <div className="card flush divided" style={{ background: "var(--surface-2)" }}>
+            {(list as MoveItem[]).map((x) => <button key={x.key} className="row-btn" onClick={() => setMoving(x)}><MoveRowView item={x} /></button>)}
+          </div>
+        </section>
+      ))}
+
+      {expenses.length === 0 && incomes.length === 0 && moves.length === 0 && (
         <Empty title="Nothing logged on this day" body="Add an expense or income above. It'll be dated this day." />
       )}
+      <MoveSheet item={moving} onClose={() => setMoving(null)} />
     </Sheet>
   );
 }

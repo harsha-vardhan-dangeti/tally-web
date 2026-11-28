@@ -171,7 +171,7 @@ export function App() {
         {tab === "activity" && (
           <Activity onOpen={openDetail} onAdd={(day) => { setAddDate(day ?? null); setSheet("quickAdd"); }} onSearch={() => setSheet("search")} />
         )}
-        {tab === "reports" && <Reports />}
+        {tab === "reports" && <Reports onOpen={openDetail} />}
         {tab === "plan" && <Plan />}
         {tab === "people" && <People />}
         {tab === "accounts" && <Accounts onOpen={openDetail} />}
