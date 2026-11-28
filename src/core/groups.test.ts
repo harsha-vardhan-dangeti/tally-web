@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupStanding, memberNames, planGroupBill, unequalShares } from "./groups";
+import { allocateSettlement, groupStanding, memberNames, planGroupBill, unequalShares } from "./groups";
 import { people } from "./people";
 import { myShareOf } from "./smartParser";
 import { readGroups, readShares } from "../data/backup";
@@ -100,5 +100,29 @@ describe("group bills", () => {
       expect(readShares(900, { Ravi: 300 }, 1000)).toEqual({});
       expect(readShares(undefined, { Ravi: 300 }, 1000)).toEqual({});
     });
+  });
+});
+
+describe("a settle-up recorded in People", () => {
+  const flat = { id: "flat", members: ["Ravi", "Priya"] }, goa = { id: "goa", members: ["Ravi"] };
+  const bills = [
+    exp({ id: "rent", amount: 1800_00, splitWays: 3, splitWith: "Ravi, Priya", group: "flat" }), // Ravi owes 600
+    exp({ id: "cab", amount: 1000_00, splitWays: 2, splitWith: "Ravi", group: "goa" }), // Ravi owes 500
+    exp({ id: "wifi", amount: 3000_00, splitWays: 3, splitWith: "Priya", paidBy: "Priya", group: "flat" }), // you owe Priya 1,000; she owes you 600 for rent
+  ];
+  it("pays off what's open in each group in turn, and the rest is outside groups", () => {
+    expect(allocateSettlement(-1300_00, "ravi", [flat, goa], bills, [])).toEqual([
+      { group: "flat", amount: -600_00 }, { group: "goa", amount: -500_00 }, { amount: -200_00 },
+    ]);
+    expect(allocateSettlement(-400_00, "Ravi", [flat, goa], bills, [])).toEqual([{ group: "flat", amount: -400_00 }]);
+  });
+  it("goes the way the money went: paying Priya settles what you owe her", () => {
+    expect(allocateSettlement(200_00, "Priya", [flat, goa], bills, [])).toEqual([{ group: "flat", amount: 200_00 }]);
+    // Priya paying you doesn't settle a group where you owe her.
+    expect(allocateSettlement(-200_00, "Priya", [flat, goa], bills, [])).toEqual([{ amount: -200_00 }]);
+  });
+  it("counts what's already been settled in the group", () => {
+    const paid = [{ id: "p", person: "Ravi", amount: -600_00, kind: "settled" as const, note: "", occurredAt: 2, group: "flat" }];
+    expect(allocateSettlement(-500_00, "Ravi", [flat, goa], bills, paid)).toEqual([{ group: "goa", amount: -500_00 }]);
   });
 });

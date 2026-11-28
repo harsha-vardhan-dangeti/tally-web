@@ -14,7 +14,8 @@ import { formatMoney, isCurrency, setCurrency } from "../core/money";
 import { myShareOf } from "../core/smartParser";
 import type { PlannedRow } from "../core/splitwise";
 import { emiFor, loanStatus, dueDate, type LoanTerms } from "../core/loans";
-import type { LedgerKind } from "../core/people";
+import { personKey, type LedgerKind } from "../core/people";
+import { allocateSettlement } from "../core/groups";
 import { isLang, setLanguage, type Lang } from "../i18n";
 import { track } from "./telemetry";
 import { parseBackup, type Backup } from "./backup";
@@ -315,6 +316,7 @@ export async function load() {
   });
   if (chips.length === 0) await seedChips();
   clearPaidByAccounts();
+  placeOldSettlements();
   runDueBills();
   runDueIncome();
   runDueLoans();
@@ -335,6 +337,40 @@ export function clearPaidByAccounts() {
   set({ expenses: state.expenses.map((e) => fixed.get(e.id) ?? e) });
   for (const e of fixed.values()) void persist("expenses", e);
   return fixed.size;
+}
+
+/** Settle-ups recorded in People before then didn't count toward groups; placeOldSettlements puts them in. */
+const PEOPLE_SETTLE_CUTOFF = Date.UTC(2026, 10, 28, 8);
+
+/**
+ * A settle-up recorded in People with someone who's in a group used to leave that group's balance
+ * as it was. This places each one into the groups as allocateSettlement would have, going by the
+ * balances on its date: a part per group it paid off, and any rest outside groups. The first part
+ * keeps the entry's ID and the others get fixed IDs, so every device ends up with the same entries.
+ * Imported Splitwise payments (sw-…) belong to their own history and stay as they are.
+ */
+export function placeOldSettlements(): number {
+  const groups = state.settings.groups;
+  if (!groups.length) return 0;
+  const inGroup = (name: string) => groups.some((g) => g.members.some((m) => personKey(m) === personKey(name)));
+  const todo = state.ledger
+    .filter((l) => l.kind === "settled" && !l.group && l.amount && l.createdAt < PEOPLE_SETTLE_CUTOFF && !l.id.startsWith("sw-") && inGroup(l.person))
+    .sort((a, b) => a.occurredAt - b.occurredAt || a.createdAt - b.createdAt);
+  if (!todo.length) return 0;
+  let ledger = state.ledger;
+  const changed: LedgerEntry[] = [];
+  for (const e of todo) {
+    const before = ledger.filter((l) => l.id !== e.id && l.occurredAt <= e.occurredAt);
+    const parts = allocateSettlement(e.amount, e.person, groups, state.expenses.filter((x) => x.occurredAt <= e.occurredAt), before);
+    if (!parts.some((p) => p.group)) continue;
+    const next = parts.map((p, i) => ({ ...e, id: i === 0 ? e.id : `${e.id}-${i}`, amount: p.amount, ...(p.group ? { group: p.group } : {}) }));
+    ledger = [...ledger.filter((l) => l.id !== e.id), ...next];
+    changed.push(...next);
+  }
+  if (!changed.length) return 0;
+  set({ ledger: sortLedger(ledger) });
+  for (const l of changed) void persist("ledger", l);
+  return changed.length;
 }
 
 /** Settings as stored (perhaps by another device or an older version), with every list made safe to use. */

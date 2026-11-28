@@ -6,7 +6,8 @@ import { guessMe, parseSplitwise, planBalances, planSplitwise, type SplitwiseFil
 import { AccountHint, AccountNote, AccountSelect } from "../ui/AccountSelect";
 import { useCloud } from "../data/cloud";
 import { track } from "../data/telemetry";
-import { isUpiId, payBackProgress, payLink, people, peopleTotals, unpaidTitles, type Person, type PersonItem } from "../core/people";
+import { isUpiId, payBackProgress, payLink, people, peopleTotals, personKey, unpaidTitles, type Person, type PersonItem } from "../core/people";
+import { allocateSettlement, groupStanding } from "../core/groups";
 import { currencySymbol, formatMoney, parsePaise } from "../core/money";
 import { dateLocale, t } from "../i18n";
 import { Icon } from "../ui/icons";
@@ -236,13 +237,15 @@ function EntrySheet({ value, known, onClose }: { value: EntryRequest | null; kno
   const [date, setDate] = useState(toDateInput(Date.now()));
   const [account, setAccount] = useState("");
   const [alreadyIn, setAlreadyIn] = useState(false);
+  // A settle-up: "auto" pays off what's open in their groups first; a group's ID, only that group; "none", no group.
+  const [toward, setToward] = useState("auto");
   const [seen, setSeen] = useState<typeof value>(null);
   if (value !== seen) {
     setSeen(value);
     if (value) {
       setPerson(value.person); setAmount(value.amount ? String(Math.abs(value.amount) / 100) : ""); setNote("");
       setDate(toDateInput(Date.now())); setAccount(likelyAccount(s, s.ledger.map((l) => l.account)));
-      setAlreadyIn(false);
+      setAlreadyIn(false); setToward("auto");
     }
   }
   const p = parsePaise(amount);
@@ -261,16 +264,27 @@ function EntrySheet({ value, known, onClose }: { value: EntryRequest | null; kno
   // Dated before the account's balance was entered: it moves the balance unless the user says that balance has it already.
   const into = accountNamed(s, account);
   const beforeBalance = !!into?.tracked && !!date && when() <= into.updatedAt;
+  // Their groups with something open the way this settle-up goes, and what's open in each.
+  const openGroups = kind !== "settled" || !name ? [] : s.settings.groups.flatMap((g) => {
+    const m = groupStanding(g, s.expenses, s.ledger).members.find((x) => x.key === personKey(name));
+    const open = m ? (sign < 0 ? m.balance : -m.balance) : 0;
+    return open > 0 ? [{ group: g, open }] : [];
+  });
+  const choice = openGroups.length === 0 ? "none" : toward === "auto" || toward === "none" || openGroups.some((x) => x.group.id === toward) ? toward : "auto";
+  const parts = !p || !name ? []
+    : choice === "auto" ? allocateSettlement(sign * p, name, s.settings.groups, s.expenses, s.ledger)
+    : choice === "none" ? [{ amount: sign * p }] : [{ group: choice, amount: sign * p }];
+  const groupName = (id?: string) => s.settings.groups.find((g) => g.id === id)?.name ?? "";
   const save = () => {
     if (!p || !name) return;
-    const entry = {
-      id: uid(), person: name, amount: sign * p, kind, note: note.trim(),
-      occurredAt: when(), createdAt: Date.now(),
+    const base = {
+      person: name, kind, note: note.trim(), occurredAt: when(), createdAt: Date.now(),
       ...(account.trim() ? { account: account.trim() } : {}),
       ...(beforeBalance && alreadyIn ? { inBalance: true } : {}),
     };
-    saveLedgerEntry(entry);
-    const undo = () => deleteLedgerEntry(entry.id, false);
+    const entries = (kind === "settled" ? parts : [{ amount: sign * p }]).map((x) => ({ ...base, id: uid(), amount: x.amount, ...("group" in x && x.group ? { group: x.group } : {}) }));
+    for (const entry of entries) saveLedgerEntry(entry);
+    const undo = () => { for (const entry of entries) deleteLedgerEntry(entry.id, false); };
     if (kind === "settled") {
       const left = owedNow - p;
       showToast(left > 0
@@ -311,6 +325,20 @@ function EntrySheet({ value, known, onClose }: { value: EntryRequest | null; kno
       {beforeBalance && into && (
         <Toggle checked={alreadyIn} onChange={setAlreadyIn} label={t("Already in {name}'s balance", { name: into.name })}
           hint={t("It's dated before you entered {name}'s balance on {date}. Turn this on if that balance already includes it, so it isn't counted twice.", { name: into.name, date: day(into.updatedAt) })} />
+      )}
+      {openGroups.length > 0 && (
+        <Field label="Counts toward">
+          <select value={choice} onChange={(e) => setToward(e.target.value)}>
+            <option value="auto">{openGroups.length === 1 ? `${openGroups[0].group.name} first` : "Their groups first"}</option>
+            {openGroups.map((x) => <option key={x.group.id} value={x.group.id}>Only {x.group.name} ({formatMoney(x.open)} open)</option>)}
+            <option value="none">Not a group payment</option>
+          </select>
+        </Field>
+      )}
+      {openGroups.length > 0 && parts.length > 0 && (
+        <span className="tiny t-muted" aria-live="polite">
+          {parts.map((x) => `${formatMoney(Math.abs(x.amount))} ${x.group ? `settles ${groupName(x.group)}` : "outside groups"}`).join(" · ")}
+        </span>
       )}
       {kind === "settled" && owedNow > 0 && p && p < owedNow ? (
         <span className="tiny t-muted">{t("Part of it: {left} will still be open.", { left: formatMoney(owedNow - p) })}</span>

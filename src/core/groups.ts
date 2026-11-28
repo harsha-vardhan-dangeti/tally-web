@@ -76,6 +76,34 @@ export function groupStanding(group: GroupLike, expenses: (SplitExpense & { grou
   return { members, owedToYou, youOwe, net: owedToYou - youOwe };
 }
 
+/** Part of a settle-up: `amount` as a ledger amount (− they paid you, + you paid them), and the group it settles, if any. */
+export interface Allocation { group?: string; amount: number }
+
+/**
+ * Where a settle-up with someone goes when it's recorded outside a group (in People): it pays off what's
+ * open with them in each group they're in, in the order the groups are listed, and whatever is left
+ * over is outside any group. `amount` is a ledger amount: − they paid you, + you paid them.
+ */
+export function allocateSettlement(amount: number, person: string, groups: GroupLike[],
+  expenses: (SplitExpense & { group?: string })[], ledger: (LedgerLine & { group?: string })[]): Allocation[] {
+  const sign = Math.sign(amount);
+  let left = Math.abs(amount);
+  const out: Allocation[] = [];
+  const key = personKey(person);
+  for (const g of groups) {
+    if (left <= 0) break;
+    const m = groupStanding(g, expenses, ledger).members.find((p) => p.key === key);
+    // They paid you: it settles what they owe you there. You paid them: what you owe them there.
+    const open = m ? (sign < 0 ? m.balance : -m.balance) : 0;
+    if (open <= 0) continue;
+    const take = Math.min(open, left);
+    out.push({ group: g.id, amount: sign * take });
+    left -= take;
+  }
+  if (left > 0) out.push({ amount: sign * left });
+  return out;
+}
+
 /** "Ravi, Priya and Arjun" or one per line → clean, unique names. */
 export const memberNames = (text: string) => splitNames(text.replace(/\n/g, ","));
 
